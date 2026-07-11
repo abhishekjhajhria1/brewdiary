@@ -186,16 +186,17 @@ export function LogSheet({
       >
         <div aria-hidden className="mx-auto mb-4 h-1 w-9 rounded-full bg-line-strong" />
 
-        <header className="mb-5 flex items-baseline justify-between">
+        <header className="mb-5 flex items-start justify-between">
           <div>
             <h2 className="font-display text-3xl leading-none">{formatDayLong(dateKey)}</h2>
             <span className="label mt-1 block">{WEEKDAY_LONG[weekdayIdx]}</span>
           </div>
           <button
             onClick={onClose}
-            className="rounded-ctl px-2 py-1 text-sm text-muted transition-colors hover:text-ink"
+            aria-label="Close"
+            className="-mr-1.5 -mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-2xl leading-none text-muted transition-colors hover:bg-ink/5 hover:text-ink"
           >
-            Done
+            ×
           </button>
         </header>
 

@@ -155,7 +155,7 @@ export function ShareCard({ entry, onClose }: { entry: Entry; onClose: () => voi
           </button>
         </div>
         <button onClick={onClose} className="text-sm text-paper/70 transition-colors hover:text-paper">
-          Done
+          Close
         </button>
       </div>
     </div>
