@@ -11,6 +11,7 @@
 
 import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { embed } from "./embed";
 
 const AI_URL = process.env.AI_SUPABASE_URL;
 const AI_SERVICE_KEY = process.env.AI_SUPABASE_SERVICE_KEY;
@@ -53,15 +54,50 @@ export async function recordExchange(x: ExchangeInput): Promise<void> {
   if (!c) return;
   if (!x.userId || !x.prompt.trim() || !x.reply.trim()) return;
   try {
+    // Embed the prompt so future questions can retrieve this exchange (RAG). Optional:
+    // if embedding fails, we still store the row (it just won't be retrievable yet).
+    let embedding: number[] | null = null;
+    try {
+      embedding = await embed(x.prompt);
+    } catch {
+      /* embedding is best-effort */
+    }
     await c.from("exchanges").insert({
       user_ref: pseudonymize(x.userId),
       prompt: x.prompt,
       reply: x.reply,
       context: x.context ?? null,
       model: x.model ?? null,
+      embedding,
     });
   } catch {
     /* corpus write is best-effort; never surface to the user */
+  }
+}
+
+export interface SimilarExchange {
+  prompt: string;
+  reply: string;
+  similarity: number;
+}
+
+/** RAG retrieval: the past exchanges most similar to `text`, to ground a new reply.
+ *  Returns [] when the AI DB isn't configured or nothing clears the similarity bar.
+ *  minSimilarity is tuned for gte-small's compressed range (unrelated pairs ~0.8). */
+export async function retrieveSimilar(text: string, k = 4, minSimilarity = 0.83): Promise<SimilarExchange[]> {
+  const c = client();
+  if (!c || !text.trim()) return [];
+  try {
+    const vec = await embed(text);
+    const { data, error } = await c.rpc("match_exchanges", {
+      query_embedding: vec,
+      match_count: k,
+      min_similarity: minSimilarity,
+    });
+    if (error || !data) return [];
+    return (data as SimilarExchange[]).map((r) => ({ prompt: r.prompt, reply: r.reply, similarity: r.similarity }));
+  } catch {
+    return [];
   }
 }
 
