@@ -23,9 +23,16 @@ const serif = Newsreader({
   display: "swap",
 });
 
+// The canonical origin for absolute URLs (link previews, canonical, manifest).
+// Override with NEXT_PUBLIC_SITE_URL if the domain ever changes; falls back to prod.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://bwdy.site";
+
+const DESCRIPTION = "An all-inclusive drink diary. Tap a day, log a drink, watch the year quietly fill in.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "brewdiary",
-  description: "An all-inclusive drink diary. Tap a day, log a drink, watch the year quietly fill in.",
+  description: DESCRIPTION,
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -36,6 +43,20 @@ export const metadata: Metadata = {
     apple: "/apple-touch-icon.png",
   },
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "brewdiary" },
+  openGraph: {
+    type: "website",
+    siteName: "brewdiary",
+    title: "brewdiary",
+    description: DESCRIPTION,
+    url: "/",
+    images: [{ url: "/icon-512.png", width: 512, height: 512, alt: "brewdiary" }],
+  },
+  twitter: {
+    card: "summary",
+    title: "brewdiary",
+    description: DESCRIPTION,
+    images: ["/icon-512.png"],
+  },
 };
 
 export const viewport: Viewport = {
