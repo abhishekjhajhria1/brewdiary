@@ -222,12 +222,18 @@ export function useFriendEntries(friendId: string | null): { id: string; date: s
 // ── search ───────────────────────────────────────────────────────────────────
 export async function searchUsers(query: string, meId: string): Promise<SocialProfile[]> {
   if (!supabase) return [];
-  const q = query.trim();
+  // People type the leading "@" (the placeholder invites it) and often search by
+  // NAME, not handle — match both. Strip chars that would break the .or() filter.
+  const q = query
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/[%,()]/g, "");
   if (q.length < 2) return [];
+  const like = `%${q}%`;
   const { data } = await supabase
     .from("profiles")
     .select("id, handle, display_name")
-    .ilike("handle", `%${q}%`)
+    .or(`handle.ilike.${like},display_name.ilike.${like}`)
     .neq("id", meId)
     .limit(10);
   return (data ?? []).map((r) => toProfile(r as ProfileRow));

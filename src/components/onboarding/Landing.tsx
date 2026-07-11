@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useEntries } from "@/lib/store";
 import { signIn, signUp } from "@/lib/profile";
 import { countsByDate, recentDrinks, recentMoods } from "@/lib/derive";
@@ -171,6 +172,7 @@ function AuthSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const router = useRouter();
 
   const isSignup = mode === "signup";
 
@@ -190,7 +192,10 @@ function AuthSheet({
       setBusy(false);
       return;
     }
-    // Success with a session → the auth store flips the gate and this unmounts.
+    // Success with a session. The gate (app/page.tsx) is a SERVER component that
+    // reads the session cookie, so it won't re-run on its own — refresh to re-run
+    // it: Landing → CalendarHome, and this sheet unmounts. (No manual reload.)
+    router.refresh();
   }
 
   return (

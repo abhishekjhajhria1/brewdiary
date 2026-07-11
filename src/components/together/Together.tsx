@@ -119,7 +119,15 @@ function People({ friends, onOpenFriend }: { friends: SocialProfile[]; onOpenFri
   async function add(id: string) {
     if (!me) return;
     setRequested((s) => new Set(s).add(id));
-    await sendRequest(me, id);
+    const err = await sendRequest(me, id);
+    if (err) {
+      // request didn't land (e.g. already sent) — don't leave a misleading "Requested"
+      setRequested((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
+    }
   }
 
   const friendIds = new Set(friends.map((f) => f.id));
@@ -155,13 +163,13 @@ function People({ friends, onOpenFriend }: { friends: SocialProfile[]; onOpenFri
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Add a friend by their @handle"
+          placeholder="Add a friend by name or @handle"
           className="glass w-full rounded-ctl px-4 py-2.5 text-[15px] outline-none placeholder:text-faint"
         />
         {query.trim().length >= 2 && (
           <ul className="mt-2 space-y-2">
             {searching && results.length === 0 && <li className="px-1 text-sm text-faint">Searching…</li>}
-            {!searching && results.length === 0 && <li className="px-1 text-sm text-faint">No one by that handle.</li>}
+            {!searching && results.length === 0 && <li className="px-1 text-sm text-faint">No one by that name or handle.</li>}
             {results.map((p) => {
               const isFriend = friendIds.has(p.id);
               const isRequested = requested.has(p.id);

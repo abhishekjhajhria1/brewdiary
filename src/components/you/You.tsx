@@ -159,9 +159,10 @@ function Settings() {
   const profile = useProfile();
   const router = useRouter();
 
-  function handleSignOut() {
-    signOut();
-    router.push("/"); // back to the onboarding landing
+  async function handleSignOut() {
+    await signOut(); // wait for the session cookie to clear…
+    router.push("/"); // …then the server gate renders the landing (not the app)
+    router.refresh();
   }
 
   useEffect(() => {

@@ -22,8 +22,10 @@ import {
   joinChallenge,
   leaveChallenge,
   deleteChallenge,
+  setChallengeWinner,
   KIND_LABEL,
   KIND_UNIT,
+  SCORED_KINDS,
   type Challenge,
   type ChallengeKind,
 } from "@/lib/challenges";
@@ -294,18 +296,32 @@ function CircleChallenges({ circleId }: { circleId: string }) {
   const me = useAuth().profile?.id;
   const { challenges, loading } = useChallenges(circleId);
   const [creating, setCreating] = useState(false);
+  const [mode, setMode] = useState<"challenge" | "competition">("challenge");
+  const [title, setTitle] = useState("");
+  const [rule, setRule] = useState("");
   const [kind, setKind] = useState<ChallengeKind>("longest_streak");
   const [nights, setNights] = useState<number>(7);
   const [busy, setBusy] = useState(false);
 
+  // a competition needs a name + a rule; a challenge can start with just a type
+  const canStart = mode === "competition" ? Boolean(title.trim() && rule.trim()) : true;
+
   async function start() {
-    if (!me || busy) return;
+    if (!me || busy || !canStart) return;
     setBusy(true);
     const startsOn = todayKey();
-    const endsOn = toKey(addDays(parseKey(startsOn), nights - 1));
-    await createChallenge(me, circleId, kind, startsOn, endsOn);
+    const endsOn = toKey(addDays(parseKey(startsOn), Math.max(1, nights) - 1));
+    await createChallenge(me, circleId, {
+      kind: mode === "competition" ? "freeform" : kind,
+      startsOn,
+      endsOn,
+      title: title.trim() || undefined,
+      rule: mode === "competition" ? rule.trim() : undefined,
+    });
     setCreating(false);
     setBusy(false);
+    setTitle("");
+    setRule("");
   }
 
   return (
@@ -321,24 +337,66 @@ function CircleChallenges({ circleId }: { circleId: string }) {
       </div>
 
       {creating && (
-        <div className="mb-3 border-y border-line py-3">
-          <div className="flex flex-wrap gap-1.5">
-            {(Object.keys(KIND_LABEL) as ChallengeKind[]).map((k) => (
-              <Chip key={k} active={kind === k} onClick={() => setKind(k)}>
-                {KIND_LABEL[k]}
-              </Chip>
-            ))}
+        <div className="mb-3 space-y-3 border-y border-line py-3">
+          {/* auto-scored challenge, or a free-form competition you judge yourself */}
+          <div className="flex gap-1.5">
+            <Chip active={mode === "challenge"} onClick={() => setMode("challenge")}>
+              Challenge
+            </Chip>
+            <Chip active={mode === "competition"} onClick={() => setMode("competition")}>
+              Competition
+            </Chip>
           </div>
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={
+              mode === "competition"
+                ? "Name it — e.g. Best homemade cocktail"
+                : "Name it (optional) — e.g. Negroni Week"
+            }
+            className="w-full border-b border-line-strong bg-transparent pb-1.5 text-sm outline-none placeholder:text-faint focus:border-ink"
+          />
+
+          {mode === "challenge" ? (
+            <div className="flex flex-wrap gap-1.5">
+              {SCORED_KINDS.map((k) => (
+                <Chip key={k} active={kind === k} onClick={() => setKind(k)}>
+                  {KIND_LABEL[k]}
+                </Chip>
+              ))}
+            </div>
+          ) : (
+            <textarea
+              value={rule}
+              onChange={(e) => setRule(e.target.value)}
+              rows={2}
+              placeholder="The rule — e.g. post your best pour; everyone votes on the last night. You pick the winner."
+              className="w-full resize-none rounded-ctl border border-line-strong bg-transparent px-3 py-2 text-sm outline-none placeholder:text-faint focus:border-ink"
+            />
+          )}
+
+          <div className="flex flex-wrap items-center gap-1.5">
             {DURATIONS.map((n) => (
               <Chip key={n} active={nights === n} onClick={() => setNights(n)}>
                 {n} nights
               </Chip>
             ))}
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={nights}
+              onChange={(e) => setNights(Math.max(1, Math.min(365, Number(e.target.value) || 1)))}
+              aria-label="Custom length in nights"
+              className="tnum w-14 rounded-ctl border border-line-strong bg-transparent px-2 py-1 text-sm outline-none focus:border-ink"
+            />
+            <span className="text-xs text-faint">nights</span>
             <button
               onClick={start}
-              disabled={busy}
-              className="ml-2 text-sm font-medium text-accent transition-opacity hover:opacity-80 disabled:opacity-40"
+              disabled={busy || !canStart}
+              className="ml-auto text-sm font-medium text-accent transition-opacity hover:opacity-80 disabled:opacity-40"
             >
               Start tonight →
             </button>
@@ -358,7 +416,7 @@ function CircleChallenges({ circleId }: { circleId: string }) {
         </ul>
       )}
       {challenges.length > 0 && (
-        <p className="mt-3 text-xs text-faint">Opt-in, counts only — never what anyone poured. Nothing shows on any calendar.</p>
+        <p className="mt-3 text-xs text-faint">Opt-in — auto-scored challenges count only (never what you poured); competitions are judged by whoever started them. Nothing shows on any calendar.</p>
       )}
     </section>
   );
@@ -371,12 +429,15 @@ function ChallengeBlock({ challenge, meId }: { challenge: Challenge; meId?: stri
   const s = parseKey(challenge.startsOn);
   const e = parseKey(challenge.endsOn);
   const top = board.length > 0 ? board[0].value : 0;
+  const freeform = challenge.kind === "freeform";
+  const isCreator = challenge.createdBy === meId;
+  const heading = challenge.title?.trim() || KIND_LABEL[challenge.kind];
 
   return (
     <li className="border-t border-line pt-3">
       <div className="flex items-baseline justify-between gap-3">
         <p className="text-[15px] text-ink">
-          {KIND_LABEL[challenge.kind]}
+          {heading}
           <span className="tnum text-xs text-faint">
             {"  "}
             {MONTH_NAMES[s.getMonth()].slice(0, 3)} {s.getDate()} – {MONTH_NAMES[e.getMonth()].slice(0, 3)} {e.getDate()}
@@ -395,7 +456,7 @@ function ChallengeBlock({ challenge, meId }: { challenge: Challenge; meId?: stri
                 Join in
               </button>
             ))}
-          {challenge.createdBy === meId && (
+          {isCreator && (
             <button onClick={() => deleteChallenge(challenge.id)} className="text-faint hover:text-ink">
               Remove
             </button>
@@ -403,11 +464,42 @@ function ChallengeBlock({ challenge, meId }: { challenge: Challenge; meId?: stri
         </span>
       </div>
 
+      {/* the competition's rule, in the creator's words */}
+      {freeform && challenge.rule && <p className="mt-1 text-sm italic text-muted">{challenge.rule}</p>}
+
       {loading ? (
         <p className="mt-2 text-sm text-faint">…</p>
       ) : board.length === 0 ? (
         <p className="mt-2 text-sm text-faint">No one&apos;s in yet.</p>
+      ) : freeform ? (
+        // free-form: names only, the creator picks the winner (no counts)
+        <ul className="mt-2 space-y-1">
+          {board.map((row) => {
+            const isWinner = challenge.winnerId === row.userId;
+            return (
+              <li key={row.userId} className="flex items-baseline justify-between gap-3 text-sm">
+                <span
+                  className={clsx(
+                    isWinner ? "font-medium text-accent" : row.userId === meId ? "text-ink" : "text-muted",
+                  )}
+                >
+                  {row.userId === meId ? "you" : row.name}
+                  {isWinner && <span className="label ml-1.5 text-accent">winner</span>}
+                </span>
+                {isCreator && (
+                  <button
+                    onClick={() => setChallengeWinner(challenge.id, isWinner ? null : row.userId)}
+                    className="shrink-0 text-xs text-faint transition-colors hover:text-ink"
+                  >
+                    {isWinner ? "clear" : "pick winner"}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       ) : (
+        // auto-scored leaderboard
         <ol className="mt-2 space-y-1">
           {board.map((row) => (
             <li key={row.userId} className="flex items-baseline justify-between text-sm">

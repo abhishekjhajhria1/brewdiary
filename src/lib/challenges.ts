@@ -7,24 +7,40 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 
-export type ChallengeKind = "most_logged" | "most_kinds" | "longest_streak";
+// The three auto-scored kinds + 'freeform' = a manually-judged competition.
+export type ChallengeKind = "most_logged" | "most_kinds" | "longest_streak" | "freeform";
+
+/** The auto-scored kinds offered when creating a plain challenge. */
+export const SCORED_KINDS: ChallengeKind[] = ["most_logged", "most_kinds", "longest_streak"];
 
 export const KIND_LABEL: Record<ChallengeKind, string> = {
   most_logged: "Most logged",
   most_kinds: "Most kinds",
   longest_streak: "Longest run",
+  freeform: "Competition",
 };
 export const KIND_UNIT: Record<ChallengeKind, string> = {
   most_logged: "logged",
   most_kinds: "kinds",
   longest_streak: "nights running",
+  freeform: "",
 };
+
+export function isFreeform(kind: ChallengeKind): boolean {
+  return kind === "freeform";
+}
 
 export interface Challenge {
   id: string;
   circleId: string;
   createdBy: string;
   kind: ChallengeKind;
+  /** Optional custom name (falls back to KIND_LABEL when absent). */
+  title?: string;
+  /** Free-form only: the written rule the creator sets. */
+  rule?: string;
+  /** Free-form only: the participant the creator declared the winner. */
+  winnerId?: string;
   startsOn: string;
   endsOn: string;
   participantIds: string[];
@@ -89,7 +105,7 @@ export function useChallenges(circleId: string | null): { challenges: Challenge[
     (async () => {
       const { data } = await supabase!
         .from("challenges")
-        .select("id, circle_id, created_by, kind, starts_on, ends_on, challenge_members(user_id)")
+        .select("id, circle_id, created_by, kind, title, rule, winner_id, starts_on, ends_on, challenge_members(user_id)")
         .eq("circle_id", circleId)
         .order("created_at", { ascending: false });
       if (!active) return;
@@ -99,6 +115,9 @@ export function useChallenges(circleId: string | null): { challenges: Challenge[
           circleId: r.circle_id as string,
           createdBy: r.created_by as string,
           kind: r.kind as ChallengeKind,
+          title: (r.title as string) ?? undefined,
+          rule: (r.rule as string) ?? undefined,
+          winnerId: (r.winner_id as string) ?? undefined,
           startsOn: r.starts_on as string,
           endsOn: r.ends_on as string,
           participantIds: ((r.challenge_members as { user_id: string }[]) ?? []).map((m) => m.user_id),
@@ -140,7 +159,9 @@ export function useChallengeBoard(challenge: Challenge | null): { board: BoardRo
             ? (r.total as number)
             : kind === "most_kinds"
               ? (r.kinds as number)
-              : longestRun(dates);
+              : kind === "longest_streak"
+                ? longestRun(dates)
+                : 0; // freeform — not auto-scored; ordered by name instead
         return { userId: r.user_id as string, name: r.display_name as string, value };
       });
       rows.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
@@ -159,21 +180,33 @@ export function useChallengeBoard(challenge: Challenge | null): { board: BoardRo
 export async function createChallenge(
   meId: string,
   circleId: string,
-  kind: ChallengeKind,
-  startsOn: string,
-  endsOn: string,
+  opts: { kind: ChallengeKind; startsOn: string; endsOn: string; title?: string; rule?: string },
 ): Promise<string | null> {
   if (!supabase) return "offline";
   const id = crypto.randomUUID();
   // no .select(): challenges_read calls a definer fn (PostgREST RETURNING gotcha)
-  const { error } = await supabase
-    .from("challenges")
-    .insert({ id, circle_id: circleId, created_by: meId, kind, starts_on: startsOn, ends_on: endsOn });
+  const { error } = await supabase.from("challenges").insert({
+    id,
+    circle_id: circleId,
+    created_by: meId,
+    kind: opts.kind,
+    starts_on: opts.startsOn,
+    ends_on: opts.endsOn,
+    title: opts.title?.trim() || null,
+    rule: opts.rule?.trim() || null,
+  });
   if (error) return error.message;
   // starting one is opting in
   const { error: mErr } = await supabase.from("challenge_members").insert({ challenge_id: id, user_id: meId });
   bump();
   return mErr ? mErr.message : null;
+}
+
+/** Free-form competition: the creator declares (or clears, with null) the winner. */
+export async function setChallengeWinner(challengeId: string, winnerId: string | null) {
+  if (!supabase) return;
+  await supabase.rpc("set_challenge_winner", { cid: challengeId, winner: winnerId });
+  bump();
 }
 
 export async function joinChallenge(challengeId: string, meId: string) {
