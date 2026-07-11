@@ -1,0 +1,21 @@
+{
+  "id": "/",
+  "name": "brewdiary — drink diary",
+  "short_name": "brewdiary",
+  "description": "An all-inclusive drink diary. Tap a day, log a drink, watch the year quietly fill in.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["lifestyle", "social", "food"],
+  "background_color": "#0b0c12",
+  "theme_color": "#0b0c12",
+  "icons": [
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" },
+    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" }
+  ]
+}

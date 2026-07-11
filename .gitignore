@@ -1,0 +1,39 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+.env
+
+# exported Ninkasi training data (user chat — never commit)
+/scripts/ninkasi/out/
+
+# internal working folder — local-only planning/handoff, NOT shipped or shared
+# (see CLAUDE.md → "Internal working folder"). Kept off git on purpose.
+/internal/
+
+# python caches (from the taste-engine skill + ninkasi-ai tooling)
+__pycache__/
+*.pyc
+
+# typescript
+*.tsbuildinfo

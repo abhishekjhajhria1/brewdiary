@@ -1,0 +1,44 @@
+# Ninkasi model — training + serving configuration.
+# One file the scripts read so hyperparameters live in version control, not in your shell history.
+
+model:
+  # The base we fine-tune. Chosen: Qwen2.5-7B-Instruct — Apache-2.0 (commercial + rebrandable,
+  # no MAU cap, no attribution strings), strong instruction-following, multilingual, 32k+ context.
+  # See LICENSE-NOTES.md for why this over Llama-3.1-8B / Mistral-7B (both also supported — just
+  # change base_model and the chat template is auto-detected from the tokenizer).
+  base_model: "Qwen/Qwen2.5-7B-Instruct"
+  # Where the merged, ready-to-serve model is written.
+  output_name: "ninkasi-7b"
+  max_seq_len: 2048            # persona + short context + a few turns fits comfortably
+  load_in_4bit: true          # QLoRA — trains on a single 16–24GB GPU (T4/L4/3090/4090/A10)
+
+# LoRA adapter — small, cheap, mergeable. We tune HER onto the base, not the base itself.
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+train:
+  epochs: 3                   # small persona corpus → 2–4 epochs; watch eval, stop before parroting
+  batch_size: 2
+  grad_accum: 8               # effective batch 16
+  learning_rate: 0.0002       # 2e-4, standard for QLoRA
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  lr_scheduler: "cosine"
+  seed: 42
+  # Mask the prompt so loss is computed on Ninkasi's replies only (she learns to ANSWER, not to
+  # echo the user). finetune.py uses TRL's completion-only collator to do this.
+  train_on_responses_only: true
+
+data:
+  persona_seed: "data/persona_seed.jsonl"   # hand-crafted bootstrap corpus (in this repo)
+  # Optional: the app's real, consented exchanges exported by scripts/ninkasi/export-dataset.mjs.
+  # Leave as-is if you haven't collected any yet — build_dataset.py just uses the seed.
+  app_export_glob: "../scripts/ninkasi/out/*.jsonl"
+  val_fraction: 0.08
+  # Upsample the hard guardrail/persona examples so 3 epochs don't dilute them. build_dataset.py
+  # duplicates any seed row tagged in this list of substrings (matched against the user message).
+  upsample_keywords: ["16", "17", "underage", "too much", "black out", "blackout", "explicit", "whole bottle"]
+  upsample_factor: 3

@@ -1,0 +1,23 @@
+# Ninkasi model workshop — Python deps.
+#
+# For JUST building the dataset (no GPU), you only need:
+#     pip install pyyaml
+#
+# For training (needs a CUDA GPU), install the full stack below. Versions are floors known to work
+# together as of early 2026; pin exact versions in your GPU environment for reproducibility.
+
+# --- dataset build (CPU, always) ---
+pyyaml>=6.0
+
+# --- training (GPU) ---
+torch>=2.3
+transformers>=4.44
+datasets>=2.20
+trl>=0.9
+peft>=0.12
+accelerate>=0.33
+bitsandbytes>=0.43        # 4-bit QLoRA; Linux/WSL or a CUDA Windows build
+sentencepiece>=0.2        # tokenizer for some bases
+
+# --- eval / serving are stdlib-only (urllib) on the client side ---
+# vLLM (serving) installs separately in its own env:  pip install vllm

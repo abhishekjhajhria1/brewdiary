@@ -1,0 +1,19 @@
+# Built datasets (contain real user exchanges once you fold in the app export — never commit)
+/out/
+
+# Model weights / adapters / checkpoints
+*.safetensors
+*.gguf
+*.bin
+*.pt
+_checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# HF / training caches
+.cache/
+wandb/

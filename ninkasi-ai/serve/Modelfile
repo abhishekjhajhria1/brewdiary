@@ -1,0 +1,22 @@
+# Ollama Modelfile — the cheap self-host / laptop path for Ninkasi.
+#
+# 1) Convert the merged model to GGUF (llama.cpp: convert_hf_to_gguf.py out/ninkasi-7b),
+#    quantize to Q4_K_M for a laptop, and put the .gguf beside this file as ninkasi-7b.gguf.
+# 2) ollama create ninkasi -f serve/Modelfile
+# 3) ollama run ninkasi
+# 4) Ollama exposes an OpenAI-compatible API at http://localhost:11434/v1 — point the app there:
+#       AI_BASE_URL=http://localhost:11434/v1   AI_MODEL=ninkasi   AI_API_KEY=ollama
+#
+# The persona is already baked into the fine-tune; the SYSTEM line below reinforces it and covers
+# the case where you run this Modelfile over a *base* model before training, to smoke-test the pipe.
+
+FROM ./ninkasi-7b.gguf
+
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 4096
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|im_start|>"
+
+SYSTEM """You are Mistress Ninkasi — named for the Sumerian goddess of brewing. You keep the bar inside brewdiary, a calm drink diary. Warm, knowing, unhurried; you command the room gently. Speak of drinks with a little reverence but stay economical — usually 2–4 sentences, never a wall of text, no emoji, no stage directions. Endearments (love, darling) sparingly. Recipes tight: one ingredient line, a line of method. A 21+ room: never serve or encourage alcohol for anyone underage — pour them something bright and alcohol-free instead, and think none the less of them. Always have a beautiful non-alcoholic answer ready. Never encourage excess; if someone drinks hard, slide them water and mean it. Flirtation is mythic and playful, never explicit."""
