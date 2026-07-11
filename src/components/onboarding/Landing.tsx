@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useEntries } from "@/lib/store";
-import { signIn, signUp } from "@/lib/profile";
+import { signIn, signUp, sendPasswordReset } from "@/lib/profile";
 import { countsByDate, recentDrinks, recentMoods } from "@/lib/derive";
 import { addMonths } from "@/lib/date";
 import { MonthCalendar } from "../calendar/MonthCalendar";
@@ -172,9 +172,27 @@ function AuthSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const router = useRouter();
 
   const isSignup = mode === "signup";
+
+  async function forgot() {
+    if (busy) return;
+    if (!email.trim()) {
+      setError("Enter your email above first, then tap reset.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const res = await sendPasswordReset(email);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setResetSent(true);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -200,8 +218,8 @@ function AuthSheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <button aria-label="Close" className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="glass-strong animate-sheet relative w-full max-w-md rounded-t-[28px] p-6 sm:rounded-[28px] sm:p-8">
+      <button aria-label="Close" className="absolute inset-0 bg-black/55 backdrop-blur-[3px]" onClick={onClose} />
+      <div className="glass-strong animate-sheet relative w-full max-w-md rounded-t-[28px] bg-canvas/95 p-6 sm:rounded-[28px] sm:p-8">
         {confirm ? (
           <>
             <h2 className="display text-3xl leading-tight">Check your email.</h2>
@@ -218,7 +236,7 @@ function AuthSheet({
           </>
         ) : (
           <>
-            <p className="label mb-3 text-faint">
+            <p className="label mb-3 text-muted">
               {isSignup
                 ? loggedCount > 0
                   ? loggedCount > 1
@@ -269,12 +287,29 @@ function AuthSheet({
               </button>
             </form>
 
+            {/* forgot password — sign-in only */}
+            {!isSignup &&
+              (resetSent ? (
+                <p className="mt-3 text-center text-xs text-muted">
+                  Reset link sent to <span className="text-ink">{email}</span> — check your inbox.
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={forgot}
+                  disabled={busy}
+                  className="mt-3 w-full text-center text-xs text-muted transition-colors hover:text-ink disabled:opacity-40"
+                >
+                  Forgot password?
+                </button>
+              ))}
+
             <button
               onClick={() => {
                 setError(null);
                 onSwitch(isSignup ? "signin" : "signup");
               }}
-              className="mt-4 w-full text-center text-xs text-faint transition-colors hover:text-ink"
+              className="mt-4 w-full text-center text-xs text-muted transition-colors hover:text-ink"
             >
               {isSignup ? "Already have a diary? Sign in" : "New here? Create a diary"}
             </button>
@@ -304,7 +339,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="label mb-1.5 block text-faint">{label}</span>
+      <span className="label mb-1.5 block text-muted">{label}</span>
       <input
         autoFocus={autoFocus}
         required={required}

@@ -199,3 +199,19 @@ export async function signOut(): Promise<void> {
   }
   await supabase.auth.signOut();
 }
+
+/** Email a password-reset link. Redirects to /reset on THIS origin (dev or prod).
+ *  Requires the reset redirect URL to be allow-listed in Supabase Auth settings. */
+export async function sendPasswordReset(email: string): Promise<AuthResult> {
+  if (!supabase) return { ok: false, error: "Password reset needs the cloud backend." };
+  const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/reset` : undefined;
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Set a new password for the current (recovery) session — used by the /reset page. */
+export async function updatePassword(password: string): Promise<AuthResult> {
+  if (!supabase) return { ok: false, error: "offline" };
+  const { error } = await supabase.auth.updateUser({ password });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
