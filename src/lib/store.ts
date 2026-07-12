@@ -136,16 +136,20 @@ async function loadRemote() {
   if (!supabase) return;
   const { data, error } = await supabase
     .from("entries")
-    .select("id, date, drink, type, mood, note, venue, who_with, created_at, entry_photos(id, url, sort_order)")
+    .select("id, date, drink, type, mood, note, venue, who_with, visibility, created_at, entry_photos(id, url, sort_order)")
     .order("date", { ascending: true });
   if (!error && data) setCache((data as EntryRow[]).map(rowToEntry));
 }
 
-async function migrateLocalToRemote(local: Entry[], userId: string) {
-  if (!supabase || local.length === 0) return;
+/** Returns true only if the rows actually landed — the caller must NOT clear the
+ *  local diary otherwise (a network blip at sign-in must never lose entries). */
+async function migrateLocalToRemote(local: Entry[], userId: string): Promise<boolean> {
+  if (!supabase || local.length === 0) return true;
   // Insert rows first, then their photos.
-  await supabase.from("entries").insert(local.map((e) => entryToRow(e, userId)));
+  const { error } = await supabase.from("entries").insert(local.map((e) => entryToRow(e, userId)));
+  if (error) return false;
   for (const e of local) await syncPhotos(e, userId);
+  return true;
 }
 
 // ── auth wiring ─────────────────────────────────────────────────────────────
@@ -158,8 +162,8 @@ async function applyAuth(s: AuthState) {
     mode = "remote";
     const local = readLocal();
     if (local.length) {
-      await migrateLocalToRemote(local, currentUser);
-      writeLocal([]); // moved up — don't double-count
+      const moved = await migrateLocalToRemote(local, currentUser);
+      if (moved) writeLocal([]); // moved up — don't double-count (kept locally if the upload failed)
     }
     await loadRemote();
   } else {

@@ -1,7 +1,8 @@
-// Route guards — the server-side half of auth. Signed-out visits to the app's
-// interior (diary tabs, split, parties, Ninkasi) bounce to the landing instead of
-// rendering chrome-less dead ends. Public by design: "/" (landing), /p/<code>
-// (party invites for non-users), /discover (a shop window).
+// Route guards — the server-side half of auth. Only the SOCIAL interior (Together,
+// Split, parties) needs a session; signed-out visits there bounce to the landing.
+// Public by design: "/" (landing), /you + /bartender (they run fully on the local
+// diary — experience first, register at the moment of value), /p/<code> (party
+// invites for non-users), /discover (a shop window).
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -37,5 +38,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/you", "/together", "/split", "/party/:path*", "/bartender"],
+  matcher: ["/together", "/split", "/party/:path*"],
 };

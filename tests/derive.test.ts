@@ -58,10 +58,16 @@ describe("currentStreak (with grace)", () => {
     expect(currentStreak(counts)).toBe(2);
   });
 
-  it("forgives one missed day but a second miss ends it", () => {
-    // logged today and day-2, but day-1 and day-3 missed
+  it("forgives one missed day but two misses in a row end it", () => {
+    // logged today and day-2, but day-1 and day-3/day-4 missed
     const counts = countsByDate([entry({ date: dayBack(0) }), entry({ date: dayBack(2) })]);
-    expect(currentStreak(counts)).toBe(2); // grace bridges day-1; day-3 miss stops it
+    expect(currentStreak(counts)).toBe(2); // grace bridges day-1; day-3+day-4 misses stop it
+  });
+
+  it("grace replenishes — separated single misses don't end the streak", () => {
+    // logged 0, 2, 4 — days 1 and 3 each missed in isolation
+    const counts = countsByDate([entry({ date: dayBack(0) }), entry({ date: dayBack(2) }), entry({ date: dayBack(4) })]);
+    expect(currentStreak(counts)).toBe(3);
   });
 
   it("is 0 with no entries", () => {
@@ -77,6 +83,19 @@ describe("longestStreak (with grace)", () => {
       entry({ date: "2026-06-02" }),
       entry({ date: "2026-06-04" }),
       entry({ date: "2026-06-05" }),
+    ]);
+    expect(longestStreak(counts)).toBe(4);
+  });
+
+  it("bridges any number of isolated gaps, but a double gap breaks the run", () => {
+    // 1,2, gap 3, 4, gap 5, 6 → replenishing grace bridges both → run of 4 logged days
+    // then gaps 7+8 (two in a row) end it; 9 starts a new run of 1
+    const counts = countsByDate([
+      entry({ date: "2026-06-01" }),
+      entry({ date: "2026-06-02" }),
+      entry({ date: "2026-06-04" }),
+      entry({ date: "2026-06-06" }),
+      entry({ date: "2026-06-09" }),
     ]);
     expect(longestStreak(counts)).toBe(4);
   });

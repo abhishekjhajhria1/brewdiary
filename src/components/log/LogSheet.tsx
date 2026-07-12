@@ -46,6 +46,12 @@ export function LogSheet({
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [justLogged, setJustLogged] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Remove is undoable: the entry is only hidden here, and the real delete commits
+  // after a short window (or on sheet close). Undo simply cancels the timer, so the
+  // original entry — id, createdAt, photos — survives untouched.
+  const [pendingDelete, setPendingDelete] = useState<Entry | null>(null);
+  const pendingRef = useRef<Entry | null>(null);
+  const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sharing, setSharing] = useState<Entry | null>(null);
   const [shareFor, setShareFor] = useState<string | null>(null);
   const profile = useProfile();
@@ -90,6 +96,36 @@ export function LogSheet({
       document.body.style.overflow = "";
     };
   }, [onClose]);
+
+  // Closing the sheet commits any still-pending remove.
+  useEffect(
+    () => () => {
+      if (deleteTimer.current) clearTimeout(deleteTimer.current);
+      if (pendingRef.current) deleteEntry(pendingRef.current.id);
+    },
+    [],
+  );
+
+  function setPending(e: Entry | null) {
+    pendingRef.current = e;
+    setPendingDelete(e);
+  }
+
+  function requestRemove(e: Entry) {
+    if (pendingRef.current && pendingRef.current.id !== e.id) deleteEntry(pendingRef.current.id); // commit the previous one
+    if (deleteTimer.current) clearTimeout(deleteTimer.current);
+    if (editingId === e.id) reset();
+    setPending(e);
+    deleteTimer.current = setTimeout(() => {
+      if (pendingRef.current) deleteEntry(pendingRef.current.id);
+      setPending(null);
+    }, 5000);
+  }
+
+  function undoRemove() {
+    if (deleteTimer.current) clearTimeout(deleteTimer.current);
+    setPending(null);
+  }
 
   function reset() {
     setDrink("");
@@ -164,6 +200,9 @@ export function LogSheet({
     setPhotos((p) => [...p, ...read].slice(0, 4));
   }
 
+  // a pending remove is hidden from the list (the delete commits when the undo window closes)
+  const visibleEntries = pendingDelete ? dayEntries.filter((e) => e.id !== pendingDelete.id) : dayEntries;
+
   // live autocomplete + a gentle "we know the tidy name for this" nudge
   const typing = drink.trim();
   const suggestions = typing && !picked ? suggestDrinks(drink, history, 6) : [];
@@ -200,9 +239,20 @@ export function LogSheet({
           </button>
         </header>
 
-        {dayEntries.length > 0 && (
+        {pendingDelete && (
+          <div className="animate-fade mb-5 flex items-center justify-between rounded-ctl border border-line px-3 py-2 text-sm text-muted">
+            <span className="truncate">
+              Removed <span className="text-ink">{pendingDelete.drink}</span>
+            </span>
+            <button onClick={undoRemove} className="ml-3 shrink-0 font-medium text-accent">
+              Undo
+            </button>
+          </div>
+        )}
+
+        {visibleEntries.length > 0 && (
           <ul className="mb-5 divide-y divide-line border-y border-line">
-            {dayEntries.map((e) => (
+            {visibleEntries.map((e) => (
               <li key={e.id} className="py-2.5">
                 <div className="flex items-center justify-between gap-3">
                 <button
@@ -249,7 +299,7 @@ export function LogSheet({
                     Card
                   </button>
                   <button
-                    onClick={() => deleteEntry(e.id)}
+                    onClick={() => requestRemove(e)}
                     aria-label={`Delete ${e.drink}`}
                     className="text-faint transition-colors hover:text-ink"
                   >
@@ -377,13 +427,18 @@ export function LogSheet({
             <Field label="Photos">
               <div className="flex flex-wrap items-center gap-2">
                 {photos.map((p) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={p.id}
-                    src={p.url}
-                    alt=""
-                    className="h-14 w-14 rounded-ctl object-cover"
-                  />
+                  <div key={p.id} className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={p.url} alt="" className="h-14 w-14 rounded-ctl object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setPhotos((prev) => prev.filter((x) => x.id !== p.id))}
+                      aria-label="Remove photo"
+                      className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-[11px] leading-none text-paper transition-transform hover:scale-110"
+                    >
+                      ×
+                    </button>
+                  </div>
                 ))}
                 {photos.length < 4 && (
                   <label className="flex h-14 w-14 cursor-pointer items-center justify-center rounded-ctl border border-dashed border-line-strong text-xl text-faint transition-colors hover:border-ink hover:text-ink">

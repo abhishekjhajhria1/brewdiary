@@ -14,8 +14,9 @@ export function TopBar() {
   useEffect(() => setMounted(true), []);
   const onDiscover = pathname.startsWith("/discover");
 
-  // Hidden during onboarding (logged out) — the landing carries its own header.
-  if (!mounted || !profile) return null;
+  // On "/" a guest sees the landing, which carries its own header — everywhere
+  // else (You, Ninkasi, Discover are open to guests) the bar shows for everyone.
+  if (!mounted || (!profile && pathname === "/")) return null;
 
   return (
     <div className="glass mb-6 flex items-center justify-between rounded-tile px-4 py-2.5">

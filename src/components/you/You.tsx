@@ -254,9 +254,15 @@ function Settings() {
             clear ninkasi data
           </button>
         )}
-        <button onClick={handleSignOut} className="transition-colors hover:text-ink">
-          sign out
-        </button>
+        {profile ? (
+          <button onClick={handleSignOut} className="transition-colors hover:text-ink">
+            sign out
+          </button>
+        ) : (
+          <button onClick={() => router.push("/")} className="transition-colors hover:text-ink">
+            sign in
+          </button>
+        )}
         <input
           ref={fileRef}
           type="file"

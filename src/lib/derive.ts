@@ -20,8 +20,9 @@ export function intensityLevel(count: number): 0 | 1 | 2 | 3 | 4 {
 
 /**
  * Current streak with GRACE: walking back from today, count days that have ≥1 entry.
- * Today being empty doesn't break it (you might still log tonight). One additional
- * missed day is forgiven; a second consecutive miss ends the streak.
+ * Today being empty doesn't break it (you might still log tonight). Grace replenishes
+ * on every logged day, so any isolated miss is forgiven — only `grace + 1` misses
+ * in a row end the streak.
  */
 export function currentStreak(counts: Map<string, number>, grace = 1): number {
   const today = parseKey(todayKey());
@@ -35,6 +36,7 @@ export function currentStreak(counts: Map<string, number>, grace = 1): number {
     const k = toKey(cursor);
     if (counts.get(k)) {
       streak++;
+      graceLeft = grace; // a logged day restores the gap allowance
       cursor = addDays(cursor, -1);
     } else if (graceLeft > 0) {
       graceLeft--;
@@ -46,7 +48,7 @@ export function currentStreak(counts: Map<string, number>, grace = 1): number {
   return streak;
 }
 
-/** Longest run of logged days anywhere in history, same one-gap grace. */
+/** Longest run of logged days anywhere in history, same replenishing grace. */
 export function longestStreak(counts: Map<string, number>, grace = 1): number {
   const keys = [...counts.keys()].sort();
   if (keys.length === 0) return 0;
@@ -60,8 +62,9 @@ export function longestStreak(counts: Map<string, number>, grace = 1): number {
     if (counts.get(toKey(d))) {
       run++;
       best = Math.max(best, run);
+      graceLeft = grace; // a logged day restores the gap allowance
     } else if (graceLeft > 0) {
-      graceLeft--; // forgive a single gap inside the run
+      graceLeft--; // forgive an isolated gap inside the run
     } else {
       run = 0;
       graceLeft = grace;

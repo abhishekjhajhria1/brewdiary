@@ -4,28 +4,36 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { useProfile } from "@/lib/profile";
+import { useAuth } from "@/lib/profile";
 
 const TABS = [
   { href: "/", label: "Calendar" },
-  { href: "/together", label: "Together" },
+  { href: "/together", label: "Together", authed: true }, // social is sign-in-only
   { href: "/bartender", label: "Ninkasi" },
   { href: "/you", label: "You" },
 ];
 
 export function TabBar() {
   const pathname = usePathname();
-  const profile = useProfile();
+  const auth = useAuth();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // Hidden during onboarding — no nav until there's an account.
-  if (!mounted || !profile) return null;
+  // Wait for the session to resolve so the bar doesn't flash between layouts.
+  if (!mounted || auth.status === "loading") return null;
+
+  // Guests still get the local diary — only the social tab needs an account.
+  const tabs = TABS.filter((t) => !t.authed || auth.profile);
 
   return (
     <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-40 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
-      <div className="glass mx-auto grid max-w-md grid-cols-4 overflow-hidden rounded-tile">
-        {TABS.map((t) => {
+      <div
+        className={clsx(
+          "glass mx-auto grid max-w-md overflow-hidden rounded-tile",
+          tabs.length === 4 ? "grid-cols-4" : "grid-cols-3",
+        )}
+      >
+        {tabs.map((t) => {
           const active = t.href === "/" ? pathname === "/" : pathname.startsWith(t.href);
           return (
             <Link
