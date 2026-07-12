@@ -4,9 +4,9 @@
 // link (works for non-users), RSVP, and the party page collects everything
 // guests share in. The list lives here; the room itself is /party/<id>.
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import clsx from "clsx";
-import { useParties, createParty, joinParty, consumePendingPartyCode, type Party } from "@/lib/parties";
+import { useParties, createParty, joinParty, type Party } from "@/lib/parties";
 import { useAuth } from "@/lib/profile";
 import { MONTH_NAMES, parseKey, todayKey } from "@/lib/date";
 
@@ -21,12 +21,8 @@ export function Parties() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // a party link opened before signing in — honor it now
-  useEffect(() => {
-    if (!me) return;
-    const pending = consumePendingPartyCode();
-    if (pending) joinParty(pending);
-  }, [me]);
+  // (a party link opened before sign-in is honored by Together — it owns the
+  // mount; this component only exists while its tab is selected)
 
   if (!me) return null;
 
@@ -59,10 +55,10 @@ export function Parties() {
   const past = parties.filter((p) => p.date < today);
 
   return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-baseline justify-between">
-        <p className="label text-faint">Parties</p>
-        <span className="flex items-center gap-3 text-sm">
+    <section className="mt-6">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <p className="min-w-0 text-sm text-faint">One night, one room — everything guests share lands here.</p>
+        <span className="flex shrink-0 items-center gap-3 text-sm">
           <button
             onClick={() => {
               setMode(mode === "new" ? "idle" : "new");

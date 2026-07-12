@@ -35,12 +35,11 @@ Imports use the `@/*` alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui
 - `scripts/` · `tests/` — dev tooling + unit tests
 - `docs/` — the plain-English handbook (start at [`docs/README.md`](docs/README.md))
 
-## 👉 New here? Read [`CLAUDE.md`](CLAUDE.md) first
+## 👉 New here? Start at [`docs/`](docs/)
 
-[`CLAUDE.md`](CLAUDE.md) is the developer & AI front door: the full folder map, the `src/lib` responsibilities,
-the non-negotiable conventions, the two verification gates, and what's built vs. blocked. For a gentle,
-zero-assumptions tour, read [`docs/`](docs/). For any UI work, use the `taste-engine` skill in `.claude/skills/`
-and obey its `reference/` spec.
+[`docs/README.md`](docs/README.md) is the front door: a zero-assumptions tour of the product, the folder
+map, the `src/lib` responsibilities, the conventions, and what's built vs. blocked. Before calling any
+change done, run the three checks: `npm test`, `npm run lint`, `npm run build`.
 
 > A local-only `internal/` folder (git-ignored, not in a fresh clone) holds the maintainer's dense working
-> notes. `CLAUDE.md` + `docs/` are self-sufficient without it.
+> notes. `docs/` is self-sufficient without it.

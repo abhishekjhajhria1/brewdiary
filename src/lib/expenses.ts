@@ -27,10 +27,8 @@ export interface Settlement {
   createdAt: string;
 }
 
-let version = 0;
 const subs = new Set<() => void>();
 function bump() {
-  version++;
   subs.forEach((s) => s());
 }
 

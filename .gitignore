@@ -27,11 +27,14 @@ yarn-error.log*
 # exported Ninkasi training data (user chat — never commit)
 /scripts/ninkasi/out/
 
-# internal working folder — local-only planning/handoff, NOT shipped or shared
-# (see CLAUDE.md → "Internal working folder"). Kept off git on purpose.
+# internal working folder — local-only planning/handoff, NOT shipped or shared.
 /internal/
 
-# python caches (from the taste-engine skill + ninkasi-ai tooling)
+# maintainer's local tooling & notes — never committed
+/.claude/
+/CLAUDE.md
+
+# python caches (local tooling)
 __pycache__/
 *.pyc
 

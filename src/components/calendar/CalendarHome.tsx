@@ -55,7 +55,7 @@ export function CalendarHome() {
       {mem && (
         <button
           onClick={() => setSelected(mem.date)}
-          className="glass glass-press mt-5 flex w-full items-baseline gap-2 rounded-tile px-4 py-3 text-left text-sm text-muted"
+          className="glass glass-press mt-4 flex w-full items-baseline gap-2 rounded-tile px-4 py-3 text-left text-sm text-muted"
         >
           <span className="label shrink-0">looking back</span>
           <span className="truncate">
@@ -69,7 +69,7 @@ export function CalendarHome() {
       )}
 
       {/* optional quick-trackers (cigarettes, water…) for TODAY — sit above the calendar */}
-      <DayCounters dateKey={todayKey()} className="mt-6" />
+      <DayCounters dateKey={todayKey()} className="mt-4" />
 
       <div className="mt-8">
         {view === "month" ? (

@@ -68,10 +68,10 @@ export function Circles() {
   }
 
   return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-baseline justify-between">
-        <p className="label text-faint">Circles</p>
-        <span className="flex items-center gap-3 text-sm">
+    <section className="mt-6">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <p className="min-w-0 text-sm text-faint">Private rooms — a few friends, one shared mosaic.</p>
+        <span className="flex shrink-0 items-center gap-3 text-sm">
           <button
             onClick={() => {
               setMode(mode === "new" ? "idle" : "new");

@@ -17,9 +17,8 @@ When you open the project folder, the important things are:
 | `tests/` | **Automated checks** for the logic in `src/lib`. Run with `npm test`. |
 | `public/` | Files served as-is: the app icon, the offline "service worker," the install manifest. |
 | `docs/` | **These plain-English docs.** |
-| `CLAUDE.md` | The **developer & AI front door** — folder map, conventions, and the two checks to run before finishing. Read it first. |
 | `README.md` | The short front-page readme. |
-| `internal/` | **Local-only working notes** (planning + decision history). *Git-ignored* — it is deliberately **not** in a fresh clone. If you have it, read it before starting; if you don't, `CLAUDE.md` + these docs are enough. |
+| `internal/` | **Local-only working notes** (planning + decision history). *Git-ignored* — it is deliberately **not** in a fresh clone. If you have it, read it before starting; if you don't, these docs are enough. |
 | `.env.local` | **Secret settings** (API keys, database URL). Never shared. Not in version control. |
 | `.env.example` | A safe, blank template showing which secrets are needed. |
 | `package.json` | The project's ID card: its name, its commands (`dev`, `build`, `test`), and its dependencies. |

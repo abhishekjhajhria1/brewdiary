@@ -113,7 +113,7 @@ export function ShareCard({ entry, onClose }: { entry: Entry; onClose: () => voi
   const canShare = typeof navigator !== "undefined" && "canShare" in navigator;
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-4 bg-ink/40 p-5">
+    <div className="fixed inset-0 z-60 flex flex-col items-center justify-center gap-4 bg-ink/40 p-5">
       <button aria-label="Close" onClick={onClose} className="absolute inset-0" />
 
       <div className="relative flex w-full max-w-sm flex-col items-center gap-4">

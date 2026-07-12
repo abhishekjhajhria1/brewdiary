@@ -208,10 +208,3 @@ export async function sendPasswordReset(email: string): Promise<AuthResult> {
   const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
-
-/** Set a new password for the current (recovery) session — used by the /reset page. */
-export async function updatePassword(password: string): Promise<AuthResult> {
-  if (!supabase) return { ok: false, error: "offline" };
-  const { error } = await supabase.auth.updateUser({ password });
-  return error ? { ok: false, error: error.message } : { ok: true };
-}

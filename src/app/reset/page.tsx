@@ -1,21 +1,23 @@
 "use client";
 
 // Password-reset landing. The email link brings the user here with a recovery
-// token in the URL; supabase-js (createBrowserClient, detectSessionInUrl) turns
-// it into a short-lived session and fires PASSWORD_RECOVERY. We then let them set
-// a new password (updateUser) and drop them straight into the diary. Public route
+// token; supabase-js (createBrowserClient, detectSessionInUrl) turns it into a
+// short-lived session. Setting the NEW password happens over a server route
+// (/api/auth/password) because browser-side `auth.updateUser()` can hang forever
+// on supabase-js's internal lock — the server path always resolves. Public route
 // (not in the middleware matcher) — the token arrives client-side, not as a cookie.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { updatePassword } from "@/lib/profile";
 
 export default function ResetPage() {
   const router = useRouter();
   const [phase, setPhase] = useState<"checking" | "ready" | "invalid">("checking");
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [confirmTouched, setConfirmTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,45 +26,87 @@ export default function ResetPage() {
       setPhase("invalid");
       return;
     }
+    const sb = supabase;
     let settled = false;
     const ready = () => {
       settled = true;
       setPhase("ready");
     };
-    // supabase-js processes the recovery token in the URL on load, then fires this
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+    const fail = (msg?: string) => {
+      if (settled) return;
+      settled = true;
+      if (msg) setLinkError(msg);
+      setPhase("invalid");
+    };
+
+    // Supabase reports link problems in the URL (?error_description=… or #error_description=…) —
+    // surface the real reason instead of a generic timeout.
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const queryParams = new URLSearchParams(window.location.search);
+    const urlError = hashParams.get("error_description") || queryParams.get("error_description");
+    if (urlError) {
+      fail(urlError.replace(/\+/g, " "));
+      return;
+    }
+
+    // token_hash links (cross-device safe — works even when the email is opened in a
+    // different browser than the one that requested the reset) → verify explicitly.
+    const tokenHash = queryParams.get("token_hash");
+    if (tokenHash) {
+      sb.auth
+        .verifyOtp({ type: "recovery", token_hash: tokenHash })
+        .then(({ error }) => (error ? fail(error.message) : ready()))
+        .catch(() => fail("Couldn't reach the server — check your connection and reopen the link."));
+      return;
+    }
+
+    // PKCE links (?code=…) are exchanged automatically on load; watch for the session.
+    const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY" || session) ready();
     });
-    // …or the session may already be established by the time we mount
-    supabase.auth.getSession().then(({ data }) => {
+    sb.auth.getSession().then(({ data }) => {
       if (data.session) ready();
     });
-    // no recovery session after a moment → the link is stale or was already used
-    const t = setTimeout(() => {
-      if (!settled) setPhase("invalid");
-    }, 3000);
+    // no recovery session after a grace period → stale/used link (or opened in a
+    // different browser than the one that asked for it)
+    const t = setTimeout(() => fail(), 8000);
     return () => {
       sub.subscription.unsubscribe();
       clearTimeout(t);
     };
   }, []);
 
+  const mismatch = confirmTouched && confirm.length > 0 && confirm !== password;
+  const canSubmit = password.length >= 6 && confirm === password && !busy;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
-    if (password.length < 6) {
-      setError("At least 6 characters.");
-      return;
-    }
-    if (password !== confirm) {
-      setError("Those don't match.");
+    if (!canSubmit) {
+      setConfirmTouched(true);
+      if (confirm !== password) setError("The two passwords don't match.");
       return;
     }
     setBusy(true);
     setError(null);
-    const res = await updatePassword(password);
-    if (!res.ok) {
-      setError(res.error);
+    try {
+      // Hard 15s cap — this form must never spin forever again.
+      const ctrl = new AbortController();
+      const kill = setTimeout(() => ctrl.abort(), 15_000);
+      const res = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(kill);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setError(body?.error || "Couldn't save the new password — try again.");
+        setBusy(false);
+        return;
+      }
+    } catch {
+      setError("That took too long — check your connection and try again.");
       setBusy(false);
       return;
     }
@@ -85,8 +129,8 @@ export default function ResetPage() {
           <>
             <h1 className="display text-3xl leading-tight">Link expired.</h1>
             <p className="mt-3 text-[15px] leading-relaxed text-muted">
-              This reset link is invalid or has already been used. Head back and request a fresh one from
-              &ldquo;Forgot password?&rdquo;.
+              {linkError ??
+                "This reset link is invalid, already used, or was opened in a different browser than the one that requested it. Head back and request a fresh one from “Forgot password?”."}
             </p>
             <Link
               href="/"
@@ -105,6 +149,7 @@ export default function ResetPage() {
                 <input
                   type="password"
                   autoFocus
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="At least 6 characters"
@@ -115,19 +160,22 @@ export default function ResetPage() {
                 <span className="label mb-1.5 block text-muted">Confirm</span>
                 <input
                   type="password"
+                  autoComplete="new-password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
+                  onBlur={() => setConfirmTouched(true)}
                   placeholder="Type it again"
                   className="w-full border-b border-line-strong bg-transparent pb-2 text-[15px] outline-none placeholder:text-faint focus:border-ink"
                 />
+                {mismatch && <span className="mt-1.5 block text-sm text-accent">The two passwords don&apos;t match.</span>}
               </label>
               {error && <p className="text-sm text-accent">{error}</p>}
               <button
                 type="submit"
-                disabled={busy || password.length < 6}
+                disabled={!canSubmit}
                 className="w-full rounded-ctl bg-ink py-3 text-sm font-medium uppercase tracking-[0.12em] text-paper transition-opacity hover:opacity-90 disabled:opacity-40"
               >
-                {busy ? "…" : "Save new password"}
+                {busy ? "Saving…" : "Save new password"}
               </button>
             </form>
           </>

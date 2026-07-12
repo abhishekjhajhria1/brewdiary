@@ -54,9 +54,11 @@ export function rateLimit(key: string, limit = 20, windowMs = 60_000): RateResul
   return { ok: true, remaining: limit - hit.count, retryAfter: 0 };
 }
 
-/** Best-effort client identifier from proxy headers, falling back to a shared bucket. */
+/** Best-effort client identifier from proxy headers, falling back to a shared bucket.
+ *  Prefers x-real-ip (set by the platform proxy, e.g. Vercel) over x-forwarded-for,
+ *  which a direct client can spoof to rotate buckets when self-hosted without a proxy.
+ *  Keys are length-capped so a hostile header can't bloat the bucket map. */
 export function clientKey(req: Request): string {
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0].trim();
-  return req.headers.get("x-real-ip") || "anon";
+  const ip = req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for")?.split(",")[0].trim();
+  return (ip || "anon").slice(0, 64);
 }

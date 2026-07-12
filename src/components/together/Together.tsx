@@ -18,6 +18,7 @@ import {
   type SocialProfile,
 } from "@/lib/friends";
 import { useAuth } from "@/lib/profile";
+import { consumePendingPartyCode, joinParty } from "@/lib/parties";
 import { useEntries } from "@/lib/store";
 import { useWishlist, addWish } from "@/lib/wishlist";
 import { friendPicks } from "@/lib/derive";
@@ -27,10 +28,30 @@ import { VenueLink } from "../ui/VenueLink";
 import { Circles } from "./Circles";
 import { Parties } from "./Parties";
 
+// The three rooms inside Together. The feed leads; circles and parties wait
+// behind their own segment instead of stacking into one overwhelming scroll.
+type Room = "feed" | "circles" | "parties";
+
+const ROOMS: { id: Room; label: string }[] = [
+  { id: "feed", label: "Feed" },
+  { id: "circles", label: "Circles" },
+  { id: "parties", label: "Parties" },
+];
+
 export function Together() {
+  const me = useAuth().profile?.id;
   const { friends } = useFriends();
   const { feed, loading } = useFeed();
+  const [room, setRoom] = useState<Room>("feed");
   const [openFriend, setOpenFriend] = useState<SocialProfile | null>(null);
+
+  // A party link opened before signing in — honor it here, on Together itself:
+  // the Parties component only mounts on its own tab, so it can't be trusted to run.
+  useEffect(() => {
+    if (!me) return;
+    const pending = consumePendingPartyCode();
+    if (pending) joinParty(pending);
+  }, [me]);
 
   return (
     <>
@@ -45,47 +66,78 @@ export function Together() {
         Your calendar stays yours and quiet. This is the other room — what friends are pouring.
       </p>
 
+      <div role="tablist" aria-label="Together rooms" className="glass mt-5 grid grid-cols-3 rounded-ctl p-1">
+        {ROOMS.map((r, i) => (
+          <button
+            key={r.id}
+            id={`room-tab-${r.id}`}
+            role="tab"
+            aria-selected={room === r.id}
+            aria-controls="room-panel"
+            tabIndex={room === r.id ? 0 : -1}
+            onClick={() => setRoom(r.id)}
+            onKeyDown={(e) => {
+              // the ARIA tabs pattern: arrow keys move + focus the neighbor tab
+              if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+              e.preventDefault();
+              const delta = e.key === "ArrowRight" ? 1 : -1;
+              const next = ROOMS[(i + delta + ROOMS.length) % ROOMS.length].id;
+              setRoom(next);
+              document.getElementById(`room-tab-${next}`)?.focus();
+            }}
+            className={clsx(
+              "rounded-[7px] py-3.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors",
+              room === r.id ? "bg-ink text-paper" : "text-faint hover:text-ink",
+            )}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      <div role="tabpanel" id="room-panel" aria-labelledby={`room-tab-${room}`}>
+      {room === "feed" && (
+        <>
+          <People friends={friends} onOpenFriend={setOpenFriend} />
+
+          <FriendPicks feed={feed} />
+
+          {friends.length === 0 ? (
+            <p className="mt-10 text-center text-sm text-faint">
+              Add a friend by their handle to see what they&apos;re pouring.
+            </p>
+          ) : loading ? (
+            <ul className="mt-8 space-y-3" aria-hidden>
+              {[0, 1, 2].map((i) => (
+                <li key={i} className="glass h-28 animate-pulse rounded-tile" />
+              ))}
+            </ul>
+          ) : feed.length === 0 ? (
+            <p className="mt-10 text-center text-sm text-faint">
+              Quiet so far — nothing shared to friends yet. Share an entry from your diary and it lands here.
+            </p>
+          ) : (
+            <ul className="mt-8 space-y-3">
+              {feed.map((item) => (
+                <FeedCard key={item.id} item={item} onOpenFriend={setOpenFriend} />
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      {room === "circles" && <Circles />}
+
+      {room === "parties" && <Parties />}
+      </div>
+
       <Link
         href="/split"
-        className="glass glass-press mt-5 flex items-center justify-between gap-4 rounded-tile p-4"
+        className="mt-12 flex items-center justify-between border-t border-line pt-5 text-[15px] text-muted transition-colors hover:text-ink"
       >
-        <div>
-          <p className="label mb-1 text-faint">Split</p>
-          <p className="text-[15px] text-ink">Split a tab or a round with friends.</p>
-        </div>
-        <span className="shrink-0 text-sm font-medium text-accent">Open →</span>
+        <span>Split a tab or a round with friends</span>
+        <span className="shrink-0 text-sm font-medium text-accent">Split →</span>
       </Link>
-
-      <People friends={friends} onOpenFriend={setOpenFriend} />
-
-      <Circles />
-
-      <Parties />
-
-      <FriendPicks feed={feed} />
-
-      {/* The feed */}
-      {friends.length === 0 ? (
-        <p className="mt-10 text-center text-sm text-faint">
-          Add a friend by their handle to see what they&apos;re pouring.
-        </p>
-      ) : loading ? (
-        <ul className="mt-8 space-y-3" aria-hidden>
-          {[0, 1, 2].map((i) => (
-            <li key={i} className="glass h-28 animate-pulse rounded-tile" />
-          ))}
-        </ul>
-      ) : feed.length === 0 ? (
-        <p className="mt-10 text-center text-sm text-faint">
-          Quiet so far — nothing shared to friends yet. Share an entry from your diary and it lands here.
-        </p>
-      ) : (
-        <ul className="mt-8 space-y-3">
-          {feed.map((item) => (
-            <FeedCard key={item.id} item={item} onOpenFriend={setOpenFriend} />
-          ))}
-        </ul>
-      )}
 
       {openFriend && <FriendSheet friend={openFriend} onClose={() => setOpenFriend(null)} />}
     </>
@@ -96,10 +148,14 @@ export function Together() {
 function People({ friends, onOpenFriend }: { friends: SocialProfile[]; onOpenFriend: (f: SocialProfile) => void }) {
   const me = useAuth().profile?.id;
   const requests = useFriendRequests();
+  const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SocialProfile[]>([]);
   const [requested, setRequested] = useState<Set<string>>(new Set());
   const [searching, setSearching] = useState(false);
+
+  // With no friends yet, the search IS the section — keep it open.
+  const searchOpen = adding || friends.length === 0;
 
   // debounced search
   useEffect(() => {
@@ -133,10 +189,10 @@ function People({ friends, onOpenFriend }: { friends: SocialProfile[]; onOpenFri
   const friendIds = new Set(friends.map((f) => f.id));
 
   return (
-    <section className="mt-7">
+    <section className="mt-6">
       {/* incoming requests */}
       {requests.length > 0 && (
-        <div className="mb-6">
+        <div className="mb-5">
           <p className="label mb-3 text-faint">Friend requests</p>
           <ul className="space-y-2">
             {requests.map((r) => (
@@ -158,15 +214,49 @@ function People({ friends, onOpenFriend }: { friends: SocialProfile[]; onOpenFri
         </div>
       )}
 
+      {/* friend rail + the add toggle */}
+      <div className="flex items-center gap-5 overflow-x-auto pb-1">
+        {friends.map((f) => (
+          <button key={f.id} onClick={() => onOpenFriend(f)} className="flex shrink-0 flex-col items-center gap-2">
+            <span className="glass glass-press flex h-12 w-12 items-center justify-center rounded-full font-display text-lg text-ink">
+              {f.name[0]?.toUpperCase()}
+            </span>
+            <span className="text-xs text-muted">{f.name}</span>
+          </button>
+        ))}
+        {friends.length > 0 && (
+          <button
+            onClick={() => {
+              setAdding((v) => !v);
+              setQuery("");
+            }}
+            aria-expanded={adding}
+            className="flex shrink-0 flex-col items-center gap-2"
+          >
+            <span
+              className={clsx(
+                "glass glass-press flex h-12 w-12 items-center justify-center rounded-full text-lg transition-colors",
+                adding ? "text-accent" : "text-muted",
+              )}
+            >
+              +
+            </span>
+            <span className="text-xs text-muted">{adding ? "Close" : "Add"}</span>
+          </button>
+        )}
+      </div>
+
       {/* add friends */}
-      <div className="mb-6">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Add a friend by name or @handle"
-          className="glass w-full rounded-ctl px-4 py-2.5 text-[15px] outline-none placeholder:text-faint"
-        />
-        {query.trim().length >= 2 && (
+      {searchOpen && (
+        <div className="mt-4">
+          <input
+            autoFocus={adding}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Add a friend by name or @handle"
+            className="glass w-full rounded-ctl px-4 py-2.5 text-[15px] outline-none placeholder:text-faint"
+          />
+          {query.trim().length >= 2 && (
           <ul className="mt-2 space-y-2">
             {searching && results.length === 0 && <li className="px-1 text-sm text-faint">Searching…</li>}
             {!searching && results.length === 0 && <li className="px-1 text-sm text-faint">No one by that name or handle.</li>}
@@ -192,20 +282,7 @@ function People({ friends, onOpenFriend }: { friends: SocialProfile[]; onOpenFri
               );
             })}
           </ul>
-        )}
-      </div>
-
-      {/* friend rail */}
-      {friends.length > 0 && (
-        <div className="flex gap-5 overflow-x-auto pb-1">
-          {friends.map((f) => (
-            <button key={f.id} onClick={() => onOpenFriend(f)} className="flex shrink-0 flex-col items-center gap-2">
-              <span className="glass glass-press flex h-12 w-12 items-center justify-center rounded-full font-display text-lg text-ink">
-                {f.name[0]?.toUpperCase()}
-              </span>
-              <span className="text-xs text-muted">{f.name}</span>
-            </button>
-          ))}
+          )}
         </div>
       )}
     </section>
@@ -229,7 +306,7 @@ function FriendPicks({ feed }: { feed: FeedEntry[] }) {
   if (picks.length === 0) return null;
 
   return (
-    <section className="mt-9">
+    <section className="mt-8">
       <p className="label mb-3 text-faint">To try, from friends</p>
       <div className="flex flex-wrap gap-2">
         {picks.map((drink) => {

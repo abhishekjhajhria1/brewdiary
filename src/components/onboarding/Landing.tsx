@@ -9,6 +9,7 @@ import { addMonths } from "@/lib/date";
 import { MonthCalendar } from "../calendar/MonthCalendar";
 import { LogSheet } from "../log/LogSheet";
 import { ThemeToggle } from "../ui/ThemeToggle";
+import { useParallax } from "../ui/useParallax";
 
 type AuthMode = "signup" | "signin";
 
@@ -75,6 +76,10 @@ export function Landing() {
           Coffee, wine, a midnight kombucha — whatever you poured. Tap a day, log it in
           a breath, and watch the year quietly fill in.
         </p>
+        <p className="mt-4 max-w-md text-[15px] leading-relaxed text-muted">
+          The squares darken the more you drink, so a month of habits is one glance, not a
+          spreadsheet. Keep it private, or pour with friends.
+        </p>
       </section>
 
       <YearPreview />
@@ -90,12 +95,22 @@ export function Landing() {
           onNext={() => step(1)}
           canNext={canNext}
         />
-        {entries.length === 0 && (
-          <p className="mt-8 text-center text-sm text-faint">
-            Tap any day to log your first drink. No account needed yet.
-          </p>
-        )}
+        <p className="mt-8 text-center text-sm text-faint">
+          {entries.length === 0
+            ? "Tap any day to log your first drink. No account needed yet."
+            : "Logged on this device. Make a diary below and it comes with you."}
+        </p>
       </section>
+
+      <Ledger />
+
+      <ClosingCTA
+        loggedCount={entries.length}
+        onStart={() => {
+          autoOpened.current = true; // taking the CTA counts as the ask; don't auto-pop later
+          setAuthMode("signup");
+        }}
+      />
 
       {selected && (
         <LogSheet
@@ -122,6 +137,7 @@ export function Landing() {
 // A decorative, deterministic mosaic — "what your year becomes." Clearly a preview,
 // never the visitor's data. Deterministic so SSR and client render identically.
 function YearPreview() {
+  const drift = useParallax<HTMLDivElement>();
   const COLS = 26;
   const ROWS = 7;
   const cells = Array.from({ length: COLS * ROWS }, (_, i) => {
@@ -137,6 +153,7 @@ function YearPreview() {
   return (
     <section aria-hidden className="select-none">
       <div
+        ref={drift}
         className="grid gap-1"
         style={{ gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))` }}
       >
@@ -151,6 +168,85 @@ function YearPreview() {
         ))}
       </div>
       <p className="label mt-3 text-faint">A year of nights — darker is more</p>
+    </section>
+  );
+}
+
+// What the diary actually gives you back. A ledger, not a grid of feature cards —
+// every line here is a screen that already exists behind the sign-up.
+const LEDGER: { title: string; body: string }[] = [
+  {
+    title: "Streaks that survive a bad week",
+    body: "Log a night, keep the run. One missed day is forgiven, so a slip doesn’t wipe a month. Seven, thirty, a hundred — the meter fills as you go.",
+  },
+  {
+    title: "Your year, counted",
+    body: "What you poured most, your longest run, the words you keep reaching for. All read back from your entries — nothing to fill in twice.",
+  },
+  {
+    title: "Together, not a feed",
+    body: "Share a single pour with friends, a private circle, or the party you’re at. Cheers and comments, no audience to perform for.",
+  },
+  {
+    title: "Settle the round",
+    body: "Add a tab, add who was there, and the split falls out in ₹. Who paid, who owes, done at the table.",
+  },
+  {
+    title: "Ninkasi, behind the bar",
+    body: "Ask what to pour next. She reads your diary and your friends’ shared pours, not a catalogue of sponsored bottles.",
+  },
+  {
+    title: "Private until you say otherwise",
+    body: "Every entry starts private on your device. Sharing is a separate tap, always after the fact.",
+  },
+];
+
+function Ledger() {
+  return (
+    <section className="mt-20">
+      <h2 className="display text-[2.5rem] leading-[1.05] sm:text-5xl">
+        One tap a night.
+        <br />
+        It adds up.
+      </h2>
+
+      <ol className="mt-8 divide-y divide-line">
+        {LEDGER.map(({ title, body }, i) => (
+          <li key={title} className="grid grid-cols-[2.25rem_1fr] gap-x-3 py-5 sm:gap-x-5">
+            <span aria-hidden className="label tnum pt-1 text-faint">
+              {String(i + 1).padStart(2, "0")}
+            </span>
+            <div>
+              <h3 className="font-display text-lg text-ink">{title}</h3>
+              <p className="mt-1.5 max-w-md text-[15px] leading-relaxed text-muted">{body}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function ClosingCTA({ loggedCount, onStart }: { loggedCount: number; onStart: () => void }) {
+  const started = loggedCount > 0;
+
+  return (
+    <section className="glass mt-16 rounded-tile p-6 sm:p-8">
+      <h2 className="display text-[2.25rem] leading-[1.05] sm:text-[2.75rem]">
+        {started ? "Keep what you logged." : "Start tonight."}
+      </h2>
+      <p className="mt-4 max-w-md text-[15px] leading-relaxed text-muted">
+        {started
+          ? "Your entries live on this device until you make a diary. Sign up and they come with you — phone, laptop, next year."
+          : "A diary takes an email and a password. Free, no card, and the first square is one tap away."}
+      </p>
+      <button
+        type="button"
+        onClick={onStart}
+        className="mt-7 w-full rounded-ctl bg-ink py-3.5 text-sm font-medium uppercase tracking-[0.12em] text-paper transition-transform duration-150 ease-out hover:opacity-90 active:scale-[0.985] sm:w-auto sm:px-10"
+      >
+        Create a diary
+      </button>
     </section>
   );
 }

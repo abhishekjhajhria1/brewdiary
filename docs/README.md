@@ -36,11 +36,10 @@ cloud database (Supabase) that safely stores everyone's data. We're now building
 so Ninkasi is something we own and can market, not a service we rent forever.
 
 ## The other guides (and who they're for)
-- **`docs/`** (this one) → **for humans learning the project**, especially non-coders. Start here.
-- **`CLAUDE.md`** (repo root) → **for a developer or AI assistant** — the technical front door: folder map,
-  conventions, and the two checks (`npm test`, `npm run build`) to run before finishing anything.
+- **`docs/`** (this one) → **for anyone learning the project**, especially non-coders. Start here.
 - **`internal/`** → the maintainer's **local-only working notes** (planning + full decision history).
-  It's *git-ignored*, so it isn't in a fresh clone — `CLAUDE.md` + these docs stand on their own without it.
-- **`.claude/skills/taste-engine/`** → the **design rulebook** (why the app looks the way it does).
+  It's *git-ignored*, so it isn't in a fresh clone — these docs stand on their own without it.
+
+Before calling any change done, run the three checks: `npm test`, `npm run lint`, `npm run build`.
 
 If you only read one file, read [01 — What brewdiary is](01-what-is-brewdiary.md).

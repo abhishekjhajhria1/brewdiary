@@ -316,10 +316,23 @@ export function reseed() {
   }
 }
 
-/** Replace the whole diary (used by import). Validates lightly. */
+/** Replace the whole diary (used by import). Drops malformed rows — a bad file
+ *  must never crash the app later (day sorts call `createdAt.localeCompare`) or
+ *  corrupt the mosaic with non-day keys. */
 export function replaceAll(entries: Entry[]) {
+  const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
   const clean = entries.filter(
-    (e): e is Entry => Boolean(e && typeof e.id === "string" && typeof e.date === "string" && typeof e.drink === "string"),
+    (e): e is Entry =>
+      Boolean(
+        e &&
+          typeof e.id === "string" &&
+          typeof e.date === "string" &&
+          DAY_KEY.test(e.date) &&
+          typeof e.createdAt === "string" &&
+          typeof e.drink === "string" &&
+          (e.photos === undefined || Array.isArray(e.photos)) &&
+          (e.whoWith === undefined || Array.isArray(e.whoWith)),
+      ),
   );
   if (mode === "remote" && currentUser && supabase) {
     const userId = currentUser;
