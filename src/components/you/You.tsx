@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import clsx from "clsx";
 import { useEntries, reseed, resetAll, replaceAll, snapshot } from "@/lib/store";
-import { lexicon, stats, yearReview } from "@/lib/derive";
+import { lexicon, stats, yearReview, weekBalance } from "@/lib/derive";
+import { useGoals, setGoal, anyGoalSet, GOAL_MAX, type GoalKey } from "@/lib/goals";
 import { MilestoneMeter } from "../ui/MilestoneMeter";
 import { MONTH_NAMES, parseKey } from "@/lib/date";
 import type { Entry } from "@/lib/types";
@@ -12,7 +14,10 @@ import { useWishlist, addWish, removeWish, toggleWish } from "@/lib/wishlist";
 import { useProfile, signOut } from "@/lib/profile";
 import { isCollecting, setCollecting, clearTraining, useTrainingCount } from "@/lib/training";
 import { useShareTrends, setShareTrends } from "@/lib/trends";
+import { useCompeteVisible, setCompeteVisible } from "@/lib/points";
+import { useProfilePrivacy, setProfileVisibility, setSocialHandle, type ProfileVisibility } from "@/lib/publicProfile";
 import { useExtras, setExtra, EXTRAS, type ExtraKey } from "@/lib/features";
+import { exportEverything, deleteAccount } from "@/lib/dataRights";
 import { Chip } from "../ui/Chip";
 import { VenueLink } from "../ui/VenueLink";
 
@@ -60,6 +65,9 @@ export function You() {
           </div>
         )}
       </div>
+
+      {/* Balance — only ever appears once you've asked for it (You → Settings) */}
+      <BalanceCard entries={entries} />
 
       {/* Your year — a calm look-back, all derived */}
       {yr.total > 0 && (
@@ -234,7 +242,17 @@ function Settings() {
 
       {profile && <TrendsOptIn meId={profile.id} />}
 
+      {profile && <CompeteOptIn meId={profile.id} />}
+
+      {profile && <VenueScreenNote />}
+
+      {profile && <ProfilePrivacy meId={profile.id} handle={profile.handle} />}
+
+      <GoalsSettings />
+
       <ExtrasSettings />
+
+      {profile && <DataRights />}
 
       <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-faint">
         <button onClick={exportJson} className="transition-colors hover:text-ink">
@@ -263,6 +281,9 @@ function Settings() {
             sign in
           </button>
         )}
+        <Link href="/privacy" className="transition-colors hover:text-ink">
+          privacy
+        </Link>
         <input
           ref={fileRef}
           type="file"
@@ -272,6 +293,88 @@ function Settings() {
         />
       </div>
     </footer>
+  );
+}
+
+/** Your data, and the right to take it or destroy it. Not decoration: GDPR gives an
+ *  enforceable right of access and erasure, India's DPDP Act gives erasure, and both
+ *  app stores require an in-app account-deletion route. Deletion is real — the auth
+ *  user is destroyed and every table cascades from it. */
+function DataRights() {
+  const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  async function doExport() {
+    setBusy(true);
+    setError(await exportEverything());
+    setBusy(false);
+  }
+
+  async function doDelete() {
+    setBusy(true);
+    const err = await deleteAccount();
+    setBusy(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    router.push("/");
+  }
+
+  return (
+    <div className="mt-4 border-t border-line py-3">
+      <p className="text-sm text-ink">Your data</p>
+      <p className="mb-3 text-xs leading-relaxed text-faint">
+        Take a copy of everything we hold about you, or delete your account outright. Deleting is
+        immediate and permanent — the diary, the photos, the points, all of it.
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={doExport}
+          disabled={busy}
+          className="glass glass-press rounded-ctl px-3.5 py-2 text-sm text-muted transition-colors hover:text-ink disabled:opacity-50"
+        >
+          Download my data
+        </button>
+        <button
+          onClick={() => setAsking(true)}
+          disabled={busy}
+          className="rounded-ctl border border-line px-3.5 py-2 text-sm text-muted transition-colors hover:text-accent disabled:opacity-50"
+        >
+          Delete my account
+        </button>
+      </div>
+
+      {asking && (
+        <div className="glass mt-3 rounded-tile p-4">
+          <p className="text-sm text-ink">Delete everything?</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted">
+            Every entry, photo, friendship and point is destroyed. This cannot be undone, and we can&apos;t
+            get it back for you. Download your data first if you want to keep it.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={doDelete}
+              disabled={busy}
+              className="rounded-ctl bg-accent px-4 py-2 text-sm font-medium text-accent-contrast transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? "Deleting…" : "Yes, delete it all"}
+            </button>
+            <button
+              onClick={() => setAsking(false)}
+              className="rounded-ctl border border-line px-4 py-2 text-sm text-muted transition-colors hover:text-ink"
+            >
+              Keep my account
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && <p className="mt-2 text-sm text-accent">{error}</p>}
+    </div>
   );
 }
 
@@ -298,6 +401,219 @@ function TrendsOptIn({ meId }: { meId: string }) {
         </p>
       </div>
       <Toggle on={on} label="Anonymous taste trends" onToggle={toggle} />
+    </div>
+  );
+}
+
+/** Opt-in (default OFF) to the Together leaderboard. Flipping this ON is what
+ *  makes the "Board" appear in Together — and it's also what puts you ON it.
+ *  Friends who haven't opted in never show, so nobody is ranked unasked. */
+function CompeteOptIn({ meId }: { meId: string }) {
+  const { competeVisible, loaded } = useCompeteVisible();
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (loaded) setOn(competeVisible);
+  }, [loaded, competeVisible]);
+
+  function toggle() {
+    const next = !on;
+    setOn(next);
+    setCompeteVisible(meId, next);
+  }
+
+  return (
+    <div className="mt-4 flex items-center justify-between gap-4 border-t border-line py-3">
+      <div>
+        <p className="text-sm text-ink">Leaderboard in Together</p>
+        <p className="text-xs text-faint">
+          Show the board — and put me on it, next to friends who also opted in. Off by default; never your spend.
+        </p>
+      </div>
+      <Toggle on={on} label="Leaderboard in Together" onToggle={toggle} />
+    </div>
+  );
+}
+
+/** Consent to a bar's PHYSICAL screen is no longer a setting here — and that is
+ *  the point. It used to be a permanent global switch: flip it on for one fun
+ *  night and your name sat on every venue's TV forever. Consent to be on a screen
+ *  TONIGHT is not consent to be on screens ALWAYS. So you now grant it inside the
+ *  room you're actually in, and it dies with that night. */
+function VenueScreenNote() {
+  return (
+    <div className="mt-4 border-t border-line py-3">
+      <p className="text-sm text-ink">Venue screens</p>
+      <p className="text-xs leading-relaxed text-faint">
+        There is no always-on switch for this. When you are in a bar&apos;s room, you can choose — for that night only —
+        to appear on its screen, and whether your tab shows. It clears when the night ends.
+      </p>
+    </div>
+  );
+}
+
+/** Balance — the counterweight to Together's loud corner. Shows ONLY once you've
+ *  set a goal. The tone is a mirror, never a scold: it states the number and stops. */
+function BalanceCard({ entries }: { entries: Entry[] }) {
+  const goals = useGoals();
+  if (!anyGoalSet(goals)) return null;
+
+  const b = weekBalance(entries);
+  const overLimit = goals.weeklyLimit !== undefined && b.drinks > goals.weeklyLimit;
+  const dryMet = goals.dryDays !== undefined && b.dryDays >= goals.dryDays;
+
+  return (
+    <section className="mt-10">
+      <h2 className="label mb-3">Your balance</h2>
+      <div className="glass rounded-tile p-5">
+        <div className="grid grid-cols-2 gap-4">
+          {goals.weeklyLimit !== undefined && (
+            <div>
+              <p className={clsx("tnum font-display text-3xl", overLimit ? "text-accent" : "text-ink")}>
+                {b.drinks}
+                <span className="text-lg text-faint"> / {goals.weeklyLimit}</span>
+              </p>
+              <p className="mt-0.5 text-xs text-faint">drinks this week</p>
+            </div>
+          )}
+          {goals.dryDays !== undefined && (
+            <div>
+              <p className={clsx("tnum font-display text-3xl", dryMet ? "text-accent" : "text-ink")}>
+                {b.dryDays}
+                <span className="text-lg text-faint"> / {goals.dryDays}</span>
+              </p>
+              <p className="mt-0.5 text-xs text-faint">dry days</p>
+            </div>
+          )}
+        </div>
+        <p className="mt-4 text-xs leading-relaxed text-faint">
+          A rolling seven days. Yours alone — never shared, never shown to a bar, never on a board.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/** Gentle limits — both OFF by default, both on-device only. */
+function GoalsSettings() {
+  const goals = useGoals();
+
+  function edit(key: GoalKey, raw: string) {
+    const n = Number(raw);
+    setGoal(key, raw.trim() === "" || !Number.isFinite(n) || n <= 0 ? undefined : n);
+  }
+
+  const FIELDS: { key: GoalKey; label: string; hint: string }[] = [
+    { key: "weeklyLimit", label: "Weekly limit", hint: "Alcoholic drinks in a rolling 7 days." },
+    { key: "dryDays", label: "Dry days", hint: "Days with nothing alcoholic, per week." },
+  ];
+
+  return (
+    <div className="mt-4 border-t border-line py-3">
+      <p className="text-sm text-ink">Gentle limits</p>
+      <p className="mb-3 text-xs leading-relaxed text-faint">
+        Optional, and off unless you set one. Stays on this device — a private intention never leaves it.
+      </p>
+      <div className="flex flex-wrap gap-4">
+        {FIELDS.map((f) => (
+          <label key={f.key} className="flex-1 min-w-130px">
+            <span className="mb-1 block text-xs text-muted">{f.label}</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={GOAL_MAX[f.key]}
+              value={goals[f.key] ?? ""}
+              onChange={(e) => edit(f.key, e.target.value)}
+              placeholder="off"
+              aria-label={f.label}
+              className="glass w-full rounded-ctl px-3 py-2 text-[15px] text-ink placeholder:text-faint"
+            />
+            <span className="mt-1 block text-xs text-faint">{f.hint}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const VIS_LABEL: Record<ProfileVisibility, string> = {
+  friends: "Friends only",
+  fof: "Friends of friends",
+  public: "Public",
+};
+
+function ProfilePrivacy({ meId, handle }: { meId: string; handle: string }) {
+  const { visibility, socialHandle, loaded } = useProfilePrivacy();
+  const [vis, setVis] = useState<ProfileVisibility>("friends");
+  const [link, setLink] = useState("");
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    if (loaded) {
+      setVis(visibility);
+      setLink(socialHandle);
+    }
+  }, [loaded, visibility, socialHandle]);
+
+  function pick(v: ProfileVisibility) {
+    setVis(v);
+    setProfileVisibility(meId, v);
+  }
+  function saveLink() {
+    setSocialHandle(meId, link);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1600);
+  }
+
+  return (
+    <div className="mt-4 border-t border-line py-3">
+      <p className="text-sm text-ink">Public profile</p>
+      <p className="mb-3 text-xs text-faint">
+        Who can open your profile at /u/{handle}. Any of these shows a streak mosaic and totals — never your notes,
+        never your spend, never where you were.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {(["friends", "fof", "public"] as ProfileVisibility[]).map((v) => (
+          <button
+            key={v}
+            onClick={() => pick(v)}
+            aria-pressed={vis === v}
+            className={clsx(
+              "rounded-ctl px-3.5 py-1.5 text-sm transition-colors",
+              vis === v ? "bg-ink font-medium text-paper" : "glass glass-press text-muted hover:text-ink",
+            )}
+          >
+            {VIS_LABEL[v]}
+          </button>
+        ))}
+      </div>
+      {vis !== "friends" && (
+        <p className="mt-2 text-xs text-faint">
+          {vis === "public" ? "Live to anyone at " : "Open to your friends and their friends at "}
+          <Link href={`/u/${handle}`} className="text-accent transition-opacity hover:opacity-80">
+            /u/{handle}
+          </Link>
+        </p>
+      )}
+
+      <p className="label mb-1 mt-4 text-faint">One social link</p>
+      <p className="mb-2 text-xs text-faint">
+        Anyone who can see your profile will see this. Add only a handle you&apos;re fine with strangers finding — never your phone, email, or address.
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+          placeholder="@you or https://…"
+          aria-label="Social link"
+          className="glass w-full rounded-ctl px-4 py-2.5 text-[15px] text-ink placeholder:text-faint"
+        />
+        <button
+          onClick={saveLink}
+          className={clsx("shrink-0 text-sm transition-colors", saved ? "font-medium text-accent" : "text-muted hover:text-ink")}
+        >
+          {saved ? "Saved" : "Save"}
+        </button>
+      </div>
     </div>
   );
 }

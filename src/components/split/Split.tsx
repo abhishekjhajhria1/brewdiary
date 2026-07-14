@@ -14,11 +14,13 @@ import {
   type Expense,
 } from "@/lib/expenses";
 import { MONTH_NAMES, parseKey, toKey } from "@/lib/date";
+import { currencySymbol, formatMoney, savedCurrency } from "@/lib/money";
 
+// A split has no venue, so it uses the person's OWN currency (set at the age gate
+// from where they said they are; changeable in You → settings). Formatting goes
+// through Intl, so a German user gets 1.234,56 € and an Indian user ₹1,23,456.
 function money(n: number): string {
-  const v = Math.round(Math.abs(n) * 100) / 100;
-  const str = Number.isInteger(v) ? v.toString() : v.toFixed(2);
-  return `₹${str}`;
+  return formatMoney(Math.round(Math.abs(n) * 100) / 100, savedCurrency());
 }
 
 export function Split() {
@@ -247,7 +249,7 @@ function AddExpenseSheet({
           </label>
 
           <label className="block">
-            <span className="label mb-1.5 block text-faint">Total (₹)</span>
+            <span className="label mb-1.5 block text-faint">Total ({currencySymbol(savedCurrency())})</span>
             <input
               value={amount}
               onChange={(e) => setAmount(e.target.value)}

@@ -16,11 +16,26 @@ import {
   declineGuest,
   type Rsvp,
   type PartyEntry,
+  type PartyGuest,
 } from "@/lib/parties";
+import {
+  usePointsBoard,
+  awardCheckin,
+  awardVibe,
+  useHasCheckedIn,
+  useRoomConsent,
+  setRoomConsent,
+} from "@/lib/points";
+import { usePerkProgress } from "@/lib/perks";
+import { formatMoney } from "@/lib/money";
+import { ScoreCard, type Score } from "../share/ScoreCard";
 import { useAuth } from "@/lib/profile";
 import { MONTH_NAMES, parseKey, timeOfDayLabel, todayKey } from "@/lib/date";
 
 const RSVP_LABEL: Record<Rsvp, string> = { going: "Going", maybe: "Maybe", no: "Can't" };
+
+// Positive-only, always — you can hand these to your table, never dock anyone.
+const VIBE_REASONS = ["good sport", "great vibe", "kept it classy", "MVP"] as const;
 
 export function PartyRoom({ partyId }: { partyId: string }) {
   const me = useAuth().profile?.id;
@@ -199,6 +214,16 @@ export function PartyRoom({ partyId }: { partyId: string }) {
           ) : (
             <PartyLog entries={entries} me={me} />
           )}
+
+          {/* Tonight's points — the opt-in loud corner. The pours above stay
+              unranked; this is the game, and no one is ranked by what they spent. */}
+          <PointsBoard partyId={party.id} partyName={party.name} members={approved} me={me} />
+
+          {/* A venue room carries the house perk — your standing toward the reward. */}
+          {party.venueId && <PerkCard venueId={party.venueId} />}
+
+          {/* Only a venue has a wall screen to be on — so only a venue room asks. */}
+          {party.venueId && me && <ScreenConsent partyId={party.id} me={me} />}
         </>
       )}
 
@@ -239,6 +264,264 @@ export function PartyRoom({ partyId }: { partyId: string }) {
         )}
       </div>
     </>
+  );
+}
+
+// ── tonight's points: sparks (fun) + vibe (positive recognition) ─────────────
+// Together's loud corner, opt-in. The board is DERIVED (party_points_board sums
+// the ledger, counts only); vibe is positive-only and one-per-reason per person.
+function PointsBoard({
+  partyId,
+  partyName,
+  members,
+  me,
+}: {
+  partyId: string;
+  partyName: string;
+  members: PartyGuest[];
+  me?: string;
+}) {
+  const { board } = usePointsBoard(partyId);
+  const [openVibe, setOpenVibe] = useState<string | null>(null);
+  const [given, setGiven] = useState<Set<string>>(new Set());
+  const [checkedIn, setCheckedIn] = useState(false);
+  const [sharing, setSharing] = useState<Score | null>(null);
+
+  // Merge every member with their totals (a member on 0 still shows), then rank.
+  const byId = new Map(board.map((r) => [r.userId, r]));
+  const rows = members
+    .map((m) => ({
+      id: m.id,
+      name: m.id === me ? "you" : m.name,
+      sparks: byId.get(m.id)?.sparks ?? 0,
+      vibe: byId.get(m.id)?.vibe ?? 0,
+      isMe: m.id === me,
+    }))
+    .sort((a, b) => b.sparks - a.sparks || b.vibe - a.vibe || a.name.localeCompare(b.name));
+  const topSparks = Math.max(0, ...rows.map((r) => r.sparks));
+
+  // Read check-in straight off the ledger — NOT "has any spark", since sparks can
+  // arrive other ways. Survives a reload; the flag is just the optimistic head start.
+  const alreadyCheckedIn = useHasCheckedIn(partyId, me);
+  const myRank = rows.findIndex((r) => r.isMe);
+  const isCheckedIn = checkedIn || alreadyCheckedIn;
+
+  async function checkIn() {
+    if (!me) return;
+    setCheckedIn(true); // optimistic; award_checkin is idempotent for the day
+    await awardCheckin(partyId);
+  }
+
+  async function give(subjectId: string, reason: string) {
+    if (!me) return;
+    const key = `${subjectId}:${reason}`;
+    setGiven((s) => new Set(s).add(key));
+    setOpenVibe(null);
+    const err = await awardVibe(partyId, me, subjectId, reason);
+    if (err)
+      setGiven((s) => {
+        const n = new Set(s);
+        n.delete(key);
+        return n;
+      });
+  }
+
+  return (
+    <section className="mb-7">
+      <p className="label mb-1.5 text-faint">Tonight&apos;s points · opt-in</p>
+      <p className="mb-3 max-w-prose text-xs leading-relaxed text-faint">
+        Sparks are for trying something new — a new place, a new drink, a dry day. Coming back to your local doesn&apos;t
+        score (that&apos;s what the house perk is for). Vibe is what your table and the bar hand you for good company.
+      </p>
+
+      <button
+        onClick={checkIn}
+        disabled={isCheckedIn}
+        className={clsx(
+          "glass glass-press rounded-ctl px-4 py-2.5 text-sm transition-colors",
+          isCheckedIn ? "text-faint" : "text-ink hover:text-accent",
+        )}
+      >
+        {isCheckedIn ? "Checked in" : "Check in"}
+      </button>
+
+      <ul className="mt-4 divide-y divide-line border-y border-line">
+        {rows.map((r, i) => {
+          const leads = r.sparks > 0 && r.sparks === topSparks;
+          return (
+            <li key={r.id} className="py-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <span className="tnum w-4 text-xs text-faint">{i + 1}</span>
+                  <span className="truncate text-[15px] text-ink">{r.name}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-3 text-sm">
+                  <span className={clsx("tnum", leads ? "text-accent" : "text-muted")}>
+                    {r.sparks} <span className="text-xs text-faint">sparks</span>
+                  </span>
+                  {r.vibe > 0 && (
+                    <span className="tnum text-muted">
+                      {r.vibe} <span className="text-xs text-faint">vibe</span>
+                    </span>
+                  )}
+                  {!r.isMe && (
+                    <button
+                      onClick={() => setOpenVibe((cur) => (cur === r.id ? null : r.id))}
+                      aria-expanded={openVibe === r.id}
+                      className={clsx("transition-colors", openVibe === r.id ? "text-accent" : "text-faint hover:text-ink")}
+                    >
+                      Vibe
+                    </button>
+                  )}
+                </span>
+              </div>
+
+              {openVibe === r.id && (
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {VIBE_REASONS.map((reason) => {
+                    const isGiven = given.has(`${r.id}:${reason}`);
+                    return (
+                      <button
+                        key={reason}
+                        disabled={isGiven}
+                        onClick={() => give(r.id, reason)}
+                        className={clsx(
+                          "glass glass-press rounded-ctl px-3 py-2 text-xs transition-colors",
+                          isGiven ? "text-faint" : "text-muted hover:text-accent",
+                        )}
+                      >
+                        {reason}
+                        {isGiven && " ✓"}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      {myRank >= 0 && (rows[myRank].sparks > 0 || rows[myRank].vibe > 0) && (
+        <button
+          onClick={() =>
+            setSharing({
+              name: "you",
+              sparks: rows[myRank].sparks,
+              vibe: rows[myRank].vibe,
+              context: partyName,
+              rank: myRank + 1,
+              of: rows.length,
+            })
+          }
+          className="mt-4 w-full rounded-ctl border border-line py-2.5 text-sm text-muted transition-colors hover:text-ink"
+        >
+          Share your score
+        </button>
+      )}
+
+      {sharing && <ScoreCard score={sharing} onClose={() => setSharing(null)} />}
+    </section>
+  );
+}
+
+// ── consent to the bar's wall screen — FOR TONIGHT ONLY ─────────────────────
+// Granted here, in the room you're actually standing in, and it expires with the
+// night. Never a permanent global "put me on bar TVs" flag.
+function ScreenConsent({ partyId, me }: { partyId: string; me: string }) {
+  const { consent, loaded } = useRoomConsent(partyId);
+  const [onBoard, setOnBoard] = useState(false);
+  const [showTab, setShowTab] = useState(false);
+  useEffect(() => {
+    if (loaded) {
+      setOnBoard(consent.onBoard);
+      setShowTab(consent.showTab);
+    }
+  }, [loaded, consent.onBoard, consent.showTab]);
+
+  function set(next: { onBoard: boolean; showTab: boolean }) {
+    // A tab can never show for someone who isn't on the board.
+    const tab = next.onBoard && next.showTab;
+    setOnBoard(next.onBoard);
+    setShowTab(tab);
+    setRoomConsent(partyId, me, { onBoard: next.onBoard, showTab: tab });
+  }
+
+  return (
+    <section className="mb-7">
+      <p className="label mb-1.5 text-faint">The bar&apos;s screen · tonight only</p>
+
+      <button
+        onClick={() => set({ onBoard: !onBoard, showTab })}
+        aria-pressed={onBoard}
+        className={clsx(
+          "glass glass-press w-full rounded-ctl px-4 py-3 text-left text-sm transition-colors",
+          onBoard ? "text-ink" : "text-muted hover:text-ink",
+        )}
+      >
+        <span className="flex items-center justify-between gap-3">
+          <span>Show me on the screen</span>
+          <span className={clsx("text-xs", onBoard ? "text-accent" : "text-faint")}>{onBoard ? "On" : "Off"}</span>
+        </span>
+      </button>
+
+      {onBoard && (
+        <button
+          onClick={() => set({ onBoard, showTab: !showTab })}
+          aria-pressed={showTab}
+          className={clsx(
+            "glass glass-press mt-2 w-full rounded-ctl px-4 py-3 text-left text-sm transition-colors",
+            showTab ? "text-ink" : "text-muted hover:text-ink",
+          )}
+        >
+          <span className="flex items-center justify-between gap-3">
+            <span>…and show my tab</span>
+            <span className={clsx("text-xs", showTab ? "text-accent" : "text-faint")}>{showTab ? "On" : "Off"}</span>
+          </span>
+        </button>
+      )}
+
+      <p className="mt-2 text-xs leading-relaxed text-faint">
+        {onBoard
+          ? "Your name and points are on the bar's screen until this night ends — then you're off it automatically."
+          : "Nothing of yours is on the bar's screen. This choice is for this room only."}
+      </p>
+    </section>
+  );
+}
+
+// ── house perk: the guest's standing toward a venue's reward ─────────────────
+function PerkCard({ venueId }: { venueId: string }) {
+  const { perk, progress, earned, loading } = usePerkProgress(venueId);
+  if (loading || !perk) return null;
+
+  const spend = perk.kind === "spend";
+  const left = Math.max(0, perk.threshold - progress);
+  const fmt = (n: number) => (spend ? formatMoney(n, perk.currency, { round: true }) : `${n}`);
+
+  return (
+    <section className="mb-7">
+      <p className="label mb-2 text-faint">House perk</p>
+      <div className="glass rounded-tile p-4">
+        {earned ? (
+          <>
+            <p className="text-[15px] text-ink">
+              You&apos;ve earned <span className="font-medium text-accent">{perk.reward}</span>.
+            </p>
+            <p className="mt-1 text-xs text-faint">Show this to the bar to claim it.</p>
+          </>
+        ) : (
+          <>
+            <p className="text-[15px] text-ink">{perk.reward}</p>
+            <p className="mt-1 text-xs text-faint">
+              <span className="tnum">{fmt(progress)}</span> of <span className="tnum">{fmt(perk.threshold)}</span>
+              {spend ? " — " : " visits — "}
+              {fmt(left)} to go.
+            </p>
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 

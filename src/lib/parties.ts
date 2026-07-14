@@ -20,6 +20,7 @@ export interface Party {
   name: string;
   hostId: string;
   venue?: string;
+  venueId?: string; // set when a venue opened this as a "room" (→ house perks)
   date: string;
   inviteCode: string;
   going: number;
@@ -142,7 +143,7 @@ export function usePartyDetail(partyId: string | null): {
       const [p, m, s] = await Promise.all([
         supabase!
           .from("parties")
-          .select("id, name, host_id, venue, date, invite_code")
+          .select("id, name, host_id, venue, venue_id, date, invite_code")
           .eq("id", partyId)
           .maybeSingle(),
         supabase!
@@ -174,6 +175,7 @@ export function usePartyDetail(partyId: string | null): {
               name: p.data.name,
               hostId: p.data.host_id,
               venue: p.data.venue ?? undefined,
+              venueId: p.data.venue_id ?? undefined,
               date: p.data.date,
               inviteCode: p.data.invite_code,
               going: gs.filter((g) => g.rsvp === "going" && g.status === "approved").length,
@@ -271,19 +273,81 @@ export function consumePendingPartyCode(): string | null {
   }
 }
 
+// ── a venue's rooms (for the venue dashboard) ────────────────────────────────
+// A room IS a party with venue_id set. Venue staff can read them via the additive
+// parties_venue_staff_read policy (011). We keep this light — name/date/code only.
+export interface VenueRoom {
+  id: string;
+  name: string;
+  date: string;
+  inviteCode: string;
+}
+export function useVenueRooms(venueId: string | null): { rooms: VenueRoom[]; loading: boolean } {
+  const me = useAuth().profile?.id;
+  const v = useVersion();
+  const [rooms, setRooms] = useState<VenueRoom[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!supabase || !venueId || !me) {
+      setRooms([]);
+      setLoading(false);
+      return;
+    }
+    let active = true;
+    (async () => {
+      const { data } = await supabase!
+        .from("parties")
+        .select("id, name, date, invite_code")
+        .eq("venue_id", venueId)
+        .order("date", { ascending: false });
+      if (!active) return;
+      setRooms(
+        (data ?? []).map((r: Record<string, unknown>) => ({
+          id: r.id as string,
+          name: r.name as string,
+          date: r.date as string,
+          inviteCode: r.invite_code as string,
+        })),
+      );
+      setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [venueId, me, v]);
+
+  return { rooms, loading };
+}
+
 // ── mutations ────────────────────────────────────────────────────────────────
 export async function createParty(
   meId: string,
-  fields: { name: string; date: string; venue?: string },
+  fields: { name: string; date: string; venue?: string; venueId?: string; boardHours?: number },
 ): Promise<{ id: string } | { error: string }> {
   if (!supabase) return { error: "offline" };
   const name = fields.name.trim();
   if (!name) return { error: "name required" };
   const id = crypto.randomUUID();
-  // no .select(): parties_read calls a definer fn (PostgREST RETURNING gotcha)
+  // How long the venue's wall board stays live. The bar chooses; when it passes,
+  // every guest drops off the screen automatically (see 019_variety_and_consent).
+  const boardUntil = fields.boardHours
+    ? new Date(Date.now() + fields.boardHours * 3600_000).toISOString()
+    : null;
+  // no .select(): parties_read calls a definer fn (PostgREST RETURNING gotcha).
+  // venue_id (optional) links this party to a venue as its "room"; a guard trigger
+  // enforces that only that venue's staff may set it (see 011_venue_rooms.sql).
   const { error } = await supabase
     .from("parties")
-    .insert({ id, name, host_id: meId, date: fields.date, venue: fields.venue?.trim() || null });
+    .insert({
+      id,
+      name,
+      host_id: meId,
+      date: fields.date,
+      venue: fields.venue?.trim() || null,
+      venue_id: fields.venueId ?? null,
+      board_until: boardUntil,
+    });
   if (error) return { error: error.message };
   const { error: mErr } = await supabase.from("party_members").insert({ party_id: id, user_id: meId });
   bump();

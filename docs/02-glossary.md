@@ -100,6 +100,42 @@ tab. Terms are grouped, not alphabetical, so related ideas sit together.
 - **localStorage.** A small storage box inside the browser itself. We use it for on-device stuff (your
   theme choice, and a logged-out visitor's first drink before they make an account).
 
+## The bar layer: rooms, points & venues (full detail in doc 11)
+- **Venue.** A bar, pub, club or liquor store with an account in the app. It gets a dashboard at
+  **bar.bwdy.site** — which is not a second app, just the same one showing a different screen.
+- **Verified venue.** A venue *you* (the maintainer) have approved from a terminal. Only verified venues
+  can hand out vibe, record spend, or offer a reward. A venue can **never** verify itself.
+- **Staff.** People the venue's owner added by handle, with a role: **owner**, **manager** or
+  **bartender**. They sign in with an ordinary brewdiary account.
+- **Room.** Tonight, at a venue. Under the hood a room *is* a **party** with the venue's name attached —
+  no new concept, just a party that a bar opened. Guests join with a short code.
+- **Spark.** A point for **trying something new** — a bar you've never been to, a drink you've never
+  had, or a **dry day** you logged. Deliberately *not* a point for showing up again: a public score that
+  climbs the more often you go out drinking is the one thing this app must never build. Going back to
+  your local is rewarded privately instead, by that bar's own perk.
+- **Dry day.** A day you logged with **nothing in the glass**. It *keeps your streak* — because the
+  streak counts days you showed up to your **diary**, not days you drank — and it earns a spark. It is
+  never counted as a drink.
+- **Vibe.** A point for **being good company**, handed to you by your table *or* by the bar's waiters and
+  bartenders. **Positive-only, always** — there is no thumbs-down anywhere in brewdiary, and a bar can
+  never mark or rate a customer badly. It can only praise one.
+- **House perk.** A reward from **one** venue for coming back: "5 visits → a free pour," or "spend
+  ₹3,000 → a drink next time." **Private** — it's between you and that bar, never on a leaderboard.
+- **Spend.** What you ran up on a tab. **Only the bar can record it** — you cannot type in your own
+  number, by design, so it can't be faked. It is *never* what ranks you publicly.
+- **Kiosk.** The screen on the wall. The bar casts `bwdy.site/kiosk/<code>` to a TV and it shows
+  tonight's board. Nobody signs in to it, and **only guests who opted in appear on it** — and they opt
+  in **for that night only**, inside that room. When the bar's board expires, everyone drops off it.
+  (There is deliberately no permanent "always show me on bar screens" setting.)
+- **Ledger (append-only).** How points are stored: every award is one line that's added and never
+  edited, like a bank statement. Your total is **added up on the spot**, never saved as a number — the
+  same "derived, never stored" rule as the streak.
+- **Opt-in / consent switch.** A setting that starts **off** and does nothing until *you* turn it on.
+  The loud parts of the bar layer each have one (appear on the wall screen; be on your friends'
+  leaderboard; show your tab; make your profile public). Off is always the default.
+- **Friends-of-friends ("fof").** A privacy tier for your profile: not just your friends, but also
+  *their* friends — a middle setting between "friends only" and "anyone on the internet."
+
 ## AI words (full detail in doc 05)
 - **LLM (Large Language Model).** The kind of AI that understands and writes text — the "brain" behind a
   chatbot. Ninkasi is powered by one.

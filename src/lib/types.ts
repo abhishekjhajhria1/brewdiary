@@ -10,7 +10,11 @@ export type DrinkType =
   | "cocktail"
   | "spirit"
   | "soft"
-  | "other";
+  | "other"
+  /** A DRY DAY — a day you logged with nothing in the glass. It keeps the streak
+   *  (the streak is for showing up to the diary, not for drinking) but it is not
+   *  a drink: it never counts toward totals, the mosaic, or your lexicon. */
+  | "none";
 
 export interface Photo {
   id: string;
@@ -37,6 +41,11 @@ export interface Entry {
   visibility?: "private" | "friends";
 }
 
+/** The label a dry-day entry carries, so it reads as a sentence in a list. */
+export const DRY_DAY_LABEL = "dry day";
+
+// 'none' is deliberately absent — a dry day is its own action in the log sheet,
+// not a "kind of drink" you pick from a list.
 export const DRINK_TYPES: { value: DrinkType; label: string }[] = [
   { value: "coffee", label: "Coffee" },
   { value: "tea", label: "Tea" },

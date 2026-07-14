@@ -47,6 +47,9 @@ In Next.js, **each folder here becomes a web address.** A `page.tsx` file is the
 | `app/bartender/page.tsx` | The **Ninkasi** chat screen (`/bartender`). |
 | `app/party/[id]/page.tsx` | A **party page** — `[id]` means the address has a changing part, e.g. `/party/abc123`. |
 | `app/p/[code]/page.tsx` | A **public party invite** link (works for people without accounts). |
+| `app/u/[handle]/page.tsx` | An **opt-in profile** (`/u/<handle>`). The owner picks who may open it — *friends*, *friends-of-friends*, or *anyone* — and it shows counts only (the mosaic + totals), never notes or spend. |
+| `app/kiosk/[code]/page.tsx` | The **kiosk wall board** a venue casts to a TV — a full-screen leaderboard for one room. Only guests who opted into kiosk visibility appear on it. |
+| `app/venue/page.tsx` | The **venue (bar) dashboard**. In production it's served from the `bar.` subdomain (bar.bwdy.site) — `middleware.ts` rewrites that subdomain onto this route, so it's the same app, not a second one. |
 | `app/api/bartender/route.ts` | **The AI back-end.** Not a screen — a doorway the chat calls. It talks to the AI provider using the secret key, and streams the reply back. This is where the security guards (rate limit, size caps) live. |
 
 ### `src/components/` — the visual building blocks
@@ -64,14 +67,22 @@ Grouped by feature. Each `.tsx` file is one reusable piece of UI.
     **Extras counters** (cigarettes/water, from `lib/features.ts` + `lib/tallies.ts`).
 - **`together/`** — the social layer.
   - `Together.tsx` (the feed + friends), `Circles.tsx` (private groups + challenges),
-    `Parties.tsx` / `PartyRoom.tsx` (events + recaps), `RecentMosaic.tsx` (a friend's/circle's mini
+    `Parties.tsx` / `PartyRoom.tsx` (events + recaps, plus the party's sparks/vibe points board and the
+    house-perk card when a venue opened the room), `RecentMosaic.tsx` (a friend's/circle's mini
     mosaic).
+- **`venue/`** — `VenueApp.tsx`, the whole bar dashboard (sign in, claim a venue, the team, rooms,
+  verification requests, the house-perk editor).
+- **`kiosk/`** — `KioskBoard.tsx`, the full-screen wall leaderboard a venue casts to a TV.
+- **`profile/`** — `PublicProfile.tsx`, the opt-in public profile page at `/u/<handle>`.
 - **`split/`** — `Split.tsx`, the Splitwise-style bill tool.
 - **`you/`** — `You.tsx`, the whole You screen (stats, photo wall, wishlist, history, settings).
 - **`bartender/`** — `Bartender.tsx`, the chat interface for Ninkasi.
 - **`discover/`** — `Trends.tsx`, the live "what's pouring" anonymous trends card.
 - **`onboarding/`** — `Landing.tsx` (the marketing/first-run page) and `AgeGate.tsx` (the 18+ check).
-- **`share/`** — `ShareCard.tsx`, which paints an entry onto an image you can share on social media.
+- **`share/`** — the picture-makers. `ShareCard.tsx` paints an **entry** onto an image you can post;
+  `ScoreCard.tsx` paints a **score** (sparks + vibe + your rank) the same way. Both draw on the shared
+  scaffold in `canvas.ts`, so they look like siblings. The score card never shows a money figure — see
+  [doc 11](11-rooms-points-venues.md).
 - **`ui/`** — small shared pieces used everywhere: `TopBar.tsx`, `TabBar.tsx`, `ThemeToggle.tsx`,
   `Chip.tsx` (a little tag), `MilestoneMeter.tsx`, `PWA.tsx` (makes the app installable/offline).
 
@@ -95,6 +106,11 @@ This is where data and logic live. A few important patterns:
 | `bartender.ts` | **Ninkasi's personality** (the system prompt) + the offline scripted replies. |
 | `training.ts` | Collects consented chat exchanges to build the AI training set. |
 | `trends.ts` | The opt-in, anonymous taste-trends data. |
+| `points.ts` | **Sparks & vibe** — the party points board (summed live from an append-only ledger, positive-only) + the kiosk board + the "show me on venue screens" opt-in. |
+| `venues.ts` | The **bar side** — venues, staff roles (owner/manager/bartender), and verification requests (a venue can never approve itself). |
+| `perks.ts` | A venue's **house perk** ("5 visits → a free pour") and a guest's progress toward it — visits are counted from check-ins, never stored. |
+| `publicProfile.ts` | The **opt-in public profile** — reading someone's public page, plus your own visibility and social-link settings. |
+| `goals.ts` | **Gentle limits** — an optional weekly ceiling and/or dry-day target. Off by default, saved only on your device. |
 | `ratelimit.ts` | The **anti-abuse guard** for the AI route (caps requests per minute). |
 | `theme.ts` | Light/dark theme handling. |
 | `age.ts` | The 18+ age-gate logic. |

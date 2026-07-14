@@ -3,22 +3,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { useEntries } from "@/lib/store";
-import { countsByDate, currentStreak } from "@/lib/derive";
+import { currentStreak, loggedDates } from "@/lib/derive";
 import { MONTH_NAMES, parseKey } from "@/lib/date";
 import type { Entry } from "@/lib/types";
-
-// Export-only artifact: its own warm palette, independent of the app theme.
-const PAPER = "#faf6ee";
-const INK = "#1b1714";
-const ACCENT = "#b8742a";
-const W = 1080;
-const H = 1350;
+import {
+  ACCENT,
+  H,
+  INK,
+  PAPER,
+  W,
+  canShareFiles,
+  coverImage,
+  downloadCanvas,
+  fontsReady,
+  loadImage,
+  mark,
+  shareCanvas,
+  wrap,
+} from "./canvas";
 
 type Template = "minimal" | "poster";
 
 export function ShareCard({ entry, onClose }: { entry: Entry; onClose: () => void }) {
   const entries = useEntries();
-  const streak = currentStreak(countsByDate(entries));
+  const streak = currentStreak(loggedDates(entries));
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [template, setTemplate] = useState<Template>("minimal");
   const [bg, setBg] = useState<string | null>(entry.photos?.[0]?.url ?? null);
@@ -27,26 +35,13 @@ export function ShareCard({ entry, onClose }: { entry: Entry; onClose: () => voi
   const d = parseKey(entry.date);
   const dateLabel = `${MONTH_NAMES[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
 
-  const loadImage = (url: string) =>
-    new Promise<HTMLImageElement | null>((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = url;
-    });
-
   const draw = useCallback(async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     setRendering(true);
-    try {
-      await (document as Document & { fonts?: FontFaceSet }).fonts?.ready;
-    } catch {
-      /* fonts optional */
-    }
+    await fontsReady();
     const img = bg ? await loadImage(bg) : null;
 
     if (template === "minimal") drawMinimal(ctx, { img, entry, dateLabel, streak });
@@ -75,42 +70,10 @@ export function ShareCard({ entry, onClose }: { entry: Entry; onClose: () => voi
     r.readAsDataURL(file);
   }
 
-  function toBlob(): Promise<Blob | null> {
-    return new Promise((resolve) => {
-      const c = canvasRef.current;
-      if (!c) return resolve(null);
-      c.toBlob((b) => resolve(b), "image/png");
-    });
-  }
-
-  async function download() {
-    const blob = await toBlob();
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `brewdiary-${entry.date}.png`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function share() {
-    const blob = await toBlob();
-    if (!blob) return;
-    const file = new File([blob], `brewdiary-${entry.date}.png`, { type: "image/png" });
-    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-    if (nav.canShare?.({ files: [file] })) {
-      try {
-        await nav.share({ files: [file], title: "brewdiary", text: `${entry.drink} — ${entry.mood ?? ""}` });
-        return;
-      } catch {
-        /* user cancelled or unsupported — fall through to download */
-      }
-    }
-    download();
-  }
-
-  const canShare = typeof navigator !== "undefined" && "canShare" in navigator;
+  const file = `brewdiary-${entry.date}.png`;
+  const download = () => downloadCanvas(canvasRef.current, file);
+  const share = () => shareCanvas(canvasRef.current, file, `${entry.drink} — ${entry.mood ?? ""}`);
+  const canShare = canShareFiles();
 
   return (
     <div className="fixed inset-0 z-60 flex flex-col items-center justify-center gap-4 bg-ink/40 p-5">
@@ -183,13 +146,6 @@ interface DrawArgs {
   entry: Entry;
   dateLabel: string;
   streak: number;
-}
-
-function coverImage(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
-  const scale = Math.max(W / img.width, H / img.height);
-  const w = img.width * scale;
-  const h = img.height * scale;
-  ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
 }
 
 function drawMinimal(ctx: CanvasRenderingContext2D, { img, entry, dateLabel, streak }: DrawArgs) {
@@ -306,35 +262,3 @@ function drawPoster(ctx: CanvasRenderingContext2D, { img, entry, dateLabel, stre
   ctx.fillText(meta, 72, H - 72);
 }
 
-function wrap(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number): string[] {
-  const words = text.split(" ");
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word;
-    if (ctx.measureText(test).width > maxW && line) {
-      lines.push(line);
-      line = word;
-      if (lines.length === maxLines - 1) break;
-    } else {
-      line = test;
-    }
-  }
-  if (line && lines.length < maxLines) lines.push(line);
-  // truncate overflow with an ellipsis
-  if (lines.length === maxLines) {
-    let last = lines[maxLines - 1];
-    while (ctx.measureText(`${last}…`).width > maxW && last.length > 1) last = last.slice(0, -1);
-    if (words.join(" ") !== lines.join(" ")) lines[maxLines - 1] = `${last}…`;
-  }
-  return lines;
-}
-
-function mark(ctx: CanvasRenderingContext2D, x: number, y: number, color: string) {
-  ctx.globalAlpha = 0.7;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(x, y, 8, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-}

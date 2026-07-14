@@ -231,6 +231,14 @@ export function addEntry(input: NewEntry): Entry {
         setCache(cache.filter((e) => e.id !== entry.id)); // rollback
         return;
       }
+      // A spark for VARIETY (a drink you've never logged) or for a DRY DAY. Fired
+      // only once the row is really in the database, because award_diary checks the
+      // diary before it pays — you cannot mint a spark by claiming one. If it isn't
+      // new, the server simply declines; nothing here needs to know.
+      void supabase!.rpc("award_diary", {
+        kind: entry.type === "none" ? "dry-day" : "new-drink",
+        key: entry.type === "none" ? entry.date : entry.drink,
+      });
       const photos = await syncPhotos(entry, userId);
       if (photos !== entry.photos) {
         setCache(cache.map((e) => (e.id === entry.id ? { ...e, photos } : e)));

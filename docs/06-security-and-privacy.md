@@ -55,6 +55,30 @@ check we did it right. Each item says *what the risk is* and *how we handle it*.
 - **"Taste trends" are anonymous and consented:** the popularity feature only counts a drink when **3+
   different people** logged it, never attaches names, and only includes people who opted in. It reports
   numbers, never individuals.
+- **The points layer is positive-only and counts-only:** sparks and "vibe" inside a party are summed
+  from an append-only ledger and shown as numbers to that party's members only. Vibe can only ever be
+  *given* (never docked), and nobody is ranked by what they spent.
+- **A venue's kiosk screen is its own, stronger consent:** appearing *by name on a physical TV* requires
+  the separate "Show me on venue screens" switch (off by default) — being in the room is not enough.
+  The kiosk shows display names and counts only, never a user id or entry content.
+- **Spend cannot be self-reported:** only a **verified** venue's staff can record what a guest spent.
+  This isn't a rule the app politely follows — the `spend_events` table grants the app **no permission
+  to insert at all**, so a guest cannot write their own tab even by calling the database directly with
+  their own login. Nobody can inflate the number they "flex."
+- **Flexing a receipt needs two consents, not one:** your tab only appears on a bar's screen if you
+  switched on *both* "Show me on venue screens" **and** "Flex my tab" (both off by default, and the
+  second shows a plain-English warning first). Either one alone shows nothing. Even then it's a name
+  and a rupee total — never a handle, a contact, or what you ordered.
+- **A bar can praise a customer; it can never mark one.** There is no negative anywhere: no rating, no
+  complaint, no blacklist. Staff can only *give* vibe. This was a deliberate condition of letting bars
+  score guests at all.
+- **Profiles are opt-in, and the owner picks the tier:** *friends*, *friends-of-friends*, or *anyone*.
+  Whatever the tier, `/u/<handle>` shows only the mosaic counts, totals, and one self-chosen social link
+  — never notes, spend, venues, or contact details (phone/email/address aren't even shareable fields).
+- **A venue can never verify itself:** the "verified" flag (which unlocks real-world perks) can only be
+  flipped by us, out-of-band — the database refuses the change from any signed-in session.
+- **Gentle limits stay on the device:** the optional weekly-limit/dry-day goals are stored only in the
+  browser's local storage; a private intention never reaches any server.
 - **Age gate:** first-time users confirm they're 18+ before using an alcohol-related app.
 
 ## 6. Secrets stay out of version control

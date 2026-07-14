@@ -20,7 +20,8 @@ export function TabBar() {
   useEffect(() => setMounted(true), []);
 
   // Wait for the session to resolve so the bar doesn't flash between layouts.
-  if (!mounted || auth.status === "loading") return null;
+  // The venue dashboard (/venue) and the kiosk wall (/kiosk) carry no app chrome.
+  if (!mounted || auth.status === "loading" || pathname.startsWith("/venue") || pathname.startsWith("/kiosk")) return null;
 
   // Guests still get the local diary — only the social tab needs an account.
   const tabs = TABS.filter((t) => !t.authed || auth.profile);

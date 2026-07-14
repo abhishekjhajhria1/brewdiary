@@ -28,7 +28,7 @@ All application code is under **`src/`** (standard Next.js `src/` layout); the r
 Imports use the `@/*` alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 
 - `src/app/` — routes + `layout.tsx` + `globals.css` + `middleware.ts` + `api/`
-- `src/components/` — feature-grouped UI (`calendar/`, `log/`, `you/`, `together/`, `discover/`, `bartender/`, `share/`, `onboarding/`, `ui/`)
+- `src/components/` — feature-grouped UI (`calendar/`, `log/`, `you/`, `together/`, `discover/`, `bartender/`, `share/`, `onboarding/`, `venue/`, `kiosk/`, `profile/`, `ui/`)
 - `src/lib/` — framework-free logic. **All visual state is derived from `Entry` rows — never stored.**
 - `public/` — PWA manifest, service worker, app icons
 - `supabase/` · `ai-db/` — database SQL (app DB + the separate AI DB)

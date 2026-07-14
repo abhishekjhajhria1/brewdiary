@@ -18,6 +18,8 @@ import {
   type SocialProfile,
 } from "@/lib/friends";
 import { useAuth } from "@/lib/profile";
+import { useCompeteVisible, useFriendsBoard } from "@/lib/points";
+import { ScoreCard, type Score } from "../share/ScoreCard";
 import { consumePendingPartyCode, joinParty } from "@/lib/parties";
 import { useEntries } from "@/lib/store";
 import { useWishlist, addWish } from "@/lib/wishlist";
@@ -28,11 +30,12 @@ import { VenueLink } from "../ui/VenueLink";
 import { Circles } from "./Circles";
 import { Parties } from "./Parties";
 
-// The three rooms inside Together. The feed leads; circles and parties wait
-// behind their own segment instead of stacking into one overwhelming scroll.
-type Room = "feed" | "circles" | "parties";
+// The rooms inside Together. The feed leads; circles and parties wait behind
+// their own segment instead of stacking into one overwhelming scroll. "Board"
+// only exists for people who switched the leaderboard on in You → Settings.
+type Room = "feed" | "circles" | "parties" | "board";
 
-const ROOMS: { id: Room; label: string }[] = [
+const BASE_ROOMS: { id: Room; label: string }[] = [
   { id: "feed", label: "Feed" },
   { id: "circles", label: "Circles" },
   { id: "parties", label: "Parties" },
@@ -42,8 +45,16 @@ export function Together() {
   const me = useAuth().profile?.id;
   const { friends } = useFriends();
   const { feed, loading } = useFeed();
+  const { competeVisible } = useCompeteVisible();
   const [room, setRoom] = useState<Room>("feed");
   const [openFriend, setOpenFriend] = useState<SocialProfile | null>(null);
+
+  const ROOMS = competeVisible ? [...BASE_ROOMS, { id: "board" as Room, label: "Board" }] : BASE_ROOMS;
+
+  // If they switch the leaderboard back off while standing on it, don't strand them.
+  useEffect(() => {
+    if (room === "board" && !competeVisible) setRoom("feed");
+  }, [room, competeVisible]);
 
   // A party link opened before signing in — honor it here, on Together itself:
   // the Parties component only mounts on its own tab, so it can't be trusted to run.
@@ -66,7 +77,11 @@ export function Together() {
         Your calendar stays yours and quiet. This is the other room — what friends are pouring.
       </p>
 
-      <div role="tablist" aria-label="Together rooms" className="glass mt-5 grid grid-cols-3 rounded-ctl p-1">
+      <div
+        role="tablist"
+        aria-label="Together rooms"
+        className={clsx("glass mt-5 grid rounded-ctl p-1", ROOMS.length === 4 ? "grid-cols-4" : "grid-cols-3")}
+      >
         {ROOMS.map((r, i) => (
           <button
             key={r.id}
@@ -129,6 +144,8 @@ export function Together() {
       {room === "circles" && <Circles />}
 
       {room === "parties" && <Parties />}
+
+      {room === "board" && <FriendsBoard me={me} />}
       </div>
 
       <Link
@@ -141,6 +158,87 @@ export function Together() {
 
       {openFriend && <FriendSheet friend={openFriend} onClose={() => setOpenFriend(null)} />}
     </>
+  );
+}
+
+// ── the leaderboard: friends who ALSO opted in, ranked by sparks ─────────────
+// Opt-in on both sides — friends who haven't switched it on simply aren't here,
+// so nobody is ranked in front of their friends without asking. Never spend.
+function FriendsBoard({ me }: { me?: string }) {
+  const { board, loading } = useFriendsBoard(true);
+  const [sharing, setSharing] = useState<Score | null>(null);
+  const top = board[0]?.sparks ?? 0;
+  const mine = board.findIndex((r) => r.userId === me);
+
+  if (loading) {
+    return (
+      <div className="mt-8 space-y-2" aria-hidden>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="glass h-12 animate-pulse rounded-ctl" />
+        ))}
+      </div>
+    );
+  }
+
+  if (board.length === 0) {
+    return (
+      <p className="mt-10 text-center text-sm text-faint">
+        Quiet board. Sparks come from showing up; vibe is what your table and the bar hand you.
+      </p>
+    );
+  }
+
+  return (
+    <section className="mt-8">
+      <p className="label mb-2 text-faint">You and the friends who opted in</p>
+      <ul className="divide-y divide-line border-y border-line">
+        {board.map((r, i) => {
+          const leads = r.sparks > 0 && r.sparks === top;
+          return (
+            <li key={r.userId} className="flex items-center justify-between gap-3 py-2.5">
+              <span className="flex min-w-0 items-center gap-2.5">
+                <span className="tnum w-4 text-xs text-faint">{i + 1}</span>
+                <span className="truncate text-[15px] text-ink">{r.userId === me ? "you" : r.name}</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-3 text-sm">
+                <span className={clsx("tnum", leads ? "text-accent" : "text-muted")}>
+                  {r.sparks} <span className="text-xs text-faint">sparks</span>
+                </span>
+                {r.vibe > 0 && (
+                  <span className="tnum text-muted">
+                    {r.vibe} <span className="text-xs text-faint">vibe</span>
+                  </span>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+
+      {mine >= 0 && (
+        <button
+          onClick={() =>
+            setSharing({
+              name: "you",
+              sparks: board[mine].sparks,
+              vibe: board[mine].vibe,
+              context: "with friends",
+              rank: mine + 1,
+              of: board.length,
+            })
+          }
+          className="mt-4 w-full rounded-ctl border border-line py-2.5 text-sm text-muted transition-colors hover:text-ink"
+        >
+          Share your score
+        </button>
+      )}
+
+      <p className="mt-4 text-xs leading-relaxed text-faint">
+        Nobody is ranked by what they spent. Switch this off any time in You → Settings.
+      </p>
+
+      {sharing && <ScoreCard score={sharing} onClose={() => setSharing(null)} />}
+    </section>
   );
 }
 

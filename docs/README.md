@@ -26,14 +26,20 @@ If you can read a recipe, you can read this.
    The three paths (PWA, Play-Store TWA, native Capacitor), what each needs, and which to pick.
 10. **[10 — Deploy the web app](10-deploy.md)** — put brewdiary live on Vercel: GitHub, the exact 8
     environment variables, Supabase URL config, and the post-deploy click-test.
+11. **[11 — Rooms, points & venues](11-rooms-points-venues.md)** — the bar layer: sparks, vibe, house
+    perks, the venue dashboard, the wall screen, the leaderboard, and every privacy switch. Diagrams
+    of each workflow, a map of where all of it lives, and the rules that must not be broken.
 
 ## The one-paragraph version
 brewdiary is a **drink diary**. You open it, tap tonight's date on a calendar, and jot down what you
 drank (a coffee, a beer, a cocktail, a mocktail — anything). Over time the calendar fills in like a
 mosaic and shows your streak. You can share entries with friends, host parties, split the bill, and ask
-**Ninkasi** — an AI bartender — what to pour. It runs on modern web technology (Next.js + React) with a
-cloud database (Supabase) that safely stores everyone's data. We're now building **our own AI model**
-so Ninkasi is something we own and can market, not a service we rent forever.
+**Ninkasi** — an AI bartender — what to pour. Bars can join in too: they open a **room** for the night,
+their staff hand out good-vibe points, a screen on the wall shows the board, and regulars earn a free
+drink — all of it off until you switch it on ([doc 11](11-rooms-points-venues.md)). It runs on modern
+web technology (Next.js + React) with a cloud database (Supabase) that safely stores everyone's data.
+We're now building **our own AI model** so Ninkasi is something we own and can market, not a service we
+rent forever.
 
 ## The other guides (and who they're for)
 - **`docs/`** (this one) → **for anyone learning the project**, especially non-coders. Start here.

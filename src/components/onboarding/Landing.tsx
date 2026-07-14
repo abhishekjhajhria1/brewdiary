@@ -189,7 +189,7 @@ const LEDGER: { title: string; body: string }[] = [
   },
   {
     title: "Settle the round",
-    body: "Add a tab, add who was there, and the split falls out in ₹. Who paid, who owes, done at the table.",
+    body: "Add a tab, add who was there, and the split falls out. Who paid, who owes, done at the table.",
   },
   {
     title: "Ninkasi, behind the bar",

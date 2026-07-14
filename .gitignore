@@ -30,9 +30,11 @@ yarn-error.log*
 # internal working folder — local-only planning/handoff, NOT shipped or shared.
 /internal/
 
-# maintainer's local tooling & notes — never committed
-/.claude/
-/CLAUDE.md
+# Claude Code's LOCAL settings only. CLAUDE.md (the front door) and
+# .claude/skills/ (the taste-engine design spec) ARE committed on purpose —
+# a fresh clone needs both, or a new developer/AI starts blind.
+/.claude/settings.local.json
+/.claude/settings.json
 
 # python caches (local tooling)
 __pycache__/

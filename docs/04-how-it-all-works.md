@@ -145,12 +145,37 @@ server talks to the AI. That's the "secure path." Full detail in
 
 ---
 
+## Story 7: A night at the bar (the newest layer, in miniature)
+1. A bar signs up like anyone else, then opens its dashboard at **bar.bwdy.site**. That address isn't a
+   second app — `src/middleware.ts` sees the `bar.` prefix and serves the `/venue` screen from the very
+   same deployment (`components/venue/VenueApp.tsx`).
+2. The bar **opens a room** for tonight. A "room" is just a **party** with the venue's name attached
+   (`parties.venue_id`) — we reused a thing you already understand rather than inventing a new one.
+3. You join the room and tap **Check in** → **+1 spark** (`lib/points.ts`). Your friends can hand you
+   **vibe** for good company; so can the **bartender**, from the venue dashboard. Vibe is
+   **positive-only** — nobody can dock anyone, and a bar can never rate a customer badly.
+4. When you close your tab, **the bar records what you spent** — and only the bar can. The database
+   simply gives the app no way to write your own spend (see [doc 06](06-security-and-privacy.md)), so
+   nobody can inflate their own number. Enough visits or enough rupees at *that* bar earns you a private
+   **house perk**: a free drink next visit.
+5. The bar casts `bwdy.site/kiosk/<code>` to a TV. The **kiosk** shows tonight's sparks and vibe — but
+   **only for guests who switched on "Show me on venue screens."** Everyone else is simply absent.
+6. You can tap **Share your score** and get a picture to post, exactly like the entry cards
+   (`components/share/ScoreCard.tsx`).
+
+Every loud part of that story is **off by default**. The full chapter, with diagrams of each workflow
+and a table of who is allowed to write what, is **[11 — Rooms, points & venues](11-rooms-points-venues.md)**.
+
+---
+
 ## The recurring patterns you now recognize
 - **Optimistic updates:** the screen changes instantly, the database catches up in the background.
 - **Two modes:** logged-out = on-device (localStorage); logged-in = cloud (Supabase). Same functions,
   the data just lives in a different place — and your first local entry migrates up on sign-in.
 - **RLS everywhere:** the database refuses to hand over data you're not allowed to see, no matter what
   the app code asks.
-- **Derived, never stored:** streaks, mosaics, milestones, balances — all computed on the fly.
+- **Derived, never stored:** streaks, mosaics, milestones, balances, points — all computed on the fly.
+- **Consent switches default to off:** anything that shows you to other people (a wall screen, a
+  leaderboard, a public profile) does nothing until you turn it on, one switch at a time.
 
 That's the whole app. Next: **[05 — The Ninkasi AI, explained](05-the-ninkasi-ai-explained.md)**.

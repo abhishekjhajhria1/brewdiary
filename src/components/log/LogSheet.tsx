@@ -12,7 +12,7 @@ import {
   unshareFromParty,
 } from "@/lib/parties";
 import type { DrinkType, Entry, Photo } from "@/lib/types";
-import { DRINK_TYPES } from "@/lib/types";
+import { DRINK_TYPES, DRY_DAY_LABEL } from "@/lib/types";
 import { addDays, formatDayLong, parseKey, timeOfDayLabel, toKey } from "@/lib/date";
 import { canonicalize, suggestDrinks } from "@/lib/drinks";
 import { useEntries } from "@/lib/store";
@@ -183,6 +183,17 @@ export function LogSheet({
     setTimeout(() => setJustLogged(false), 1400);
     drinkRef.current?.focus();
   }
+
+  /** Log the day as dry — nothing in the glass. It KEEPS the streak (the streak is
+   *  for showing up to the diary, not for drinking) and it earns a spark, but it's
+   *  never counted as a drink. Only offered on a day with nothing logged yet. */
+  function logDryDay() {
+    addEntry({ date: dateKey, drink: DRY_DAY_LABEL, type: "none", mood: mood || undefined });
+    reset();
+    setJustLogged(true);
+    setTimeout(() => setJustLogged(false), 1400);
+  }
+  const dayIsEmpty = dayEntries.length === 0 && !editingId;
 
   async function onFiles(list: FileList | null) {
     if (!list) return;
@@ -510,6 +521,17 @@ export function LogSheet({
         >
           {editingId ? "Save changes" : justLogged ? "Logged ✓" : "Log"}
         </button>
+
+        {/* A dry day is a thing you DID, not a thing you failed to do — so it's a
+            real action here, it keeps the streak, and it earns a spark. */}
+        {dayIsEmpty && (
+          <button
+            onClick={logDryDay}
+            className="mt-2 flex h-11 w-full items-center justify-center rounded-ctl border border-line text-sm text-muted transition-colors hover:border-accent/40 hover:text-ink"
+          >
+            Nothing today — log a dry day
+          </button>
+        )}
       </div>
 
       {sharing && <ShareCard entry={sharing} onClose={() => setSharing(null)} />}

@@ -16,7 +16,8 @@ export function TopBar() {
 
   // On "/" a guest sees the landing, which carries its own header — everywhere
   // else (You, Ninkasi, Discover are open to guests) the bar shows for everyone.
-  if (!mounted || (!profile && pathname === "/")) return null;
+  // The venue dashboard (/venue) and kiosk wall (/kiosk) carry no app chrome.
+  if (!mounted || (!profile && pathname === "/") || pathname.startsWith("/venue") || pathname.startsWith("/kiosk")) return null;
 
   return (
     <div className="glass mb-6 flex items-center justify-between rounded-tile px-4 py-2.5">
