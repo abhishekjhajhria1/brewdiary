@@ -18,6 +18,8 @@ import { useCompeteVisible, setCompeteVisible } from "@/lib/points";
 import { useProfilePrivacy, setProfileVisibility, setSocialHandle, type ProfileVisibility } from "@/lib/publicProfile";
 import { useExtras, setExtra, EXTRAS, type ExtraKey } from "@/lib/features";
 import { exportEverything, deleteAccount } from "@/lib/dataRights";
+import { savedCountry, moveTo, confirmAge, legalAgeFor } from "@/lib/age";
+import { KNOWN_COUNTRIES } from "@/lib/jurisdiction";
 import { Chip } from "../ui/Chip";
 import { VenueLink } from "../ui/VenueLink";
 
@@ -247,6 +249,8 @@ function Settings() {
       {profile && <VenueScreenNote />}
 
       {profile && <ProfilePrivacy meId={profile.id} handle={profile.handle} />}
+
+      <WhereYouAre />
 
       <GoalsSettings />
 
@@ -490,6 +494,108 @@ function BalanceCard({ entries }: { entries: Entry[] }) {
         </p>
       </div>
     </section>
+  );
+}
+
+/** Where you are — the TRAVELLER's switch. Two rules, and they point in opposite
+ *  directions on purpose:
+ *
+ *  • What YOU can do follows where you ARE, not your passport. Drinking age is
+ *    territorial — a 20-year-old American is legal in Berlin and illegal in New
+ *    York. So moving somewhere with a higher bar than you've cleared means we ask
+ *    your age again. We can do that without ever having stored your date of birth,
+ *    because we keep only which bar you cleared (see lib/age.ts).
+ *
+ *  • What a BAR can offer follows where the BAR is. A perk given in Dublin is an
+ *    Irish promotion no matter whose phone receives it — a traveller does NOT
+ *    bring their home country's rules with them. That would be the exact loophole
+ *    these laws exist to close, and it could cost a partner bar its licence.
+ *    (Enforced in the database: venue perks key off venues.country, never yours.) */
+function WhereYouAre() {
+  const [country, setCountry] = useState<string>("IN");
+  const [needsAge, setNeedsAge] = useState<number | null>(null);
+  const [dob, setDob] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setCountry(savedCountry() ?? "IN");
+  }, []);
+
+  function pick(next: string) {
+    setNeedsAge(null);
+    const res = moveTo(next);
+    if (!res.ok) {
+      // The new country's legal age is higher than the bar this person cleared.
+      setCountry(next);
+      setNeedsAge(res.needsAge);
+      return;
+    }
+    setCountry(next);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1600);
+  }
+
+  function reconfirm() {
+    if (!dob) return;
+    if (confirmAge(new Date(dob + "T00:00:00"), country)) {
+      setNeedsAge(null);
+      setDob("");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1600);
+    } else {
+      setNeedsAge(legalAgeFor(country));
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-line py-3">
+      <p className="text-sm text-ink">Where you are</p>
+      <p className="mb-2 text-xs leading-relaxed text-faint">
+        Travelling? Set this to the country you&apos;re in. It sets your currency, and the legal drinking age
+        we hold you to — that follows where you are, not where you&apos;re from.
+      </p>
+
+      <select
+        value={country}
+        onChange={(e) => pick(e.target.value)}
+        aria-label="Country you are in"
+        className="glass w-full rounded-ctl px-4 py-2.5 text-[15px] text-ink"
+      >
+        {KNOWN_COUNTRIES.map((c) => (
+          <option key={c.code} value={c.code}>
+            {c.label}
+          </option>
+        ))}
+        <option value="ZZ">Somewhere else</option>
+      </select>
+
+      {needsAge !== null && (
+        <div className="glass mt-3 rounded-tile p-4">
+          <p className="text-xs leading-relaxed text-muted">
+            The legal drinking age there is {needsAge}+, which is higher than the one you confirmed. Confirm
+            your date of birth again and we&apos;ll move you.
+          </p>
+          <div className="mt-2.5 flex items-center gap-2">
+            <input
+              type="date"
+              value={dob}
+              onChange={(e) => setDob(e.target.value)}
+              aria-label="Date of birth"
+              className="tnum glass rounded-ctl px-3 py-2 text-[15px] text-ink"
+            />
+            <button
+              onClick={reconfirm}
+              disabled={!dob}
+              className="rounded-ctl bg-ink px-3.5 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      )}
+
+      {saved && <p className="mt-2 text-xs text-accent">Saved.</p>}
+    </div>
   );
 }
 

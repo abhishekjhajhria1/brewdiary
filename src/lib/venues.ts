@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { useAuth } from "./profile";
+import type { VenueKind } from "./perks";
 
 export type StaffRole = "owner" | "manager" | "bartender";
 
@@ -23,10 +24,17 @@ export interface Venue {
   slug: string;
   createdBy: string;
   city?: string;
+  /** on-trade (drink here) or off-trade (carry out). A store is NOT a quieter bar:
+   *  it runs no rooms, and its loyalty card needs a separate legal permission,
+   *  because at a shop the visit IS the purchase. See perks.ts / 030. */
+  kind: VenueKind;
   /** ISO-3166 alpha-2. Decides what kind of perk is LAWFUL here — see perks.ts. */
   country: string;
-  /** Sub-national code where it matters (US states 'MA'/'UT'). */
+  /** Sub-national code where it matters (US states 'MA'/'UT'; 'NIR'/'SCT' in GB). */
   region?: string;
+  /** Weekdays this bar calls quiet (0 = Sun … 6 = Sat). A visit on one counts
+   *  double toward the house perk — never a drink discount. */
+  quietNights: number[];
   verified: boolean;
   myRole: StaffRole;
 }
@@ -97,7 +105,7 @@ export function useMyVenues(): { venues: Venue[]; loading: boolean } {
     (async () => {
       const { data } = await supabase!
         .from("venue_staff")
-        .select("role, venue:venues(id, name, slug, created_by, city, country, region, verified)")
+        .select("role, venue:venues(id, name, slug, created_by, city, kind, country, region, quiet_nights, verified)")
         .eq("user_id", me);
       if (!active) return;
       setVenues(
@@ -111,8 +119,10 @@ export function useMyVenues(): { venues: Venue[]; loading: boolean } {
               slug: vv.slug as string,
               createdBy: vv.created_by as string,
               city: (vv.city as string) ?? undefined,
+              kind: ((vv.kind as string) ?? "bar") as VenueKind,
               country: (vv.country as string) ?? "IN",
               region: (vv.region as string) ?? undefined,
+              quietNights: (vv.quiet_nights as number[]) ?? [],
               verified: Boolean(vv.verified),
               myRole: r.role as StaffRole,
             };
@@ -237,7 +247,7 @@ export async function withdrawVerification(venueId: string) {
 // ── mutations ────────────────────────────────────────────────────────────────
 export async function createVenue(
   meId: string,
-  fields: { name: string; slug?: string; city?: string; country?: string; region?: string },
+  fields: { name: string; slug?: string; city?: string; kind?: VenueKind; country?: string; region?: string },
 ): Promise<{ id: string; slug: string } | { error: string }> {
   if (!supabase) return { error: "offline" };
   const name = fields.name.trim();
@@ -256,7 +266,10 @@ export async function createVenue(
       slug,
       created_by: meId,
       city: fields.city?.trim() || null,
-      // Where the bar is decides what kind of perk it may lawfully offer (020).
+      // Bar or bottle shop. A store runs no rooms and needs its own legal permission
+      // for a loyalty card — the DB refuses one where it isn't allowed (030).
+      kind: fields.kind ?? "bar",
+      // Where the venue is decides what kind of perk it may lawfully offer (020).
       country: (fields.country || "IN").toUpperCase(),
       region: fields.region?.trim().toUpperCase() || null,
     });
@@ -269,18 +282,144 @@ export async function createVenue(
   return sErr ? { error: sErr.message } : { id, slug };
 }
 
-export async function updateVenue(venueId: string, fields: { name?: string; city?: string }): Promise<string | null> {
+export async function updateVenue(
+  venueId: string,
+  fields: { name?: string; city?: string; quietNights?: number[] },
+): Promise<string | null> {
   if (!supabase) return "offline";
-  const patch: Record<string, string | null> = {};
+  const patch: Record<string, string | number[] | null> = {};
   if (fields.name !== undefined) {
     const n = fields.name.trim();
     if (!n) return "Name can't be empty.";
     patch.name = n;
   }
   if (fields.city !== undefined) patch.city = fields.city.trim() || null;
+  // Quiet nights (Postgres dow: 0 = Sunday … 6 = Saturday). A visit on one of these
+  // counts DOUBLE toward this venue's perk — private loyalty, never a public score,
+  // and never a drink discount. See 024_quiet_nights.sql.
+  if (fields.quietNights !== undefined) {
+    patch.quiet_nights = [...new Set(fields.quietNights)].filter((d) => d >= 0 && d <= 6).sort();
+  }
   const { error } = await supabase.from("venues").update(patch).eq("id", venueId);
   bump();
   return error ? error.message : null;
+}
+
+// ── Discover: list the BAR, never the OFFER ──────────────────────────────────
+// A listing is a directory entry (Google Maps lists bars). An OFFER is alcohol
+// advertising — specifically illegal in India, and banned outright in Thailand,
+// Norway, Lithuania, Türkiye and Poland. So this carries a name, a city, and
+// whether a room is running. Never a perk, a reward, a price or a drink. If you
+// are ever tempted to add "and here's what they're offering tonight" — that is the
+// line, and it's the one that turns a diary into an advertising platform.
+export interface DiscoverVenue {
+  name: string;
+  slug: string;
+  city?: string;
+  country: string;
+  kind: VenueKind;
+  openTonight: boolean;
+}
+
+export function useDiscoverVenues(country?: string | null): { venues: DiscoverVenue[]; loading: boolean } {
+  const [state, setState] = useState<{ venues: DiscoverVenue[]; loading: boolean }>({ venues: [], loading: true });
+
+  useEffect(() => {
+    if (!supabase) {
+      setState({ venues: [], loading: false });
+      return;
+    }
+    let active = true;
+    (async () => {
+      const { data } = await supabase!.rpc("discover_venues", { in_country: country ?? null, lim: 30 });
+      if (!active) return;
+      setState({
+        venues: ((data as Record<string, unknown>[]) ?? []).map((r) => ({
+          name: r.name as string,
+          slug: r.slug as string,
+          city: (r.city as string) ?? undefined,
+          country: r.country as string,
+          kind: ((r.kind as string) ?? "bar") as VenueKind,
+          openTonight: Boolean(r.open_tonight),
+        })),
+        loading: false,
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [country]);
+
+  return state;
+}
+
+// ── insights: counts a bar can act on, and never a profile of anyone ─────────
+// A manager already sees the names of guests in their own room (they need them to
+// record a tab). So counts over that same population are not new personal data.
+// What WOULD be: a small-group split ("1 new guest" = that named person has never
+// been here), a profile built over time, or anything about another venue. Hence:
+//   • splits are NULL below k=5 (see k_anon() — 5, not 3, because a 2/1 split in a
+//     group of 3 is deducible by subtraction: a differencing attack),
+//   • no per-guest rows, ever,
+//   • every query is hard-scoped to one venue.
+// A NULL means "hidden", which is NOT the same fact as 0 — render it as "—".
+export interface VenueInsights {
+  rooms: number;
+  guests: number;
+  newGuests: number | null;
+  returningGuests: number | null;
+  quietVisits: number;
+  otherVisits: number;
+  perksEarned: number | null;
+  perksClaimed: number;
+  tabs: number;
+  takings: number;
+  kudos: number;
+}
+
+export function useVenueInsights(venueId: string | null, days = 30): { data: VenueInsights | null; loading: boolean } {
+  const v = useVersion();
+  const [state, setState] = useState<{ data: VenueInsights | null; loading: boolean }>({ data: null, loading: true });
+
+  useEffect(() => {
+    if (!supabase || !venueId) {
+      setState({ data: null, loading: false });
+      return;
+    }
+    let active = true;
+    setState({ data: null, loading: true });
+    (async () => {
+      const { data } = await supabase!.rpc("venue_insights", { vid: venueId, days });
+      if (!active) return;
+      const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
+      if (!r) {
+        setState({ data: null, loading: false });
+        return;
+      }
+      const num = (x: unknown) => (x === null || x === undefined ? null : Number(x));
+      setState({
+        data: {
+          rooms: Number(r.rooms ?? 0),
+          guests: Number(r.guests ?? 0),
+          newGuests: num(r.new_guests),
+          returningGuests: num(r.returning_guests),
+          quietVisits: Number(r.quiet_visits ?? 0),
+          otherVisits: Number(r.other_visits ?? 0),
+          perksEarned: num(r.perks_earned),
+          perksClaimed: Number(r.perks_claimed ?? 0),
+          tabs: Number(r.tabs ?? 0),
+          takings: Number(r.takings ?? 0),
+          kudos: Number(r.kudos ?? 0),
+        },
+        loading: false,
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [venueId, days, v]);
+
+  return state;
 }
 
 /** Add a profile to the team. Managers/owner only (RLS enforces it). */

@@ -1,33 +1,18 @@
-// Discover — the local-discovery / promotion surface. The FUNCTIONAL, key-free parts work today
-// (DiscoverLive: a real device compass + geolocation "near me" that opens the maps app). The
-// curated in-app listings below are a labelled preview — live ratings/distance arrive when we
-// connect a venue-data source (deferred on budget; the "Directions" links already work).
-// Sponsored places are labelled; location & data-sharing are opt-in; 21+ — built in from day one.
+// Discover — find a place, and see which bars are actually on brewdiary.
+//
+// Everything here is key-free and REAL. It used to ship four INVENTED venues with
+// invented star ratings and a fake "sponsored" tag — placeholder copy that had gone
+// live. Fabricated listings mislead, and a "sponsored" label implies paid alcohol
+// promotion we do not have and would not take. They're gone.
+//
+// What a listing may say is a legal line, not a taste one: a bar's NAME and CITY is
+// a directory entry (Maps does it). Its OFFER is alcohol advertising — illegal in
+// India, banned outright in Thailand/Norway/Lithuania. So we never show a perk here.
+// See VenuesNearby.tsx and 027_discover_venues.sql.
 import Link from "next/link";
 import { Trends } from "@/components/discover/Trends";
 import { DiscoverLive } from "@/components/discover/DiscoverLive";
-
-interface Venue {
-  name: string;
-  kind: string;
-  rating: number;
-  distance: string;
-  sponsored?: boolean;
-  query: string; // maps search query
-}
-
-// Preview listings — a labelled sample of the intended rich UX (incl. sponsored labelling).
-// Live nearby results are the "Find places near me" buttons above; these get real data later.
-const VENUES: Venue[] = [
-  { name: "The Alembic", kind: "Cocktail bar", rating: 4.7, distance: "0.4 km", query: "The Alembic cocktail bar" },
-  { name: "Cask & Co.", kind: "Bottle shop", rating: 4.6, distance: "0.9 km", sponsored: true, query: "Cask and Co bottle shop" },
-  { name: "Lowlight", kind: "Wine bar", rating: 4.5, distance: "1.2 km", query: "Lowlight wine bar" },
-  { name: "Forge", kind: "Club", rating: 4.4, distance: "1.8 km", query: "Forge club" },
-];
-
-function mapsHref(query: string) {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-}
+import { VenuesNearby } from "@/components/discover/VenuesNearby";
 
 export default function Page() {
   return (
@@ -54,40 +39,15 @@ export default function Page() {
       {/* Functional, key-free: a real compass + geolocation "near me" (opens the maps app). */}
       <DiscoverLive />
 
-      {/* A preview of curated listings. Live ratings/distance arrive with our venue data
-          source; the "Directions" links already open the user's maps app today. */}
-      <p className="label mt-9 mb-3 text-faint">A taste — curated listings coming</p>
-      <ul className="space-y-3">
-        {VENUES.map((v) => (
-          <li key={v.name} className="glass flex items-center justify-between gap-3 rounded-tile px-4 py-3.5">
-            <div className="min-w-0">
-              <p className="flex items-center gap-2 text-[15px] text-ink">
-                {v.name}
-                {v.sponsored && <span className="label text-faint!">sponsored</span>}
-              </p>
-              <p className="tnum text-xs text-muted">
-                {v.kind} · ★ {v.rating.toFixed(1)} · {v.distance}
-              </p>
-            </div>
-            <a
-              href={mapsHref(v.query)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="glass glass-press shrink-0 rounded-ctl px-3 py-1.5 text-xs uppercase tracking-[0.12em] text-muted hover:text-ink"
-            >
-              Directions
-            </a>
-          </li>
-        ))}
-      </ul>
+      {/* Real, verified bars on brewdiary — the bar, never its offer. */}
+      <VenuesNearby />
 
       {/* live, key-free data: anonymous taste trends across consenting users */}
       <Trends />
 
       <p className="mt-8 text-xs leading-relaxed text-faint">
-        Sponsored places are labelled. Location &amp; data-sharing are opt-in. 21+. The compass and
-        &ldquo;near me&rdquo; search work today via your maps app; in-app ratings &amp; distance land with our
-        venue-data source.
+        Nothing here is paid for, and no bar can pay to appear. Location is opt-in and never leaves your
+        device — the compass and &ldquo;near me&rdquo; search hand your maps app a query, nothing more.
       </p>
     </>
   );

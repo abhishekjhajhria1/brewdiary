@@ -12,6 +12,7 @@ import { useAuth, signIn, signUp, signOut, type Profile } from "@/lib/profile";
 import {
   useMyVenues,
   useVenueStaff,
+  useVenueInsights,
   useVerification,
   createVenue,
   updateVenue,
@@ -26,36 +27,75 @@ import {
 } from "@/lib/venues";
 import { searchUsers, type SocialProfile } from "@/lib/friends";
 import { useVenueRooms, createParty } from "@/lib/parties";
+import { RoomQr } from "./RoomQr";
+import { useMyKudos, useVenueKudosTotal, setThankable } from "@/lib/kudos";
 import {
-  useVenuePerk,
-  setVenuePerk,
-  clearVenuePerk,
+  useVenuePerks,
+  addVenuePerk,
+  removeVenuePerk,
+  MAX_TIERS,
   perkPolicy,
   perkPolicyNote,
+  usePerkTiers,
+  redeemPerk,
+  recordVisit,
   type PerkKind,
+  type VenueKind,
 } from "@/lib/perks";
 import { KNOWN_COUNTRIES } from "@/lib/jurisdiction";
 import { currencyForCountry, currencySymbol, formatMoney } from "@/lib/money";
 import { useRoomGuests, staffAwardVibe, recordSpend, STAFF_VIBE_REASONS } from "@/lib/points";
 import { todayKey } from "@/lib/date";
 
+// Written for a BAR OWNER, not for us. They care about three things: do people come
+// back, does tonight feel good, and what does it cost me. Everything below answers
+// one of those. No jargon, no "gamification", no promises we don't keep.
 const SECTIONS: { name: string; blurb: string }[] = [
-  { name: "Rooms", blurb: "Open a room for the night. Guests with the app join by a code on the table — the night becomes a shared board." },
-  { name: "Sparks & vibe", blurb: "Sparks are for trying something new — a new place, a new drink. Coming back again isn't a score. You and the table hand out vibe, positive only, and nobody is ranked by what they spent." },
-  { name: "House perks", blurb: "Loyalty is YOUR reward to give — a free pour on the next visit, a house special. Private between you and each guest, and it's what brings them back." },
-  { name: "The kiosk screen", blurb: "Cast the room to a screen on the wall. Guests choose to appear for that night only, and everyone drops off when it ends." },
+  {
+    name: "They come back — and you decide why",
+    blurb:
+      "Set your own house perk: five visits, a free pour. A big tab, dessert on the house. It's private between you and that guest, it's your reward to give, and it's the whole reason regulars become regulars.",
+  },
+  {
+    name: "Your staff can say thank you",
+    blurb:
+      "A bartender taps a guest's name and hands them a good word — \"kept it classy\", \"a pleasure to serve\". It's positive-only: you can praise a customer, you can never mark one. No ratings, no blacklist, not ever.",
+  },
+  {
+    name: "A room for the night, and a screen on the wall",
+    blurb:
+      "Open a room, put the code on the table. Guests who join can appear on a board you cast to a TV — by choice, for that night only. Nobody's name lingers on your screen after closing.",
+  },
+  {
+    name: "Nobody is ranked by what they spent",
+    blurb:
+      "Points are for trying something new — a first visit, a drink they've never had. Not for drinking more. That's a deliberate line, and it's why we're a bar's friend rather than a liability.",
+  },
+  {
+    name: "Free, and no till to touch",
+    blurb:
+      "No POS integration, no hardware, no fee. Your staff sign in on their own phones with an ordinary account. Set it up in ten minutes tonight.",
+  },
 ];
 
+// This dashboard is a TRADE tool, not the consumer app wearing a hat. It carries
+// its own header (no Discover, no Calendar/Together/You nav — those are hidden by
+// host, see lib/host.ts) and it says plainly whose product it is and who it's for.
 function Header({ profile }: { profile?: Profile | null }) {
   return (
     <header className="mb-8 flex items-center justify-between border-b border-line pb-4">
-      <span className="font-display text-lg italic text-muted">brewdiary</span>
+      <span className="flex items-baseline gap-2">
+        <span className="font-display text-lg italic text-muted">brewdiary</span>
+        <span className="label text-accent">for bars</span>
+      </span>
       <span className="flex items-center gap-3">
-        <span className="label text-faint">for venues</span>
         {profile && (
-          <button onClick={() => signOut()} className="text-sm text-faint transition-colors hover:text-ink">
-            Sign out
-          </button>
+          <>
+            <span className="hidden text-xs text-faint sm:inline">@{profile.handle}</span>
+            <button onClick={() => signOut()} className="text-sm text-faint transition-colors hover:text-ink">
+              Sign out
+            </button>
+          </>
         )}
       </span>
     </header>
@@ -86,10 +126,14 @@ export function VenueApp() {
 function VenueLanding() {
   return (
     <>
-      <p className="label mb-2 text-faint">The dashboard</p>
-      <h1 className="font-display text-4xl leading-tight tracking-tight text-ink sm:text-5xl">Your bar, on the board.</h1>
+      <p className="label mb-2 text-faint">brewdiary for bars</p>
+      <h1 className="font-display text-4xl leading-tight tracking-tight text-ink sm:text-5xl">
+        Give your regulars a reason to be regulars.
+      </h1>
       <p className="mt-3 max-w-prose text-[15px] leading-relaxed text-muted">
-        Turn an ordinary night into a room your guests play in — good vibes and coming back, not who spent the most.
+        brewdiary is a drink diary its people already carry. This is the side you run: a room for tonight, a
+        reward that brings them back, and a way for your staff to thank the good ones. Free, and nothing to
+        install.
       </p>
 
       <VenueAuth />
@@ -102,6 +146,28 @@ function VenueLanding() {
           </li>
         ))}
       </ul>
+
+      <section className="mt-10">
+        <h2 className="label mb-3 text-faint">How a night runs</h2>
+        <ol className="glass divide-y divide-line rounded-tile px-5">
+          {[
+            "Open a room from your phone and put the code on the tables.",
+            "Guests join. Your bartenders hand out a good word as they serve.",
+            "Close a tab? Record it — only you can, so it counts toward their perk.",
+            "Cast the board to a TV if you want the room to see it.",
+            "They come back next week to claim what you promised them.",
+          ].map((step, i) => (
+            <li key={step} className="flex gap-3 py-3.5">
+              <span className="tnum shrink-0 text-sm text-accent">{i + 1}</span>
+              <span className="text-[15px] leading-relaxed text-muted">{step}</span>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-3 text-xs leading-relaxed text-faint">
+          One thing we ask: we verify a venue before it can hand out real-world rewards, so a guest always
+          knows the perk on their screen is genuinely yours.
+        </p>
+      </section>
     </>
   );
 }
@@ -237,6 +303,7 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [city, setCity] = useState("");
+  const [kind, setKind] = useState<VenueKind>("bar");
   const [country, setCountry] = useState("IN");
   const [region, setRegion] = useState("");
   const [busy, setBusy] = useState(false);
@@ -246,6 +313,11 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
   const effectiveSlug = slug.trim() || slugify(name);
   const slugValid = isValidSlug(effectiveSlug);
 
+  // Say NOW whether a loyalty card is even possible here, rather than letting them
+  // set the shop up and hit a wall at the perk screen.
+  const policy = perkPolicy(country, region, kind);
+  const policyNote = perkPolicyNote(country, region, kind);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -254,6 +326,7 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
       name,
       slug: slug.trim() || undefined,
       city,
+      kind,
       country,
       region: region.trim() || undefined,
     });
@@ -273,6 +346,29 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
         <input value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} placeholder="web address (optional)" className={inputClass} aria-label="Web address slug" />
         <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City (optional)" className={inputClass} aria-label="City" />
 
+        {/* Bar or bottle shop. Not cosmetic: a shop runs no rooms, and its loyalty
+            card needs its own legal permission, because at a shop a visit is a sale. */}
+        <div className="glass grid grid-cols-2 gap-1 rounded-ctl p-1" role="group" aria-label="Venue kind">
+          {([
+            { id: "bar", label: "Bar", blurb: "People drink here" },
+            { id: "store", label: "Shop", blurb: "People carry out" },
+          ] as const).map((k) => (
+            <button
+              key={k.id}
+              type="button"
+              onClick={() => setKind(k.id)}
+              aria-pressed={kind === k.id}
+              className={clsx(
+                "rounded-[7px] px-3 py-2 text-left transition-colors",
+                kind === k.id ? "bg-ink text-paper" : "text-faint hover:text-ink",
+              )}
+            >
+              <span className="block text-sm font-medium">{k.label}</span>
+              <span className={clsx("block text-[11px]", kind === k.id ? "opacity-70" : "text-faint")}>{k.blurb}</span>
+            </button>
+          ))}
+        </div>
+
         <select
           value={country}
           onChange={(e) => setCountry(e.target.value)}
@@ -286,7 +382,10 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
           ))}
         </select>
 
-        {/* Only the US needs a state from us — that's where drink-deal rules split. */}
+        {/* Two countries split internally in ways that change what's legal: US states
+            (drink deals), and the UK — Northern Ireland bans loyalty rewards in every
+            licensed premises, Scotland bans a shop's card. Getting this wrong fines
+            the LICENSEE, so we ask rather than guess. */}
         {country === "US" && (
           <input
             value={region}
@@ -296,11 +395,21 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
             className={inputClass}
           />
         )}
+        {country === "GB" && (
+          <select value={region} onChange={(e) => setRegion(e.target.value)} aria-label="UK nation" className={inputClass}>
+            <option value="">England or Wales</option>
+            <option value="SCT">Scotland</option>
+            <option value="NIR">Northern Ireland</option>
+          </select>
+        )}
       </div>
 
+      {/* Tell them the rule BEFORE they build on it, not after. */}
       <p className="mt-2.5 text-xs leading-relaxed text-faint">
-        Where you are decides what kind of loyalty reward is legal — some countries don&apos;t allow a free
-        drink to be earned by buying drinks. We&apos;ll show you the rule when you set your perk.
+        {policyNote ??
+          (policy.allowPerks
+            ? "You'll be able to run a loyalty card here once you're verified."
+            : "Where you are decides what kind of loyalty reward is legal. We'll show you the rule when you set your card.")}
       </p>
 
       {slugValid ? (
@@ -352,66 +461,136 @@ function VenueCard({ venue, meId, open, onToggle }: { venue: Venue; meId: string
   );
 }
 
+// The dashboard is used STANDING UP, mid-service, usually by a bartender on a
+// phone behind the bar. So it opens on TONIGHT — the room, the guest list, the tab
+// and vibe controls — and everything administrative (perks, team, setup) is a tab
+// away rather than a scroll away. A bartender should never have to walk past the
+// "delete venue" button to record someone's tab.
+type Section = "tonight" | "perks" | "team" | "insights" | "setup";
+
 function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; canManage: boolean }) {
   const { staff } = useVenueStaff(venue.id);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [section, setSection] = useState<Section>("tonight");
+
+  // A shop's first tab is the TILL, not the room — it has no rooms at all (the DB
+  // refuses to attach one), because a bottle shop isn't a place you sit and drink.
+  const store = venue.kind === "store";
+
+  // A bartender only ever needs Tonight — the rest is a manager's job, so we don't
+  // show them doors they can't open.
+  const sections: { id: Section; label: string }[] = canManage
+    ? [
+        { id: "tonight", label: store ? "Till" : "Tonight" },
+        { id: "perks", label: store ? "Card" : "Perks" },
+        { id: "insights", label: "Insights" },
+        { id: "team", label: "Team" },
+        { id: "setup", label: "Setup" },
+      ]
+    : [{ id: "tonight", label: store ? "Till" : "Tonight" }];
 
   return (
     <div className="mt-4 border-t border-line pt-4">
-      {!venue.verified &&
-        (canManage ? (
-          <VerificationPanel venue={venue} meId={meId} />
-        ) : (
-          <p className="mb-4 text-xs leading-relaxed text-faint">
-            This venue isn&apos;t verified yet — rooms and vibe work, but real-world perks wait until it is.
+      {!venue.verified && !canManage && (
+        <p className="mb-4 text-xs leading-relaxed text-faint">
+          This venue isn&apos;t verified yet — rooms and vibe work, but real-world perks wait until it is.
+        </p>
+      )}
+
+      {sections.length > 1 && (
+        <div className="glass mb-4 grid grid-cols-5 gap-1 rounded-ctl p-1">
+          {sections.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setSection(s.id)}
+              aria-pressed={section === s.id}
+              className={clsx(
+                "rounded-[7px] py-2.5 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors",
+                section === s.id ? "bg-ink text-paper" : "text-faint hover:text-ink",
+              )}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* TONIGHT — what service actually needs: the room, its guests, tabs, vibe.
+          For a shop there is no room and no service: just the till. */}
+      {section === "tonight" && (
+        <>
+          {store ? <StoreCounter venue={venue} meId={meId} /> : <VenueRooms venue={venue} meId={meId} />}
+          <MyKudos venue={venue} meId={meId} />
+        </>
+      )}
+
+      {section === "perks" && canManage && (
+        <>
+          {!venue.verified && <VerificationPanel venue={venue} meId={meId} />}
+          <VenuePerkEditor venue={venue} />
+        </>
+      )}
+
+      {section === "insights" && canManage && <Insights venue={venue} />}
+
+      {section === "team" && canManage && (
+        <>
+          <TeamKudos venueId={venue.id} />
+
+          <p className="label mb-1.5 text-faint">The team</p>
+          <p className="mb-3 text-xs leading-relaxed text-faint">
+            Bartenders can open a room, record a tab and hand out vibe. Managers can also set the perk and
+            add staff.
           </p>
-        ))}
+          <ul className="mb-3 divide-y divide-line border-y border-line">
+            {staff.map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-3 py-2.5">
+                <span className="min-w-0 truncate text-[15px] text-ink">
+                  {s.id === meId ? "you" : s.name} <span className="text-faint">@{s.handle}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-3 text-sm">
+                  <span className="text-xs text-faint">{s.role}</span>
+                  {s.role !== "owner" && s.id !== meId && (
+                    <button
+                      onClick={() => removeStaff(venue.id, s.id)}
+                      className="text-faint transition-colors hover:text-ink"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <AddStaff venueId={venue.id} meId={meId} />
+        </>
+      )}
 
-      <VenueRooms venue={venue} meId={meId} />
+      {section === "setup" && canManage && (
+        <>
+          {!venue.verified && <VerificationPanel venue={venue} meId={meId} />}
+          <EditVenue venue={venue} />
 
-      {canManage && <VenuePerkEditor venue={venue} />}
-
-      <p className="label mb-2 text-faint">The team</p>
-      <ul className="mb-3 divide-y divide-line border-y border-line">
-        {staff.map((s) => (
-          <li key={s.id} className="flex items-center justify-between gap-3 py-2.5">
-            <span className="min-w-0 truncate text-[15px] text-ink">
-              {s.id === meId ? "you" : s.name} <span className="text-faint">@{s.handle}</span>
-            </span>
-            <span className="flex shrink-0 items-center gap-3 text-sm">
-              <span className="text-xs text-faint">{s.role}</span>
-              {canManage && s.role !== "owner" && s.id !== meId && (
-                <button onClick={() => removeStaff(venue.id, s.id)} className="text-faint transition-colors hover:text-ink">
-                  Remove
+          {venue.myRole === "owner" && (
+            <div className="mt-6 border-t border-line pt-4 text-sm">
+              {confirmDelete ? (
+                <span className="flex items-center gap-3">
+                  <span className="text-muted">Delete this venue?</span>
+                  <button onClick={() => deleteVenue(venue.id)} className="font-medium text-accent hover:opacity-80">
+                    Delete
+                  </button>
+                  <button onClick={() => setConfirmDelete(false)} className="text-faint hover:text-ink">
+                    Keep
+                  </button>
+                </span>
+              ) : (
+                <button onClick={() => setConfirmDelete(true)} className="text-faint transition-colors hover:text-ink">
+                  Delete venue
                 </button>
               )}
-            </span>
-          </li>
-        ))}
-      </ul>
-
-      {canManage && <AddStaff venueId={venue.id} meId={meId} />}
-
-      {canManage && <EditVenue venue={venue} />}
-
-      {venue.myRole === "owner" && (
-        <div className="mt-4 text-sm">
-          {confirmDelete ? (
-            <span className="flex items-center gap-3">
-              <span className="text-muted">Delete this venue?</span>
-              <button onClick={() => deleteVenue(venue.id)} className="font-medium text-accent hover:opacity-80">
-                Delete
-              </button>
-              <button onClick={() => setConfirmDelete(false)} className="text-faint hover:text-ink">
-                Keep
-              </button>
-            </span>
-          ) : (
-            <button onClick={() => setConfirmDelete(true)} className="text-faint transition-colors hover:text-ink">
-              Delete venue
-            </button>
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );
@@ -423,6 +602,7 @@ function VenueRooms({ venue, meId }: { venue: Venue; meId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [openRoom, setOpenRoom] = useState<string | null>(null);
+  const [qrRoom, setQrRoom] = useState<string | null>(null);
   // How long your wall board stays live. Guests' consent to be on it expires with
   // it — nobody's name lingers on a screen after the night is over.
   const [boardHours, setBoardHours] = useState(6);
@@ -507,6 +687,12 @@ function VenueRooms({ venue, meId }: { venue: Venue; meId: string }) {
                   >
                     Guests
                   </button>
+                  <button
+                    onClick={() => setQrRoom(r.inviteCode)}
+                    className="text-faint transition-colors hover:text-ink"
+                  >
+                    QR
+                  </button>
                   <a
                     href={`${mainOrigin}/kiosk/${r.inviteCode}`}
                     target="_blank"
@@ -525,25 +711,191 @@ function VenueRooms({ venue, meId }: { venue: Venue; meId: string }) {
               </div>
 
               {openRoom === r.id && (
-                <RoomGuestList partyId={r.id} verified={venue.verified} currency={currencyForCountry(venue.country)} />
+                <RoomGuestList
+                  partyId={r.id}
+                  venueId={venue.id}
+                  verified={venue.verified}
+                  currency={currencyForCountry(venue.country)}
+                />
               )}
             </li>
           ))}
         </ul>
       )}
+
+      {qrRoom && (
+        <RoomQr url={`${mainOrigin}/p/${qrRoom}`} code={qrRoom} onClose={() => setQrRoom(null)} />
+      )}
     </div>
   );
 }
 
-// The bar's people hand out vibe. Staff aren't party members, so the guest list
-// and the award both go through definer rpcs. Positive-only — there is no way to
-// dock anyone here, and a guest is never publicly rated.
+// ── insights: numbers a bar can act on, and a profile of nobody ──────────────
+// A manager already sees who is in their own room. So counts over that same group
+// aren't new personal data. What WOULD be: a small-group split ("1 new guest" =
+// that named person has never been here before), a profile built over time, or
+// anything at all about another venue. So splits are hidden below 5 people, there
+// are no per-guest rows anywhere, and every number is scoped to this venue.
+//
+// A hidden number renders as "—", NEVER as 0. "Nobody was new" and "we're not
+// telling you" are different facts, and showing 0 for both leaks the first.
+function Insights({ venue }: { venue: Venue }) {
+  const [days, setDays] = useState(30);
+  const { data, loading } = useVenueInsights(venue.id, days);
+  const money = (n: number) => formatMoney(n, currencyForCountry(venue.country), { round: true });
+
+  if (loading) return <div className="glass h-40 animate-pulse rounded-tile" />;
+  if (!data) return <p className="text-sm text-faint">Nothing to show yet.</p>;
+
+  const hidden = data.newGuests === null;
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="label text-faint">Last {days} days</p>
+        <div className="flex gap-1.5">
+          {[7, 30, 90].map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              aria-pressed={days === d}
+              className={clsx(
+                "rounded-ctl px-2.5 py-1 text-xs transition-colors",
+                days === d ? "bg-ink font-medium text-paper" : "glass glass-press text-muted hover:text-ink",
+              )}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="glass grid grid-cols-2 gap-4 rounded-tile p-5 sm:grid-cols-3">
+        <Stat label="nights open" value={String(data.rooms)} />
+        <Stat label="guests" value={String(data.guests)} />
+        <Stat label="new" value={data.newGuests === null ? "—" : String(data.newGuests)} />
+        <Stat label="regulars" value={data.returningGuests === null ? "—" : String(data.returningGuests)} />
+        <Stat label="perks waiting" value={data.perksEarned === null ? "—" : String(data.perksEarned)} accent />
+        <Stat label="perks given" value={String(data.perksClaimed)} />
+        <Stat label="tabs" value={String(data.tabs)} />
+        <Stat label="takings" value={money(data.takings)} />
+        <Stat label="team thanked" value={String(data.kudos)} />
+      </div>
+
+      {(data.quietVisits > 0 || venue.quietNights.length > 0) && (
+        <p className="mt-3 text-xs leading-relaxed text-faint">
+          <span className="text-ink">{data.quietVisits}</span> of those visits landed on a night you called
+          quiet ({data.otherVisits} on the others).
+        </p>
+      )}
+
+      {hidden && (
+        <p className="mt-3 text-xs leading-relaxed text-faint">
+          Some numbers show &ldquo;—&rdquo; because too few people came for us to split them without pointing
+          at somebody. With five or more guests they&apos;ll appear.
+        </p>
+      )}
+
+      <p className="mt-4 border-t border-line pt-3 text-xs leading-relaxed text-faint">
+        Counts only, and only for this venue. We&apos;ll never show you a list of who came, who stopped
+        coming, or what anyone does at another bar — that isn&apos;t ours to hand over, and we won&apos;t
+        build it.
+      </p>
+    </div>
+  );
+}
+
+function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div>
+      <p className={clsx("tnum font-display text-2xl leading-none", accent ? "text-accent" : "text-ink")}>{value}</p>
+      <p className="mt-1 text-xs text-faint">{label}</p>
+    </div>
+  );
+}
+
+// ── what a STAFF MEMBER sees: their own thanks ───────────────────────────────
+// This is who the feature is for. People don't quit because they lost a
+// leaderboard; they quit because nobody ever noticed.
+function MyKudos({ venue, meId }: { venue: Venue; meId: string }) {
+  const rows = useMyKudos(venue.id);
+  const [off, setOff] = useState(false);
+  const total = rows.reduce((n, r) => n + r.n, 0);
+
+  function toggle() {
+    const next = !off;
+    setOff(next);
+    setThankable(venue.id, meId, !next);
+  }
+
+  return (
+    <div className="mt-6 border-t border-line pt-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="label text-faint">Your thanks</p>
+        <button onClick={toggle} className="text-xs text-faint transition-colors hover:text-ink">
+          {off ? "Turn thanks back on" : "Don't thank me"}
+        </button>
+      </div>
+
+      {total === 0 ? (
+        <p className="text-sm text-faint">
+          Nothing yet. When a guest thanks you, it lands here — and only you see it.
+        </p>
+      ) : (
+        <>
+          <p className="font-display text-3xl text-ink">
+            {total} <span className="text-base text-faint">{total === 1 ? "thank you" : "thank yous"}</span>
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {rows.map((r) => (
+              <li key={r.reason} className="glass rounded-ctl px-3 py-1.5 text-xs text-muted">
+                {r.reason} <span className="tnum text-accent">{r.n}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-faint">Yours alone. Your manager never sees who was thanked.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── what a MANAGER sees: ONE NUMBER ─────────────────────────────────────────
+// Deliberately NOT a per-person league table. That line is the difference between
+// a thank-you box and an employee-monitoring tool — the latter needs a DPIA and
+// works-council consultation in seven EU states, and it turns a kindness into a
+// performance metric. A bar WILL ask for the ranking. The answer is no.
+function TeamKudos({ venueId }: { venueId: string }) {
+  const total = useVenueKudosTotal(venueId, 30);
+
+  return (
+    <div className="mb-5">
+      <p className="label mb-1.5 text-faint">Your team, thanked</p>
+      <p className="font-display text-3xl text-ink">
+        {total} <span className="text-base text-faint">in the last 30 days</span>
+      </p>
+      <p className="mt-1.5 max-w-prose text-xs leading-relaxed text-faint">
+        Guests can thank whoever looked after them. We show you the team&apos;s total and nothing else — never
+        who was thanked, or how often. Your people can see their own, and there is no way for a guest to
+        complain about anyone here. That&apos;s deliberate: it&apos;s a thank-you box, not a scoreboard.
+      </p>
+    </div>
+  );
+}
+
+// ── one guest's standing toward this venue's perk, + the claim ───────────────
+// The bartender sees the same number the guest sees (one server function, no two
+// versions of the truth). "Give it" records the claim, and the guest's progress
+// restarts from zero — so a perk can be earned again, but never claimed twice for
+// the same earn, and two bartenders can't both honour it.
 function RoomGuestList({
   partyId,
+  venueId,
   verified,
   currency,
 }: {
   partyId: string;
+  venueId: string;
   verified: boolean;
   currency: string;
 }) {
@@ -600,7 +952,11 @@ function RoomGuestList({
         {guests.map((g) => (
           <li key={g.id}>
             <div className="flex items-center justify-between gap-3">
-              <span className="min-w-0 truncate text-[15px] text-ink">{g.name}</span>
+              <span className="min-w-0 truncate text-[15px] text-ink">
+                {g.name}
+                {/* Their standing on YOUR perks — and the button that hands one over. */}
+                {verified && <GuestPerk venueId={venueId} guestId={g.id} />}
+              </span>
               {verified && (
                 <span className="flex shrink-0 items-center gap-3 text-sm">
                   <button
@@ -759,52 +1115,236 @@ function VerificationPanel({ venue, meId }: { venue: Venue; meId: string }) {
   );
 }
 
+function GuestPerk({ venueId, guestId }: { venueId: string; guestId: string }) {
+  const { tiers, loading } = usePerkTiers(venueId, guestId);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (loading || tiers.length === 0) return null;
+
+  async function give(perkId: string) {
+    setBusy(perkId);
+    setError(null);
+    const err = await redeemPerk(perkId, guestId);
+    setBusy(null);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setDone(perkId);
+    setTimeout(() => setDone(null), 2000);
+  }
+
+  return (
+    <span className="mt-0.5 block space-y-1 text-xs">
+      {tiers.map((t) => {
+        const spend = t.kind === "spend";
+        const fmt = (n: number) => (spend ? formatMoney(n, t.currency, { round: true }) : `${n}`);
+
+        return (
+          <span key={t.id} className="block">
+            {done === t.id ? (
+              <span className="text-accent">Given · that one starts again</span>
+            ) : t.earned ? (
+              <button
+                onClick={() => give(t.id)}
+                disabled={busy === t.id}
+                className="rounded-ctl bg-accent px-2.5 py-1 text-xs font-medium text-accent-contrast transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {busy === t.id ? "…" : `Give ${t.reward}`}
+              </button>
+            ) : (
+              <span className="text-faint">
+                <span className="tnum">{fmt(t.progress)}</span>/<span className="tnum">{fmt(t.threshold)}</span>{" "}
+                toward {t.reward}
+              </span>
+            )}
+          </span>
+        );
+      })}
+      {error && <span className="text-accent">{error}</span>}
+    </span>
+  );
+}
+
+// ── the shop counter: how an off-licence punches a card ─────────────────────
+// A bar records a visit implicitly — you joined the room, so you were there. A shop
+// has no room, so a member of staff has to do it at the till. Which means the same
+// rule as a tab: THE GUEST CAN NEVER RECORD THEIR OWN. And the server clamps it to
+// one punch per person per day, so a shop can't punch your card ten times because
+// you bought ten bottles — that would quietly turn a visits card back into a volume
+// card, which is the thing we refused to build.
+function StoreCounter({ venue, meId }: { venue: Venue; meId: string }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SocialProfile[]>([]);
+  const [guest, setGuest] = useState<SocialProfile | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (guest || query.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    const t = setTimeout(async () => setResults(await searchUsers(query, meId)), 300);
+    return () => clearTimeout(t);
+  }, [query, meId, guest]);
+
+  async function punch(p: SocialProfile) {
+    setGuest(p);
+    setQuery("");
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    const err = await recordVisit(venue.id, p.id);
+    setBusy(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setNote(`${p.name}'s card is punched for today.`);
+  }
+
+  if (!venue.verified) {
+    return (
+      <p className="text-sm leading-relaxed text-faint">
+        Cards start once you&apos;re verified — until then nothing you punch would count, so we don&apos;t
+        pretend. Ask for verification under Setup.
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      <p className="label mb-1.5 text-faint">At the till</p>
+      <p className="mb-3 text-xs leading-relaxed text-faint">
+        Find the customer and punch their card. Once a day, per person — buying more doesn&apos;t earn more.
+      </p>
+
+      {guest ? (
+        <div className="glass rounded-tile p-4">
+          <p className="text-[15px] text-ink">
+            {guest.name} <span className="text-faint">@{guest.handle}</span>
+          </p>
+          {busy && <p className="mt-1 text-xs text-faint">Punching…</p>}
+          {note && <p className="mt-1 text-xs text-accent">{note}</p>}
+          {error && <p className="mt-1 text-xs text-accent">{error}</p>}
+          {!busy && !error && <GuestPerk venueId={venue.id} guestId={guest.id} />}
+          <button
+            onClick={() => {
+              setGuest(null);
+              setNote(null);
+              setError(null);
+            }}
+            className="mt-3 text-sm text-faint transition-colors hover:text-ink"
+          >
+            Next customer
+          </button>
+        </div>
+      ) : (
+        <>
+          <label htmlFor={`punch-${venue.id}`} className="sr-only">
+            Find a customer
+          </label>
+          <input
+            id={`punch-${venue.id}`}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find a customer by name or @handle"
+            className={inputClass}
+          />
+          {query.trim().length >= 2 && (
+            <ul className="mt-2 space-y-2">
+              {results.length === 0 && <li className="px-1 text-sm text-faint">No one by that name or handle.</li>}
+              {results.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-3 px-1">
+                  <span className="min-w-0 truncate text-[15px] text-ink">
+                    {p.name} <span className="text-faint">@{p.handle}</span>
+                  </span>
+                  <button
+                    onClick={() => punch(p)}
+                    className="shrink-0 text-sm font-medium text-accent transition-opacity hover:opacity-80"
+                  >
+                    Punch card
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── quiet nights: the dead-Tuesday fix, without rewarding drinking ───────────
+// The obvious fix is illegal (discount the drinks). The next-most-obvious breaks
+// our own rule (a spark for turning up = a reward for FREQUENCY, which 019 removed
+// on purpose). So the boost lands on the PRIVATE perk instead: a visit on a quiet
+// night counts double toward the house reward. The bar fills its Tuesday; the
+// public board stays clean; no drink is discounted, so it isn't an irresponsible
+// promotion anywhere.
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// ── the house perks: up to three TIERS, each its own punch-card ─────────────
+// "3 visits: a coffee. 10 visits: a free pour." Tiered programmes beat single-tier
+// by ~22% on engagement, and it's how a bar already thinks. Each tier keeps its own
+// clock: claiming the coffee doesn't wipe progress toward the pour.
+//
+// What a tier may BE is decided by WHERE THE VENUE IS. The database has the final
+// say (perk_policy — 021, fixed in 028); this UI exists so a licensee sees the rule
+// rather than bumping into an error.
 function VenuePerkEditor({ venue }: { venue: Venue }) {
-  const { perk, loading } = useVenuePerk(venue.id);
+  const { perks, loading } = useVenuePerks(venue.id);
   const [kind, setKind] = useState<PerkKind>("visits");
   const [threshold, setThreshold] = useState(5);
   const [reward, setReward] = useState("");
   const [rewardAlcoholic, setRewardAlcoholic] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  // What this venue may lawfully offer, decided by WHERE IT IS. The database has
-  // the final say (020_perk_policy.sql); this is so the bar sees the rule rather
-  // than bumping into an error.
-  const policy = perkPolicy(venue.country, venue.region);
-  const note = perkPolicyNote(venue.country, venue.region);
+  // A SHOP is judged by the shop's rules, not the bar's: its own jurisdiction
+  // permission, visits only, and never an alcoholic reward — see perkPolicy(). Pass
+  // the kind or a bottle shop inherits a pub's freedoms.
+  const policy = perkPolicy(venue.country, venue.region, venue.kind);
+  const note = perkPolicyNote(venue.country, venue.region, venue.kind);
+  const currency = currencyForCountry(venue.country);
 
-  useEffect(() => {
-    if (perk) {
-      setKind(perk.kind);
-      setThreshold(perk.threshold);
-      setReward(perk.reward);
-      setRewardAlcoholic(perk.rewardAlcoholic);
-    }
-  }, [perk]);
-
-  // Never leave the editor sitting on an option the venue can't actually use.
+  // Never leave the editor sitting on an option the venue can't lawfully use.
   useEffect(() => {
     if (!policy.allowSpendPerk && kind === "spend") setKind("visits");
     if (!policy.allowAlcoholReward && rewardAlcoholic) setRewardAlcoholic(false);
   }, [policy.allowSpendPerk, policy.allowAlcoholReward, kind, rewardAlcoholic]);
 
+  async function add() {
+    setBusy(true);
+    setError(null);
+    const err = await addVenuePerk(venue.id, kind, threshold, reward, rewardAlcoholic);
+    setBusy(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setReward("");
+  }
+
   if (!venue.verified) {
     return (
       <div className="mb-5">
-        <p className="label mb-2 text-faint">House perk</p>
+        <p className="label mb-2 text-faint">House perks</p>
         <p className="text-sm text-faint">Get verified to offer a perk — a reward that brings guests back.</p>
       </div>
     );
   }
 
   // Some places forbid a loyalty perk on alcohol entirely (Thailand, Norway…), and
-  // anywhere we haven't researched is treated the same way — deny by default. Say
-  // so honestly instead of showing an editor that will only ever fail.
+  // anywhere we haven't researched is treated the same way — deny by default.
   if (!policy.allowPerks) {
     return (
       <div className="mb-5">
-        <p className="label mb-2 text-faint">House perk</p>
+        <p className="label mb-2 text-faint">House perks</p>
         <p className="max-w-prose text-sm leading-relaxed text-faint">
           {note ?? "Loyalty perks aren't available for a venue here."}
         </p>
@@ -812,148 +1352,204 @@ function VenuePerkEditor({ venue }: { venue: Venue }) {
     );
   }
 
-  async function save() {
-    setError(null);
-    const err = await setVenuePerk(venue.id, kind, threshold, reward, rewardAlcoholic);
-    if (err) {
-      setError(err);
-      return;
-    }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1600);
-  }
-
   const spend = kind === "spend";
+  const full = perks.length >= MAX_TIERS;
+  const fmt = (n: number, k: PerkKind) => (k === "spend" ? formatMoney(n, currency, { round: true }) : `${n} visits`);
 
   return (
     <div className="mb-5">
-      <p className="label mb-2 text-faint">House perk</p>
+      <p className="label mb-2 text-faint">House perks</p>
+
+      {note && <p className="glass mb-2.5 rounded-ctl px-3.5 py-2.5 text-xs leading-relaxed text-muted">{note}</p>}
+
       {loading ? (
         <div className="glass h-14 animate-pulse rounded-ctl" />
       ) : (
         <>
-          {/* Where the bar is decides what it may offer. We say so plainly — a
-              licensee needs to know the rule, not just be blocked by it. */}
-          {note && (
-            <p className="glass mb-2.5 rounded-ctl px-3.5 py-2.5 text-xs leading-relaxed text-muted">{note}</p>
+          {perks.length > 0 && (
+            <ul className="mb-4 divide-y divide-line border-y border-line">
+              {perks.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-3 py-2.5">
+                  <span className="min-w-0">
+                    <span className="block truncate text-[15px] text-ink">{t.reward}</span>
+                    <span className="text-xs text-faint">
+                      at {fmt(t.threshold, t.kind)}
+                      {t.rewardAlcoholic && " · an alcoholic drink"}
+                    </span>
+                  </span>
+                  <button
+                    onClick={() => removeVenuePerk(t.id)}
+                    className="shrink-0 text-sm text-faint transition-colors hover:text-ink"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
 
-          <div className="mb-2 flex gap-2">
-            {(["visits", "spend"] as PerkKind[]).map((k) => {
-              const blocked = k === "spend" && !policy.allowSpendPerk;
-              return (
-                <button
-                  key={k}
-                  onClick={() => {
-                    if (blocked) return;
-                    setKind(k);
-                    setThreshold(k === "spend" ? 2000 : 5);
-                  }}
-                  disabled={blocked}
-                  aria-pressed={kind === k}
-                  title={blocked ? "Not permitted where this venue is" : undefined}
-                  className={clsx(
-                    "rounded-ctl px-3.5 py-1.5 text-sm transition-colors",
-                    blocked
-                      ? "cursor-not-allowed border border-line text-faint"
-                      : kind === k
-                        ? "bg-ink font-medium text-paper"
-                        : "glass glass-press text-muted hover:text-ink",
-                  )}
-                >
-                  {k === "visits" ? "By visits" : "By spend"}
-                </button>
-              );
-            })}
-          </div>
-
-          <p className="mb-2 text-xs leading-relaxed text-faint">
-            {spend
-              ? "Reward a guest once their tab at your place passes this. Only your staff can record a tab — a guest can never enter their own."
-              : "Reward a guest after this many visits — a check-in at one of your rooms counts as a visit."}
-          </p>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={1}
-              max={spend ? 1000000 : 100}
-              value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))}
-              aria-label={spend ? "Rupees to spend" : "Visits needed"}
-              className="tnum glass w-24 rounded-ctl px-3 py-2.5 text-[15px] text-ink"
-            />
-            <input
-              value={reward}
-              onChange={(e) => setReward(e.target.value)}
-              placeholder={spend ? "e.g. a free drink next visit" : "e.g. a free pour"}
-              aria-label="Reward"
-              className="glass w-full rounded-ctl px-4 py-2.5 text-[15px] text-ink placeholder:text-faint"
-            />
-          </div>
-          <p className="mt-1.5 text-xs text-faint">
-            {spend
-              ? `Reward at ${formatMoney(threshold || 0, currencyForCountry(venue.country), { round: true })}`
-              : `Reward after ${threshold || 0} visits`}
-          </p>
-
-          {/* The reward's NATURE is the whole legal question. A loyalty scheme
-              whose prize isn't alcohol isn't an alcohol loyalty scheme — which is
-              why this feature can exist outside India at all. */}
-          <div className="mt-3">
-            <p className="mb-1.5 text-xs text-muted">The reward is…</p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setRewardAlcoholic(false)}
-                aria-pressed={!rewardAlcoholic}
-                className={clsx(
-                  "rounded-ctl px-3.5 py-1.5 text-sm transition-colors",
-                  !rewardAlcoholic ? "bg-ink font-medium text-paper" : "glass glass-press text-muted hover:text-ink",
-                )}
-              >
-                Not a drink
-              </button>
-              <button
-                onClick={() => policy.allowAlcoholReward && setRewardAlcoholic(true)}
-                disabled={!policy.allowAlcoholReward}
-                aria-pressed={rewardAlcoholic}
-                title={!policy.allowAlcoholReward ? "Not permitted where this venue is" : undefined}
-                className={clsx(
-                  "rounded-ctl px-3.5 py-1.5 text-sm transition-colors",
-                  !policy.allowAlcoholReward
-                    ? "cursor-not-allowed border border-line text-faint"
-                    : rewardAlcoholic
-                      ? "bg-ink font-medium text-paper"
-                      : "glass glass-press text-muted hover:text-ink",
-                )}
-              >
-                An alcoholic drink
-              </button>
-            </div>
-            <p className="mt-1.5 text-xs leading-relaxed text-faint">
-              {rewardAlcoholic
-                ? "Permitted here — but a coffee, a dessert or priority entry brings a regular back just as well, without rewarding drinking."
-                : "A coffee, a dessert, priority entry, something from the kitchen. Legal everywhere we operate."}
+          {full ? (
+            <p className="text-xs leading-relaxed text-faint">
+              Three is the limit. A reward nobody can remember is a reward nobody chases — and the research is
+              blunt that confusing schemes are the main reason people abandon them.
             </p>
-          </div>
+          ) : (
+            <>
+              <p className="label mb-2 text-faint">{perks.length === 0 ? "Set a perk" : "Add another"}</p>
 
-          {error && <p className="mt-2 text-sm text-accent">{error}</p>}
-          <div className="mt-3 flex items-center gap-3">
-            <button
-              onClick={save}
-              disabled={!reward.trim()}
-              className="rounded-ctl bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {saved ? "Saved" : perk ? "Update perk" : "Set perk"}
-            </button>
-            {perk && (
-              <button onClick={() => clearVenuePerk(venue.id)} className="text-sm text-faint transition-colors hover:text-ink">
-                Remove
+              <div className="mb-2 flex gap-2">
+                {(["visits", "spend"] as PerkKind[]).map((k) => {
+                  const blocked = k === "spend" && !policy.allowSpendPerk;
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => {
+                        if (blocked) return;
+                        setKind(k);
+                        setThreshold(k === "spend" ? 2000 : 5);
+                      }}
+                      disabled={blocked}
+                      aria-pressed={kind === k}
+                      title={blocked ? "Not permitted where this venue is" : undefined}
+                      className={clsx(
+                        "rounded-ctl px-3.5 py-1.5 text-sm transition-colors",
+                        blocked
+                          ? "cursor-not-allowed border border-line text-faint"
+                          : kind === k
+                            ? "bg-ink font-medium text-paper"
+                            : "glass glass-press text-muted hover:text-ink",
+                      )}
+                    >
+                      {k === "visits" ? "By visits" : "By spend"}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="mb-2 text-xs leading-relaxed text-faint">
+                {spend
+                  ? "Reward a guest once their tab passes this. Only your staff can record a tab — a guest can never enter their own."
+                  : "Reward a guest after this many visits. A visit on one of your quiet nights counts double."}
+              </p>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={spend ? 1000000 : 100}
+                  value={threshold}
+                  onChange={(e) => setThreshold(Number(e.target.value))}
+                  aria-label={spend ? "Amount to spend" : "Visits needed"}
+                  className="tnum glass w-24 rounded-ctl px-3 py-2.5 text-[15px] text-ink"
+                />
+                <input
+                  value={reward}
+                  onChange={(e) => setReward(e.target.value)}
+                  placeholder={spend ? "e.g. dessert on the house" : "e.g. a free coffee"}
+                  aria-label="Reward"
+                  className="glass w-full rounded-ctl px-4 py-2.5 text-[15px] text-ink placeholder:text-faint"
+                />
+              </div>
+
+              <div className="mt-3">
+                <p className="mb-1.5 text-xs text-muted">The reward is…</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setRewardAlcoholic(false)}
+                    aria-pressed={!rewardAlcoholic}
+                    className={clsx(
+                      "rounded-ctl px-3.5 py-1.5 text-sm transition-colors",
+                      !rewardAlcoholic ? "bg-ink font-medium text-paper" : "glass glass-press text-muted hover:text-ink",
+                    )}
+                  >
+                    Not a drink
+                  </button>
+                  <button
+                    onClick={() => policy.allowAlcoholReward && setRewardAlcoholic(true)}
+                    disabled={!policy.allowAlcoholReward}
+                    aria-pressed={rewardAlcoholic}
+                    title={!policy.allowAlcoholReward ? "Not permitted where this venue is" : undefined}
+                    className={clsx(
+                      "rounded-ctl px-3.5 py-1.5 text-sm transition-colors",
+                      !policy.allowAlcoholReward
+                        ? "cursor-not-allowed border border-line text-faint"
+                        : rewardAlcoholic
+                          ? "bg-ink font-medium text-paper"
+                          : "glass glass-press text-muted hover:text-ink",
+                    )}
+                  >
+                    An alcoholic drink
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs leading-relaxed text-faint">
+                  {rewardAlcoholic
+                    ? "Permitted here — but a coffee, a dessert or priority entry brings a regular back just as well, without rewarding drinking."
+                    : "A coffee, a dessert, priority entry, something from the kitchen. Legal everywhere we operate."}
+                </p>
+              </div>
+
+              {error && <p className="mt-2 text-sm text-accent">{error}</p>}
+
+              <button
+                onClick={add}
+                disabled={!reward.trim() || busy}
+                className="mt-3 rounded-ctl bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {busy ? "Saving…" : perks.length === 0 ? "Set perk" : "Add tier"}
               </button>
-            )}
-          </div>
+            </>
+          )}
+
+          {/* Only a VISITS perk can be doubled — money is never doubled, because
+              doubling money is rewarding the spend, which is the thing we don't do. */}
+          {perks.some((t) => t.kind === "visits") && <QuietNights venue={venue} />}
         </>
       )}
+    </div>
+  );
+}
+
+function QuietNights({ venue }: { venue: Venue }) {
+  const [nights, setNights] = useState<number[]>(venue.quietNights ?? []);
+  const [saved, setSaved] = useState(false);
+
+  async function toggle(day: number) {
+    const next = nights.includes(day) ? nights.filter((d) => d !== day) : [...nights, day].sort();
+    setNights(next);
+    await updateVenue(venue.id, { quietNights: next });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1400);
+  }
+
+  return (
+    <div className="mt-6 border-t border-line pt-4">
+      <p className="text-sm text-ink">Quiet nights</p>
+      <p className="mb-2.5 text-xs leading-relaxed text-faint">
+        Your dead nights. A visit on one of these counts <span className="text-ink">double</span> toward the
+        perk — so people have a reason to come on a Tuesday. Nothing is discounted and nobody is asked to
+        drink more; they just have to turn up.
+      </p>
+
+      <div className="flex flex-wrap gap-1.5">
+        {WEEKDAYS.map((label, day) => {
+          const on = nights.includes(day);
+          return (
+            <button
+              key={label}
+              onClick={() => toggle(day)}
+              aria-pressed={on}
+              className={clsx(
+                "rounded-ctl px-3 py-1.5 text-xs transition-colors",
+                on ? "bg-accent font-medium text-accent-contrast" : "glass glass-press text-muted hover:text-ink",
+              )}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {saved && <p className="mt-2 text-xs text-accent">Saved.</p>}
     </div>
   );
 }

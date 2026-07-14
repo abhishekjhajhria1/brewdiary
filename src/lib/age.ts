@@ -22,6 +22,23 @@ export const LEGAL_AGE = 21;
 // Never reuse a version after loosening→tightening a check; the stale "ok" wins.
 const KEY = "brewdiary.age.v2";
 const COUNTRY_KEY = "brewdiary.country.v1";
+// The age bar the person actually cleared (18, 19, 20, 21…). We store THIS rather
+// than a date of birth, so the promise on the age gate stays literally true: we
+// never save your DOB. It exists for TRAVELLERS — if you move somewhere with a
+// higher bar than the one you cleared, we have to ask again, and without this we'd
+// have no way to know. (Drinking age is territorial: a 20-year-old American is
+// legal in Berlin and illegal in New York. It follows where you ARE, not your
+// passport.)
+const CLEARED_KEY = "brewdiary.agebar.v1";
+
+function clearedBar(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    return Number(window.localStorage.getItem(CLEARED_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
 
 /** The legal drinking age where this person says they are. */
 export function legalAgeFor(country?: string | null): number {
@@ -69,16 +86,38 @@ export function isAgeConfirmed(): boolean {
 /** Verify a date of birth against the legal age WHERE THEY ARE. Persists only on
  *  success. An unknown country means 21 — the strict fallback, never 18. */
 export function confirmAge(dob: Date, country?: string | null): boolean {
-  const ok = !Number.isNaN(dob.getTime()) && ageFrom(dob) >= legalAgeFor(country);
+  if (Number.isNaN(dob.getTime())) return false;
+  const age = ageFrom(dob);
+  const bar = legalAgeFor(country);
+  const ok = age >= bar;
   if (ok) {
     try {
       window.localStorage.setItem(KEY, "ok");
+      // Remember the HIGHEST bar they've cleared — capped at their real age so we
+      // never store more than we need, and never the date itself.
+      window.localStorage.setItem(CLEARED_KEY, String(Math.min(age, 25)));
       if (country) saveCountry(country);
     } catch {
       /* private mode — gate will re-ask next visit */
     }
   }
   return ok;
+}
+
+/** Moving country. Returns true if we can just do it; false if the new country's
+ *  legal age is HIGHER than the bar this person has cleared, in which case they
+ *  have to confirm their age again before we let them in there. */
+export function canMoveTo(country: string): boolean {
+  return clearedBar() >= legalAgeFor(country);
+}
+
+/** Change where you are — the traveller's switch. Age is territorial, so this can
+ *  legitimately require a fresh check (Berlin → New York is 18 → 21). */
+export function moveTo(country: string): { ok: true } | { ok: false; needsAge: number } {
+  const bar = legalAgeFor(country);
+  if (!canMoveTo(country)) return { ok: false, needsAge: bar };
+  saveCountry(country);
+  return { ok: true };
 }
 
 /** Inline no-flash: mark <html> so the gate can cover content before React mounts. */

@@ -87,12 +87,30 @@ export default function PrivacyPage() {
         </ul>
       </Section>
 
+      <Section title="What a bar can see about you">
+        <P>
+          If you join a venue&apos;s room, its staff see <B>your name in that room</B> — they need it to hand
+          you a perk or record your tab. They also see your standing toward <em>their own</em> reward.
+        </P>
+        <P>
+          Beyond that, a bar only ever gets <B>counts</B>: how many people came, how many were new, how many
+          rewards are waiting. Never a list of who. And when too few people came for a count to be safe — fewer
+          than five — we <B>hide it rather than round it</B>, because &ldquo;one new guest&rdquo; would be
+          pointing at a person.
+        </P>
+        <P>
+          A bar <B>never</B> learns what you do anywhere else — not at another bar, and not in your diary. We
+          will not build a list of customers who stopped coming, and we will not let a venue push offers at
+          you.
+        </P>
+      </Section>
+
       <Section title="What we never do">
         <P>
-          We don&apos;t sell your data. We don&apos;t run advertising trackers. We don&apos;t share your diary with
-          bars — a venue sees the points and tabs from its own room, and nothing else. There is no field
-          anywhere for a phone number or an address, so they cannot be shared even by accident. And there is no
-          negative rating of anyone, ever: a bar can praise a guest, it can never mark one.
+          We don&apos;t sell your data. We don&apos;t run advertising trackers. There is no field anywhere for a
+          phone number or an address, so they cannot be shared even by accident. And there is no negative
+          rating of anyone, ever — not of a guest, and not of a bartender: a bar can praise a customer but
+          never mark one, and a customer can thank a bartender but never complain about one through us.
         </P>
       </Section>
 

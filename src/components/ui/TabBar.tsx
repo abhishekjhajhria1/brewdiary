@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { useAuth } from "@/lib/profile";
+import { useIsVenueApp } from "@/lib/host";
 
 const TABS = [
   { href: "/", label: "Calendar" },
@@ -16,12 +17,18 @@ const TABS = [
 export function TabBar() {
   const pathname = usePathname();
   const auth = useAuth();
+  const isVenue = useIsVenueApp();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
   // Wait for the session to resolve so the bar doesn't flash between layouts.
-  // The venue dashboard (/venue) and the kiosk wall (/kiosk) carry no app chrome.
-  if (!mounted || auth.status === "loading" || pathname.startsWith("/venue") || pathname.startsWith("/kiosk")) return null;
+  // The venue dashboard and the kiosk wall carry no consumer chrome.
+  //
+  // NOTE: the venue check is by HOST, not path. On bar.bwdy.site the middleware
+  // rewrites to /venue internally but the browser's path is still "/", so a
+  // `pathname.startsWith("/venue")` test silently fails there — which is how this
+  // nav ended up on the bar dashboard in production.
+  if (!mounted || auth.status === "loading" || isVenue || pathname.startsWith("/kiosk")) return null;
 
   // Guests still get the local diary — only the social tab needs an account.
   const tabs = TABS.filter((t) => !t.authed || auth.profile);

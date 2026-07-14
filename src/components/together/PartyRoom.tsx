@@ -26,7 +26,8 @@ import {
   useRoomConsent,
   setRoomConsent,
 } from "@/lib/points";
-import { usePerkProgress } from "@/lib/perks";
+import { usePerkTiers, useQuietNights } from "@/lib/perks";
+import { useRoomStaff, thankStaff, KUDOS_REASONS } from "@/lib/kudos";
 import { formatMoney } from "@/lib/money";
 import { ScoreCard, type Score } from "../share/ScoreCard";
 import { useAuth } from "@/lib/profile";
@@ -220,9 +221,11 @@ export function PartyRoom({ partyId }: { partyId: string }) {
           <PointsBoard partyId={party.id} partyName={party.name} members={approved} me={me} />
 
           {/* A venue room carries the house perk — your standing toward the reward. */}
-          {party.venueId && <PerkCard venueId={party.venueId} />}
+          {party.venueId && me && <PerkCard venueId={party.venueId} me={me} date={party.date} />}
 
-          {/* Only a venue has a wall screen to be on — so only a venue room asks. */}
+          {/* Only a venue has staff to thank, and a wall screen to be on. */}
+          {party.venueId && <ThankStaff partyId={party.id} />}
+
           {party.venueId && me && <ScreenConsent partyId={party.id} me={me} />}
         </>
       )}
@@ -425,6 +428,82 @@ function PointsBoard({
   );
 }
 
+// ── thank the people who served you ─────────────────────────────────────────
+// Positive-only, like everything else here: you can thank a bartender, you can
+// never complain about one. And a manager never sees who was thanked how often —
+// that would make this an employee-monitoring tool (GDPR: DPIA + works councils
+// in seven EU states). It's a thank-you box, and it stays one.
+function ThankStaff({ partyId }: { partyId: string }) {
+  const staff = useRoomStaff(partyId);
+  const [open, setOpen] = useState<string | null>(null);
+  const [sent, setSent] = useState<Set<string>>(new Set());
+
+  if (staff.length === 0) return null;
+
+  async function say(staffId: string, reason: string) {
+    const key = `${staffId}:${reason}`;
+    setSent((s) => new Set(s).add(key));
+    setOpen(null);
+    const err = await thankStaff(partyId, staffId, reason);
+    if (err)
+      setSent((s) => {
+        const n = new Set(s);
+        n.delete(key);
+        return n;
+      });
+  }
+
+  return (
+    <section className="mb-7">
+      <p className="label mb-1.5 text-faint">Thank the bar</p>
+      <p className="mb-3 max-w-prose text-xs leading-relaxed text-faint">
+        Say thanks to whoever looked after you. They see it; their manager only ever sees that the team was
+        thanked, never who by or how often. There&apos;s no way to complain about someone here — that&apos;s
+        deliberate.
+      </p>
+
+      <ul className="divide-y divide-line border-y border-line">
+        {staff.map((s) => (
+          <li key={s.id} className="py-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate text-[15px] text-ink">{s.name}</span>
+              <button
+                onClick={() => setOpen((cur) => (cur === s.id ? null : s.id))}
+                aria-expanded={open === s.id}
+                className={clsx("shrink-0 text-sm transition-colors", open === s.id ? "text-accent" : "text-faint hover:text-ink")}
+              >
+                Thank
+              </button>
+            </div>
+
+            {open === s.id && (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {KUDOS_REASONS.map((reason) => {
+                  const done = sent.has(`${s.id}:${reason}`);
+                  return (
+                    <button
+                      key={reason}
+                      disabled={done}
+                      onClick={() => say(s.id, reason)}
+                      className={clsx(
+                        "glass glass-press rounded-ctl px-3 py-2 text-xs transition-colors",
+                        done ? "text-faint" : "text-muted hover:text-accent",
+                      )}
+                    >
+                      {reason}
+                      {done && " ✓"}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 // ── consent to the bar's wall screen — FOR TONIGHT ONLY ─────────────────────
 // Granted here, in the room you're actually standing in, and it expires with the
 // night. Never a permanent global "put me on bar TVs" flag.
@@ -490,37 +569,65 @@ function ScreenConsent({ partyId, me }: { partyId: string; me: string }) {
   );
 }
 
-// ── house perk: the guest's standing toward a venue's reward ─────────────────
-function PerkCard({ venueId }: { venueId: string }) {
-  const { perk, progress, earned, loading } = usePerkProgress(venueId);
-  if (loading || !perk) return null;
+// ── house perks: the guest's standing on every TIER ─────────────────────────
+// A venue can run several rewards now ("3 visits: a coffee. 10: a free pour"), and
+// each is its OWN punch-card with its OWN clock — claiming the coffee doesn't wipe
+// your progress toward the pour. Progress counts from YOUR LAST CLAIM OF THAT TIER,
+// which is what stops one earn being claimed forever.
+function PerkCard({ venueId, me, date }: { venueId: string; me?: string; date: string }) {
+  const { tiers, loading } = usePerkTiers(venueId, me);
+  const quietNights = useQuietNights(venueId);
+  if (loading || tiers.length === 0) return null;
 
-  const spend = perk.kind === "spend";
-  const left = Math.max(0, perk.threshold - progress);
-  const fmt = (n: number) => (spend ? formatMoney(n, perk.currency, { round: true }) : `${n}`);
+  // Postgres dow and JS getDay() agree: 0 = Sunday.
+  const quietTonight = quietNights.includes(parseKey(date).getDay());
+  const anyVisits = tiers.some((t) => t.kind === "visits");
 
   return (
     <section className="mb-7">
-      <p className="label mb-2 text-faint">House perk</p>
-      <div className="glass rounded-tile p-4">
-        {earned ? (
-          <>
-            <p className="text-[15px] text-ink">
-              You&apos;ve earned <span className="font-medium text-accent">{perk.reward}</span>.
-            </p>
-            <p className="mt-1 text-xs text-faint">Show this to the bar to claim it.</p>
-          </>
-        ) : (
-          <>
-            <p className="text-[15px] text-ink">{perk.reward}</p>
-            <p className="mt-1 text-xs text-faint">
-              <span className="tnum">{fmt(progress)}</span> of <span className="tnum">{fmt(perk.threshold)}</span>
-              {spend ? " — " : " visits — "}
-              {fmt(left)} to go.
-            </p>
-          </>
-        )}
-      </div>
+      <p className="label mb-2 text-faint">{tiers.length > 1 ? "House perks" : "House perk"}</p>
+
+      <ul className="space-y-2">
+        {tiers.map((t) => {
+          const spend = t.kind === "spend";
+          const left = Math.max(0, t.threshold - t.progress);
+          const fmt = (n: number) => (spend ? formatMoney(n, t.currency, { round: true }) : `${n}`);
+
+          return (
+            <li key={t.id} className="glass rounded-tile p-4">
+              {t.earned ? (
+                <>
+                  <p className="text-[15px] text-ink">
+                    You&apos;ve earned <span className="font-medium text-accent">{t.reward}</span>.
+                  </p>
+                  <p className="mt-1 text-xs text-faint">
+                    Ask the bar for it — they&apos;ll mark it claimed, and this one starts again from zero.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[15px] text-ink">{t.reward}</p>
+                  <p className="mt-1 text-xs text-faint">
+                    <span className="tnum">{fmt(t.progress)}</span> of <span className="tnum">{fmt(t.threshold)}</span>
+                    {spend ? " — " : " visits — "}
+                    {fmt(left)} to go.
+                  </p>
+                </>
+              )}
+
+              {t.claims > 0 && (
+                <p className="mt-2 border-t border-line pt-2 text-xs text-faint">
+                  Claimed {t.claims === 1 ? "once" : `${t.claims} times`} already.
+                </p>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      {anyVisits && quietTonight && (
+        <p className="mt-2 text-xs text-accent">Tonight&apos;s a quiet night here — this visit counts double.</p>
+      )}
     </section>
   );
 }

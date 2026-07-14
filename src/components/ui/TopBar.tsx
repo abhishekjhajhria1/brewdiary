@@ -5,19 +5,22 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { useProfile } from "@/lib/profile";
+import { useIsVenueApp } from "@/lib/host";
 import { ThemeToggle } from "./ThemeToggle";
 
 export function TopBar() {
   const pathname = usePathname();
   const profile = useProfile();
+  const isVenue = useIsVenueApp();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const onDiscover = pathname.startsWith("/discover");
 
   // On "/" a guest sees the landing, which carries its own header — everywhere
   // else (You, Ninkasi, Discover are open to guests) the bar shows for everyone.
-  // The venue dashboard (/venue) and kiosk wall (/kiosk) carry no app chrome.
-  if (!mounted || (!profile && pathname === "/") || pathname.startsWith("/venue") || pathname.startsWith("/kiosk")) return null;
+  // The venue dashboard and kiosk wall carry no consumer chrome. The venue test is
+  // by HOST, not path: on bar.bwdy.site the path is still "/" (see lib/host.ts).
+  if (!mounted || (!profile && pathname === "/") || isVenue || pathname.startsWith("/kiosk")) return null;
 
   return (
     <div className="glass mb-6 flex items-center justify-between rounded-tile px-4 py-2.5">
