@@ -31,7 +31,9 @@ const DESCRIPTION = "An all-inclusive drink diary. Tap a day, log a drink, watch
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: "brewdiary",
+  // Child pages declare a bare name ("You", "Together") and the template brands it.
+  // Without this every tab reads just "brewdiary" and five open tabs are identical.
+  title: { default: "brewdiary", template: "%s — brewdiary" },
   description: DESCRIPTION,
   manifest: "/manifest.webmanifest",
   icons: {

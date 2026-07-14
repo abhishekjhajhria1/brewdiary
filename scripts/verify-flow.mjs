@@ -15,11 +15,21 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const t = line.trim();
-  if (!t || t.startsWith("#")) continue;
-  const i = t.indexOf("=");
-  if (i > 0 && !(t.slice(0, i).trim() in process.env)) process.env[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+// .env.local when run by hand; real env vars in CI, where no such file exists.
+try {
+  for (const line of readFileSync(".env.local", "utf8").split("\n")) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const i = t.indexOf("=");
+    if (i > 0 && !(t.slice(0, i).trim() in process.env)) process.env[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+  }
+} catch {
+  /* no .env.local — rely on the real environment */
+}
+
+if (!process.env.SUPABASE_DB_URL) {
+  console.error("SUPABASE_DB_URL is not set — put it in .env.local, or pass it as an env var in CI.");
+  process.exit(1);
 }
 
 const db = new Client({ connectionString: process.env.SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } });

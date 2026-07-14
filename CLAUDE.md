@@ -21,15 +21,30 @@ This file is the front door for any human developer or AI assistant. Read it bef
    locked product spec and anti-slop rules. Its `reference/brewdiary-north-star.md` is the design
    constitution. Do not introduce a look that fights it (see "House style" below).
 
-## The three verification gates — run all before you call anything done
+## The verification gates — run all before you call anything done
 
 ```bash
-npm test          # vitest — the pure logic (date math, streak/derive, balance, expenses, drinks, venues, ratelimit, aidb)
-npm run lint      # eslint — next/core-web-vitals + TS rules (config: eslint.config.mjs)
-npm run build     # next build — typecheck + compile all routes
+npm run gates     # lint + test + build, in one word
+#   npm test      — vitest: the pure logic (dates, derive, balance, drinks, venues, perk policy, money, ratelimit, aidb)
+#   npm run lint  — eslint (next/core-web-vitals + TS; config: eslint.config.mjs)
+#   npm run build — next build: typecheck + compile every route
 ```
 
-If either is red, the task is not finished. `npm test` is fast; run it whenever you touch `src/lib`.
+If any is red, the task is not finished. `npm test` is fast; run it whenever you touch `src/lib`.
+
+**The three gates above cannot see the database.** A migration can succeed, the build can be
+green, every test can pass, and the app can still be *unsafe* — a policy that was supposed to be
+absent, an RLS flag that never got enabled, a `SECURITY DEFINER` function silently returning the
+wrong jurisdiction's rules. That has happened here. So after ANY migration:
+
+```bash
+npm run db:audit   # READ-ONLY. Asserts the SHAPE of the live schema + every security invariant.
+npm run db:verify  # Plays a whole night against the real schema IN A TRANSACTION IT ROLLS BACK.
+```
+
+`db:audit` is what caught `perk_policy()` judging every venue on earth by Massachusetts law —
+a bug no unit test could see, because every caller was a trigger and nothing ever threw.
+Both run in CI (`.github/workflows/ci.yml`) on every push to `main`.
 
 ---
 
@@ -44,7 +59,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `src/components/` | Feature-grouped UI: `calendar/`, `log/`, `you/`, `together/`, `discover/`, `bartender/`, `share/`, `onboarding/`, `venue/`, `kiosk/`, `profile/`, `ui/`. |
 | `src/lib/` | Framework-free logic — the "brains". See the table below. |
 | `public/` | Static assets: PWA `manifest.webmanifest`, `sw.js`, app icons. |
-| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`015`). Run with `node scripts/db.mjs <file.sql>`. |
+| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`030`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
 | `ai-db/` | The **separate** AI database schema (pseudonymous Ninkasi corpus; deny-all RLS). |
 | `scripts/` | Dev/ops tooling: `db.mjs` (migration runner), `gen-icons.mjs`, `verify-venue.mjs` (the only path that approves a venue), `ninkasi/` (dataset export, trend sync, AI-DB verify). |
 | `tests/` | Vitest unit tests for `src/lib` (excluded from `next build`). |
@@ -66,7 +81,12 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `profile.ts` | Auth (Supabase) + `useAuth`/`useProfile`. The seam real auth plugs into. |
 | `friends.ts` / `circles.ts` / `parties.ts` | Together social: friends+feed, private circles, parties/events (+ host-approval). A party doubles as a venue "room" (`venue_id`). |
 | `points.ts` | Sparks/vibe boards over the append-only `point_events` ledger (positive-only, counts-only) + the kiosk board poller + the `kiosk_visible` opt-in. |
-| `venues.ts` / `perks.ts` | The bar side: venues + staff roles + verification requests; the per-venue visit perk (progress derived from check-in sparks). |
+| `venues.ts` / `perks.ts` | The bar side: venues (`kind`: **bar** = on-trade, **store** = off-trade), staff roles, verification; up to 3 perk **tiers**, each an independent punch-card with its own claim clock. |
+| `jurisdiction.ts` | **Where you are decides what the app may lawfully do.** Deny-by-default: an unresearched country gets the STRICTEST setting, never the most permissive. Mirrors `public.jurisdiction_policy` — **the DATABASE is the authority**; this copy only lets the UI *explain* the rule instead of just failing. |
+| `kudos.ts` | Thanking staff. A manager sees ONE total for the team — a per-person league table is impossible, and not just hidden: the RLS policy makes it unreadable even via direct SQL. |
+| `money.ts` | Currency is a property of the PLACE, not the app (Intl-based; ₹1,23,456 vs €1.234,56). Also `spendBand()` — a flexed tab is shown as a **band** ("₹2,500+"), never the figure. |
+| `host.ts` | Which app is this? On `bar.*` the middleware rewrites to `/venue` but `usePathname()` still returns `/` — so anything hiding "on the venue app" must ask the HOST, not the path. |
+| `dataRights.ts` | Export everything / delete the account (GDPR Arts. 15 & 17, India's DPDP Act). |
 | `publicProfile.ts` | Opt-in public profile read (`/u/<handle>`, counts only) + the owner's visibility/social-link settings. |
 | `goals.ts` | Gentle limits — optional weekly-limit/dry-days goals, per-device localStorage, off by default (standing derived via `derive.weekBalance`). |
 | `expenses.ts` | Split (Splitwise-style) balance math. |
@@ -87,6 +107,20 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
   then read back separately (see `parties.ts` / `expenses.ts`).
 - **Secrets are server-only.** `AI_API_KEY`, service-role keys, DB URLs are never `NEXT_PUBLIC_*` and never
   reach the client. The AI model is a stateless text function — it never touches a database.
+- **Nothing rewards drinking more.** This is the product, not a slogan — check every new feature against it.
+  Sparks are earned for **variety** (a new place, a new drink, a *dry day*), never for frequency or volume.
+  A dry day keeps the streak. A quiet-night boost doubles **perk progress**, never a spark and never a
+  discount. A flexed tab shows a **band** ("₹2,500+"), never a figure — an exact number turns a wall board
+  into a spending race you win by buying one more drink.
+- **A guest can never write their own reward.** Spend, visits and perk claims are **staff-recorded only**,
+  enforced server-side (no client write policy on `spend_events` / `venue_checkins` / `perk_redemptions`).
+  If a guest could punch their own card, the whole thing is a free-drinks machine.
+- **Legality is enforced in the DATABASE, deny-by-default.** Alcohol-promotion law is national and often
+  sub-national. A trigger — not a form, not a component — decides whether a perk may exist. An unresearched
+  jurisdiction returns **no row**, and no row means NO. Opening a market is a deliberate act: research it,
+  add a row, cite the source (`internal/legal-and-compliance.md`). **An off-licence is NOT a quieter bar** —
+  at a shop a visit *is* a purchase, so it needs its own permission (`allow_offtrade_perks`), counts visits
+  only, and its reward is never alcohol, anywhere.
 - **House style = liquid glass, two themes, dark-default.** Layered frosted surfaces (`.glass`/`.glass-strong`),
   one amber accent, mosaic glows amber-by-count, high-contrast text, **no** AI-slop purple/neon, no emoji as
   UI chrome. This supersedes any older "flat monochrome / no-glass" note in the north-star file.

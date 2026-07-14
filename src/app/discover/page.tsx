@@ -14,6 +14,13 @@ import { Trends } from "@/components/discover/Trends";
 import { DiscoverLive } from "@/components/discover/DiscoverLive";
 import { VenuesNearby } from "@/components/discover/VenuesNearby";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Discover",
+  description: "Find a place — and the bars that are actually on brewdiary.",
+};
+
 export default function Page() {
   return (
     <>

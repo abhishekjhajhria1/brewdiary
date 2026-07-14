@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 import { KioskBoard } from "@/components/kiosk/KioskBoard";
 
 export const metadata: Metadata = {
-  title: "brewdiary · the room",
+  title: { absolute: "brewdiary · the room" }, // a wall board carries the brand itself
   robots: { index: false },
 };
 

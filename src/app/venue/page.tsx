@@ -9,7 +9,7 @@ import type { Metadata } from "next";
 import { VenueApp } from "@/components/venue/VenueApp";
 
 export const metadata: Metadata = {
-  title: "brewdiary for bars",
+  title: { absolute: "brewdiary for bars" }, // its own product name on the bar. subdomain
   description:
     "The bar's side of brewdiary: open a room for the night, let your staff thank the good ones, and set a perk that brings your regulars back. Free, no till to touch.",
 };

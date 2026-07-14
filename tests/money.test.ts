@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatMoney, currencyForCountry, currencySymbol, DEFAULT_CURRENCY } from "../src/lib/money";
+import { formatMoney, currencyForCountry, currencySymbol, spendBand, DEFAULT_CURRENCY } from "../src/lib/money";
 
 // "₹" was hardcoded in eight files. That's fine until a London bar sets a perk and
 // the app tells its guests to spend "₹3000". These tests exist so that never comes back.
@@ -56,5 +56,44 @@ describe("formatMoney", () => {
   it("exposes a symbol for tight spots (an input prefix)", () => {
     expect(currencySymbol("GBP")).toBe("£");
     expect(currencySymbol("INR")).toBe("₹");
+  });
+});
+
+// ── flexed tabs are BANDED, never exact ──────────────────────────────────────
+// A wall screen in a room of strangers with cameras. An exact tab beside a name is
+// a published financial record; it also turns the board into a spending race you win
+// by buying one more drink. The band keeps the brag and kills both.
+describe("spendBand", () => {
+  it("never reveals the exact figure", () => {
+    expect(spendBand(2340, "INR")).not.toContain("2,340");
+    expect(spendBand(2340, "INR")).toBe("₹1,000+"); // bands are ×1,2,5,10,20 of ₹500
+  });
+
+  it("rounds DOWN to the band — you can't round someone up into a bigger flex", () => {
+    expect(spendBand(999, "INR")).toBe("₹500+");
+    expect(spendBand(1000, "INR")).toBe("₹1,000+");
+    expect(spendBand(4999, "INR")).toBe("₹2,500+");
+  });
+
+  it("you cannot out-rank anyone by one more drink", () => {
+    // The whole anti-spending-race property: +₹1 must never move you up a band, and
+    // two people a drink apart must read identically.
+    expect(spendBand(2000, "INR")).toBe(spendBand(2001, "INR"));
+    expect(spendBand(2000, "INR")).toBe(spendBand(2499, "INR"));
+  });
+
+  it("bands in the venue's own money, not rupees", () => {
+    expect(spendBand(140, "USD")).toBe("$125+");
+    expect(spendBand(60, "GBP")).toBe("£50+");
+  });
+
+  it("a small tab is not a flex", () => {
+    expect(spendBand(300, "INR")).toBe("under ₹500");
+    expect(spendBand(0, "INR")).toBe("under ₹500");
+  });
+
+  it("survives nonsense rather than throwing on a wall screen", () => {
+    expect(spendBand(NaN, "INR")).toBe("under ₹500");
+    expect(spendBand(1200, "ZZZ")).toMatch(/\+$/);
   });
 });

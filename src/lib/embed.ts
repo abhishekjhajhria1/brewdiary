@@ -22,7 +22,10 @@ let pipePromise: Promise<Extractor> | null = null;
 async function getPipe(): Promise<Extractor> {
   if (!pipePromise) {
     pipePromise = (async () => {
-      const { pipeline, env } = await import("@xenova/transformers");
+      // @huggingface/transformers is the maintained successor of @xenova/transformers
+      // (same author, same pipeline API). The old package pinned a vulnerable
+      // onnxruntime-web → protobufjs chain (1 critical, 3 high); this one doesn't.
+      const { pipeline, env } = await import("@huggingface/transformers");
       env.allowLocalModels = false; // fetch/cache from the hub, don't look for a local ./models dir
       const pipe = await pipeline("feature-extraction", MODEL);
       return pipe as unknown as Extractor;

@@ -1,0 +1,71 @@
+# The gates, on every push.
+#
+# WHY THIS EXISTS: scripts/verify-flow.mjs — the harness that plays a whole night
+# against the real schema and asserts the security rules — sat in the repo for weeks
+# with a SYNTAX ERROR in it. It had never once run. That is exactly how the
+# perk_policy() bug reached production while the build was green and every unit test
+# passed: nothing was checking the things that actually mattered.
+#
+# Two tiers, on purpose:
+#   • offline gates run ALWAYS, on every push and PR, with no secrets.
+#   • the database checks run only where SUPABASE_DB_URL is available — which means
+#     they run on pushes to this repo, and are skipped on a fork's PR rather than
+#     failing it with a missing-secret error.
+name: gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  offline:
+    name: lint · test · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          # The build only needs these to exist; it never calls out.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+  database:
+    name: schema audit · end-to-end flow
+    runs-on: ubuntu-latest
+    # A fork PR has no secrets. Skip rather than fail — a missing secret is not a
+    # broken schema, and a red X that means "no credentials" trains people to ignore
+    # red X's.
+    if: ${{ github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Read-only. Asserts the SHAPE of the live schema: that the tables written only
+      # by the server still have no client write policy, that k-anonymity is still 5,
+      # that deny-by-default still denies. A migration can succeed and still leave the
+      # app unsafe; this is what catches that.
+      - name: schema audit (read-only)
+        run: npm run db:audit
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
+      # Plays a real night inside ONE TRANSACTION THAT IS ROLLED BACK: a venue is
+      # created, verified, opens a room, guests join, staff record tabs, perks are
+      # earned and claimed, a bottle shop punches cards. Every security rule is
+      # exercised as a real signed-in user, through RLS. Nothing is left behind.
+      - name: end-to-end flow (rolled back)
+        run: npm run db:verify
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}

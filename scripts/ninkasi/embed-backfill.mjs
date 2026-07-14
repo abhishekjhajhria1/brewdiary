@@ -5,7 +5,7 @@
 // key, and updates rows in place. Safe to re-run — it only touches rows missing a vector.
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { pipeline, env } from "@xenova/transformers";
+import { pipeline, env } from "@huggingface/transformers";
 
 // --- load .env.local ---
 for (const line of readFileSync(".env.local", "utf8").split("\n")) {

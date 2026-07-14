@@ -6,25 +6,16 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { rateLimit, clientKey } from "@/lib/ratelimit";
+import { sameOrigin } from "@/lib/origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  // CSRF defense-in-depth: a state-changing, cookie-authenticated route must only
-  // accept same-origin calls. (SameSite=Lax already blocks cross-site POSTs; this
-  // holds even if a future cookie config loosens that.)
-  const origin = req.headers.get("origin");
-  const host = req.headers.get("host");
-  if (origin && host) {
-    // "Origin: null" (sandboxed iframes) and malformed values must 403, not throw
-    let originHost: string | null = null;
-    try {
-      originHost = new URL(origin).host;
-    } catch {}
-    if (originHost !== host) {
-      return Response.json({ error: "Cross-origin request rejected." }, { status: 403 });
-    }
+  // CSRF defense-in-depth: a state-changing, cookie-authenticated route only accepts
+  // same-origin calls. Shared helper — see lib/origin.ts for why it's shared.
+  if (!sameOrigin(req)) {
+    return Response.json({ error: "Cross-origin request rejected." }, { status: 403 });
   }
 
   // A password change is rare — a tight limit costs a real user nothing.

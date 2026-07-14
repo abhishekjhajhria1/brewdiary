@@ -12,7 +12,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Privacy — brewdiary",
+  title: "Privacy", // bare — the root template brands it
   description: "What brewdiary collects, why, and how to get rid of it.",
 };
 

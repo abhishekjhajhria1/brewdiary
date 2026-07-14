@@ -15,8 +15,26 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServerUser } from "@/lib/supabase-server";
+import { sameOrigin } from "@/lib/origin";
+import { rateLimit, clientKey } from "@/lib/ratelimit";
 
-export async function POST() {
+export async function POST(req: Request) {
+  // The single most destructive route in the app, authenticated by a COOKIE — so it
+  // gets the same-origin check and a rate limit BEFORE anything else. (It shipped
+  // without either while the password route had both; a forged cross-site POST here
+  // would have been an unrecoverable deletion. Any route that destroys something on
+  // the strength of a cookie starts with these two guards.)
+  if (!sameOrigin(req)) {
+    return NextResponse.json({ error: "Cross-origin request rejected." }, { status: 403 });
+  }
+  const gate = rateLimit(`del:${clientKey(req)}`, 3, 60_000);
+  if (!gate.ok) {
+    return NextResponse.json(
+      { error: "Too many attempts — try again in a moment." },
+      { status: 429, headers: { "Retry-After": String(gate.retryAfter) } },
+    );
+  }
+
   const user = await getServerUser();
   if (!user) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });

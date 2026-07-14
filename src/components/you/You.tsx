@@ -288,6 +288,9 @@ function Settings() {
         <Link href="/privacy" className="transition-colors hover:text-ink">
           privacy
         </Link>
+        <Link href="/terms" className="transition-colors hover:text-ink">
+          terms
+        </Link>
         <input
           ref={fileRef}
           type="file"

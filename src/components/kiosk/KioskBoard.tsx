@@ -6,7 +6,7 @@
 // appear; nobody is ranked by spend. The consumer TopBar/TabBar hide on /kiosk.
 import clsx from "clsx";
 import { useKioskBoard, useRoomTabs } from "@/lib/points";
-import { formatMoney } from "@/lib/money";
+import { spendBand } from "@/lib/money";
 
 export function KioskBoard({ code }: { code: string }) {
   const { rows, loading } = useKioskBoard(code);
@@ -49,7 +49,12 @@ export function KioskBoard({ code }: { code: string }) {
 
         {/* Flexing — deliberately the SMALL print, under the board that matters.
             Only guests who switched on BOTH kiosk visibility and receipt-flexing
-            are here, and the figure is one the bar itself recorded. */}
+            are here, and the figure is one the bar itself recorded.
+
+            A BAND, never the number. This is a wall screen in a room of strangers
+            with cameras: an exact tab beside a name is a published financial record
+            of a named person, and it turns the board into a spending race you win by
+            buying one more drink. "₹2,500+" keeps the brag and kills both. */}
         {tabs.length > 0 && (
           <section className="mt-6 border-t border-white/15 pt-4">
             <p className="text-[11px] uppercase tracking-[0.16em] text-white/40">Flexing tonight · they asked for this</p>
@@ -57,7 +62,7 @@ export function KioskBoard({ code }: { code: string }) {
               {tabs.map((t, i) => (
                 <li key={`${t.name}-${i}`} className="flex items-baseline gap-2 text-base text-white/55">
                   <span className="truncate">{t.name}</span>
-                  <span className="tnum text-white/80">{formatMoney(t.spend, t.currency, { round: true })}</span>
+                  <span className="tnum text-white/80">{spendBand(t.spend, t.currency)}</span>
                 </li>
               ))}
             </ul>

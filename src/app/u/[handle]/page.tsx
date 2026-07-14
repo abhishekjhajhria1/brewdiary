@@ -6,7 +6,7 @@ import { PublicProfile } from "@/components/profile/PublicProfile";
 
 export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }): Promise<Metadata> {
   const { handle } = await params;
-  return { title: `@${handle} · brewdiary` };
+  return { title: `@${handle}` }; // root template brands it
 }
 
 export default async function ProfilePage({ params }: { params: Promise<{ handle: string }> }) {
