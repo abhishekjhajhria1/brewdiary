@@ -137,10 +137,14 @@ export function addWish(drink: string) {
   }
 }
 
-export function removeWish(id: string) {
+export async function removeWish(id: string) {
+  const prev = cache;
   setCache(cache.filter((w) => w.id !== id)); // optimistic
   if (mode === "remote" && currentUser && supabase) {
-    void supabase.from("wishlist_items").delete().eq("id", id);
+    // Await + roll back on failure so a delete that doesn't take shows up honestly
+    // instead of silently reappearing on the next refresh. Scoped to my own rows.
+    const { error } = await supabase.from("wishlist_items").delete().eq("id", id).eq("user_id", currentUser);
+    if (error) setCache(prev);
   } else {
     writeLocal(cache);
   }

@@ -899,51 +899,61 @@ try {
   ok("a duplicate report is rejected by the database itself",
     await refused(() => as(rohan, `insert into public.reports (reporter_id, subject_user_id, reason) values ($1,$2,'spam')`, [rohan, stranger])));
 
-  console.log("\n── 15. plans: private (only me) + invite (named guests) ──");
-  // Fresh graph so §12's block doesn't muddy it: priya ── dev are friends; the stranger
-  // stays outside everyone's circle.
+  console.log("\n── 15. plans: private (only me) + invite-by-username + RSVP (037) ──");
+  // guestA is NOBODY's friend (proves invite is no longer graph-gated); guestB gets
+  // blocked by the host (proves a block still refuses an invite).
   const priya = await mkUser("Priya", `vf-priya-${Date.now()}`);
-  const dev = await mkUser("Dev", `vf-dev-${Date.now()}`);
-  await db.query(`insert into public.friendships (requester_id, addressee_id, status) values ($1,$2,'accepted')`, [priya, dev]);
+  const guestA = await mkUser("Guest A", `vf-gA-${Date.now()}`);
+  const guestB = await mkUser("Guest B", `vf-gB-${Date.now()}`);
+  await as(priya, `select public.block_user($1)`, [guestB]);
   const countsPlan = async (uid, planId) =>
     (await as(uid, `select count(*)::int n from public.plans where id=$1`, [planId])).rows[0].n;
 
-  // PRIVATE — nobody but the host, ever. Not even a friend; not joinable.
+  // PRIVATE — nobody but the host, ever; not joinable.
   const planPriv = randomUUID();
   await as(priya, `insert into public.plans (id, host_id, title, plan_date, join_policy)
                    values ($1,$2,'Just me', current_date + 3, 'private')`, [planPriv, priya]);
   ok("a PRIVATE plan: the host sees it", (await countsPlan(priya, planPriv)) === 1);
-  ok("a PRIVATE plan: even a friend CANNOT see it", (await countsPlan(dev, planPriv)) === 0);
+  ok("a PRIVATE plan: nobody else can see it", (await countsPlan(guestA, planPriv)) === 0);
   ok("a PRIVATE plan: nobody can ask to join",
-    await refused(() => as(dev, `select public.request_join($1, null)`, [planPriv])));
+    await refused(() => as(guestA, `select public.request_join($1, null)`, [planPriv])));
 
-  // INVITE — only the named guest sees it, and only someone in the graph can be named.
+  // INVITE — only named guests see it; anyone can be named (not just friends) EXCEPT a
+  // blocked pairing, and nothing happens without the guest's own RSVP.
   const planInv = randomUUID();
-  await as(priya, `insert into public.plans (id, host_id, title, plan_date, join_policy)
-                   values ($1,$2,'Just us two', current_date + 4, 'invite')`, [planInv, priya]);
-  ok("an INVITE plan: an un-invited friend CANNOT see it yet", (await countsPlan(dev, planInv)) === 0);
-  ok("only the host can invite (a guest can't invite themselves)",
-    await refused(() => as(dev, `select public.invite_to_plan($1,$2)`, [planInv, dev])));
-  ok("a stranger outside the graph CANNOT be invited (no stranger path)",
-    await refused(() => as(priya, `select public.invite_to_plan($1,$2)`, [planInv, stranger])));
-  await as(priya, `select public.invite_to_plan($1,$2)`, [planInv, dev]);
-  ok("once invited, the named guest CAN see the plan", (await countsPlan(dev, planInv)) === 1);
-  await as(dev, `select public.request_join($1, 'yes!')`, [planInv]);
-  const jidInv = (await as(priya, `select id from public.plan_joins where plan_id=$1 and user_id=$2`, [planInv, dev])).rows[0].id;
-  await as(priya, `select public.respond_join($1, true)`, [jidInv]);
-  ok("the invited guest, once approved, is going", (await as(priya, `select public.plan_going_count($1) n`, [planInv])).rows[0].n === 2);
+  await as(priya, `insert into public.plans (id, host_id, title, plan_date, plan_time, join_policy)
+                   values ($1,$2,'Just us', current_date + 4, '19:30', 'invite')`, [planInv, priya]);
+  ok("an INVITE plan: an un-invited person CANNOT see it", (await countsPlan(guestA, planInv)) === 0);
+  ok("a guest can't invite themselves (host only)",
+    await refused(() => as(guestA, `select public.invite_to_plan($1,$2)`, [planInv, guestA])));
+  ok("a BLOCKED person cannot be invited",
+    await refused(() => as(priya, `select public.invite_to_plan($1,$2)`, [planInv, guestB])));
+  // guestA is nobody's friend — inviting them proves the friends/fof gate is gone.
+  await as(priya, `select public.invite_to_plan($1,$2)`, [planInv, guestA]);
+  ok("anyone can be invited by name — even a non-friend (with consent)", (await countsPlan(guestA, planInv)) === 1);
+  ok("a non-invited person cannot RSVP",
+    await refused(() => as(guestB, `select public.respond_invite($1, true)`, [planInv])));
 
-  // the calendar overlay: the host sees both her days; the guest sees only the one she joined
-  const priyaDays = (await as(priya, `select * from public.my_plan_days()`)).rows.map((r) => r.title);
-  ok("my_plan_days lists the host's own plans (private + invite)",
-    priyaDays.includes("Just me") && priyaDays.includes("Just us two"));
-  const devDays = (await as(dev, `select * from public.my_plan_days()`)).rows.map((r) => r.title);
-  ok("my_plan_days lists a plan I'm approved to join, not the host's private one",
-    devDays.includes("Just us two") && !devDays.includes("Just me"));
+  // RSVP directly — no host approval needed (the host already chose them).
+  await as(guestA, `select public.respond_invite($1, true)`, [planInv]);
+  ok("an invited guest RSVPs 'going' directly (no host approval) → going count rises",
+    (await as(priya, `select public.plan_going_count($1) n`, [planInv])).rows[0].n === 2);
 
-  // pulling the invite removes the guest's view (and withdraws their join)
-  await as(priya, `select public.uninvite_from_plan($1,$2)`, [planInv, dev]);
-  ok("uninviting withdraws the guest's view of the plan", (await countsPlan(dev, planInv)) === 0);
+  // the calendar overlay carries the start time and the right plans per person
+  const priyaDays = (await as(priya, `select * from public.my_plan_days()`)).rows;
+  ok("my_plan_days lists the host's own plans (private + invite), with the time",
+    priyaDays.some((r) => r.title === "Just me") &&
+    priyaDays.some((r) => r.title === "Just us" && String(r.plan_time).startsWith("19:30")));
+  const guestDays = (await as(guestA, `select * from public.my_plan_days()`)).rows.map((r) => r.title);
+  ok("my_plan_days lists a plan I RSVP'd to, not the host's private one",
+    guestDays.includes("Just us") && !guestDays.includes("Just me"));
+
+  // RSVP 'can't make it' pulls them back out; uninvite removes the view entirely
+  await as(guestA, `select public.respond_invite($1, false)`, [planInv]);
+  ok("RSVP 'can't make it' drops the going count",
+    (await as(priya, `select public.plan_going_count($1) n`, [planInv])).rows[0].n === 1);
+  await as(priya, `select public.uninvite_from_plan($1,$2)`, [planInv, guestA]);
+  ok("uninviting removes the guest's view of the plan", (await countsPlan(guestA, planInv)) === 0);
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

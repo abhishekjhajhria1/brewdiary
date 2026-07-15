@@ -78,7 +78,7 @@ export function CalendarHome() {
       {view === "month" ? (
         <DayCounters dateKey={todayKey()} className="mt-4" />
       ) : (
-        <AchievementTile entries={entries} className="mt-4" />
+        <AchievementTile className="mt-4" />
       )}
 
       <div className="mt-8">
@@ -117,7 +117,7 @@ export function CalendarHome() {
         <LogSheet
           dateKey={selected}
           dayEntries={dayEntries}
-          plans={planDays.get(selected)?.titles ?? []}
+          plans={planDays.get(selected)?.items ?? []}
           recentDrinks={recentDrinks(entries)}
           recentMoods={recentMoods(entries)}
           onClose={() => setSelected(null)}

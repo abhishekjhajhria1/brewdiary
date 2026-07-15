@@ -1,18 +1,17 @@
 "use client";
 
-// The morphing squircle that toggles the home between the month grid and the year
-// mosaic. It lives in the TopBar (where the theme toggle used to sit) and drives the
-// shared calendarView store, so tapping it flips the home view.
+// The morphing squircle in the TopBar that toggles the home between the month grid and
+// the year mosaic. It drives the shared calendarView store.
 //
-// The glyph IS the state, quietly: in MONTH view it shows this month's initial (a
-// single editorial letter); in YEAR view it becomes a 3×3 of tiny squircles — a
-// miniature of the heat-mosaic you're switching to. One amber accent, calm, no icon lib.
+// The glyph hints at the view you'll switch TO: in MONTH view it shows a 3×3 of tiny
+// squircles (a miniature of the year mosaic); in YEAR view it shows the month's name
+// (restyled — uppercase, tracked), the month grid you'd go back to. One amber accent, calm.
 import { MONTH_NAMES } from "@/lib/date";
 import { useCalendarView, toggleCalendarView } from "@/lib/calendarView";
 
 export function ViewSquircle() {
   const view = useCalendarView();
-  const monthInitial = MONTH_NAMES[new Date().getMonth()].charAt(0);
+  const monthAbbr = MONTH_NAMES[new Date().getMonth()].slice(0, 3);
 
   return (
     <button
@@ -23,10 +22,6 @@ export function ViewSquircle() {
       className="glass glass-press flex h-9 w-9 items-center justify-center rounded-xl text-muted transition-colors hover:text-ink"
     >
       {view === "month" ? (
-        <span aria-hidden className="font-display text-[17px] italic leading-none">
-          {monthInitial}
-        </span>
-      ) : (
         <span aria-hidden className="grid grid-cols-3 gap-0.5">
           {/* a tiny mosaic — the year view in miniature */}
           {[3, 1, 4, 2, 4, 1, 4, 2, 3].map((lvl, i) => (
@@ -36,6 +31,10 @@ export function ViewSquircle() {
               style={{ background: `var(--ycell-${lvl})` }}
             />
           ))}
+        </span>
+      ) : (
+        <span aria-hidden className="text-[8px] font-semibold uppercase leading-none tracking-[0.12em] text-ink">
+          {monthAbbr}
         </span>
       )}
     </button>

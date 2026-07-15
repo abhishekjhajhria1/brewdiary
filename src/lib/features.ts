@@ -10,6 +10,7 @@
 //
 // Preferences are per-device (localStorage), SSR-safe via useSyncExternalStore.
 import { useSyncExternalStore } from "react";
+import type { DrinkType } from "./types";
 
 export type ExtraKey = "cigarettes" | "water";
 
@@ -23,6 +24,10 @@ export interface ExtraDef {
   unit: string;
   /** Is this a per-day +/- counter shown in the log window? */
   counter: boolean;
+  /** Each +1 writes a REAL diary entry with this name + kind, so it lands on the
+   *  calendar/mosaic and syncs to the DB — not a separate local-only tally. */
+  entryDrink: string;
+  entryType: DrinkType;
 }
 
 // The registry. Everything off by default — the app reveals nothing uninvited.
@@ -33,6 +38,8 @@ export const EXTRAS: ExtraDef[] = [
     hint: "A small +/- counter on each day, to keep an honest tally.",
     unit: "cigarette",
     counter: true,
+    entryDrink: "Cigarette",
+    entryType: "other",
   },
   {
     key: "water",
@@ -40,6 +47,8 @@ export const EXTRAS: ExtraDef[] = [
     hint: "Count glasses of water alongside the day — a gentle nudge to hydrate.",
     unit: "glass",
     counter: true,
+    entryDrink: "Water",
+    entryType: "soft",
   },
 ];
 

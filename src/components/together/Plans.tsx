@@ -10,7 +10,7 @@
 // SAFETY is first-class in the UI, not an afterthought: every person carries a quiet
 // "block / report" affordance, join is a request the host approves (never automatic),
 // and "fit" is shown as soft facts (mutual friends, shared taste) — never a rating.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { MONTH_NAMES, parseKey } from "@/lib/date";
 import { useAuth } from "@/lib/profile";
@@ -28,13 +28,14 @@ import {
   withdrawJoin,
   inviteToPlan,
   uninviteFromPlan,
+  searchUsers,
+  respondInvite,
   type Plan,
   type MyPlan,
   type JoinPolicy,
 } from "@/lib/plans";
 import { blockUser, reportUser, REPORT_REASONS, type ReportReason } from "@/lib/safety";
 import { useMySanction } from "@/lib/moderation";
-import { useFriends } from "@/lib/friends";
 
 // The visibility tiers, most-private first. 'private' keeps a night to yourself;
 // 'invite' opens it only to specific friends you name; then the graph tiers.
@@ -57,6 +58,80 @@ function prettyDate(key: string): string {
   const dt = parseKey(key);
   const wd = dt.toLocaleDateString(undefined, { weekday: "short" });
   return `${wd} ${dt.getDate()} ${MONTH_NAMES[dt.getMonth()]}`;
+}
+
+/** "18:30" → "6:30 pm". Null for no time. */
+function prettyTime(t?: string): string | null {
+  if (!t) return null;
+  const [h, m] = t.split(":");
+  const hr = Number(h);
+  if (Number.isNaN(hr)) return null;
+  const ampm = hr < 12 ? "am" : "pm";
+  const h12 = hr % 12 === 0 ? 12 : hr % 12;
+  return `${h12}:${m ?? "00"} ${ampm}`;
+}
+
+interface PickedUser {
+  id: string;
+  name: string;
+  handle: string;
+}
+
+// Type-a-name autocomplete over block/sanction-aware user search. Used to invite people
+// by username (create form + the host's guest list). Debounced; picking clears the box.
+function UserSearch({ onPick, exclude }: { onPick: (u: PickedUser) => void; exclude?: Set<string> }) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<PickedUser[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    if (q.trim().replace(/^@/, "").length < 2) {
+      setResults([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      const r = await searchUsers(q);
+      if (active) setResults(r);
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(t);
+    };
+  }, [q]);
+
+  const shown = exclude ? results.filter((u) => !exclude.has(u.id)) : results;
+
+  return (
+    <div>
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Type a name or @handle"
+        aria-label="Find a person to invite"
+        className={inputClass}
+      />
+      {shown.length > 0 && (
+        <ul className="glass mt-1 rounded-ctl p-1">
+          {shown.map((u) => (
+            <li key={u.id}>
+              <button
+                type="button"
+                onClick={() => {
+                  onPick(u);
+                  setQ("");
+                  setResults([]);
+                }}
+                className="flex w-full items-center justify-between gap-2 rounded-[7px] px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-ink/5 hover:text-ink"
+              >
+                <span className="truncate">{u.name}</span>
+                <span className="shrink-0 text-xs text-faint">@{u.handle}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 export function Plans() {
@@ -161,6 +236,7 @@ function DiscoverCard({ plan }: { plan: Plan }) {
   const full = plan.capacity != null && plan.going >= plan.capacity;
   const pending = plan.myStatus === "requested";
   const approved = plan.myStatus === "approved";
+  const isInvite = plan.joinPolicy === "invite";
 
   async function ask() {
     setBusy(true);
@@ -174,6 +250,14 @@ function DiscoverCard({ plan }: { plan: Plan }) {
     await withdrawJoin(plan.id);
     setBusy(false);
   }
+  // Invite plans: the guest RSVPs directly (the host already chose them).
+  async function rsvp(going: boolean) {
+    setBusy(true);
+    setErr(null);
+    const e = await respondInvite(plan.id, going);
+    setBusy(false);
+    if (e) setErr(e);
+  }
 
   return (
     <li className="glass rounded-tile p-5">
@@ -182,6 +266,7 @@ function DiscoverCard({ plan }: { plan: Plan }) {
           <p className="font-display text-xl leading-tight text-ink">{plan.title}</p>
           <p className="mt-0.5 text-xs text-faint">
             {prettyDate(plan.date)}
+            {plan.time && <> · {prettyTime(plan.time)}</>}
             {plan.city && <> · {plan.city}</>} · {plan.hostName} <span className="text-faint">@{plan.hostHandle}</span>
           </p>
         </div>
@@ -224,7 +309,39 @@ function DiscoverCard({ plan }: { plan: Plan }) {
         <span className="text-xs text-faint">
           {plan.going} going{plan.capacity != null && <> · {Math.max(plan.capacity - plan.going, 0)} spots left</>}
         </span>
-        {approved ? (
+        {isInvite ? (
+          approved ? (
+            <span className="flex items-center gap-3 text-sm">
+              <span className="text-accent">You&apos;re going</span>
+              <button onClick={() => rsvp(false)} disabled={busy} className="text-faint transition-colors hover:text-ink">
+                Can&apos;t make it
+              </button>
+            </span>
+          ) : plan.myStatus === "declined" ? (
+            <span className="flex items-center gap-3 text-sm">
+              <span className="text-faint">Not going</span>
+              <button onClick={() => rsvp(true)} disabled={busy || full} className="text-accent transition-opacity hover:opacity-80 disabled:opacity-50">
+                Going
+              </button>
+            </span>
+          ) : full ? (
+            <span className="text-sm text-faint">Full</span>
+          ) : (
+            <span className="flex items-center gap-3 text-sm">
+              <span className="text-muted">You&apos;re invited</span>
+              <button onClick={() => rsvp(false)} disabled={busy} className="text-faint transition-colors hover:text-ink">
+                Can&apos;t make it
+              </button>
+              <button
+                onClick={() => rsvp(true)}
+                disabled={busy}
+                className="rounded-ctl bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {busy ? "…" : "Going"}
+              </button>
+            </span>
+          )
+        ) : approved ? (
           <span className="flex items-center gap-3 text-sm">
             <span className="text-accent">You&apos;re in</span>
             <button onClick={leave} disabled={busy} className="text-faint transition-colors hover:text-ink">
@@ -333,6 +450,7 @@ function MyPlanCard({ plan }: { plan: MyPlan }) {
           <p className="font-display text-xl leading-tight text-ink">{plan.title}</p>
           <p className="mt-0.5 text-xs text-faint">
             {prettyDate(plan.date)}
+            {plan.time && <> · {prettyTime(plan.time)}</>}
             {plan.city && <> · {plan.city}</>} · {POLICY_LABEL[plan.joinPolicy]}
           </p>
         </div>
@@ -449,13 +567,11 @@ function Requests({ planId }: { planId: string }) {
   );
 }
 
-// ── the guest list for an 'invite' plan (host manages it; only friends can be added) ──
+// ── the guest list for an 'invite' plan (host adds anyone by username) ──────────
 function Guests({ planId }: { planId: string }) {
   const [open, setOpen] = useState(false);
   const { invitees } = usePlanInvitees(open ? planId : null);
-  const { friends } = useFriends();
   const invitedIds = new Set(invitees.map((i) => i.userId));
-  const addable = friends.filter((f) => !invitedIds.has(f.id));
 
   return (
     <div className="mt-3">
@@ -484,24 +600,10 @@ function Guests({ planId }: { planId: string }) {
             <p className="text-xs text-faint">No one invited yet.</p>
           )}
 
-          {friends.length === 0 ? (
-            <p className="text-xs text-faint">Add friends first, then invite them here.</p>
-          ) : addable.length > 0 ? (
-            <div>
-              <p className="mb-1.5 text-xs text-faint">Add a friend</p>
-              <div className="flex flex-wrap gap-1.5">
-                {addable.map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => inviteToPlan(planId, f.id)}
-                    className="glass rounded-ctl px-2.5 py-1 text-xs text-muted transition-colors hover:text-ink"
-                  >
-                    + {f.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          <div>
+            <p className="mb-1.5 text-xs text-faint">Invite someone by name or @handle</p>
+            <UserSearch exclude={invitedIds} onPick={(u) => inviteToPlan(planId, u.id)} />
+          </div>
         </div>
       )}
     </div>
@@ -591,14 +693,14 @@ function PersonMenu({
 // ── create ───────────────────────────────────────────────────────────────────
 function CreatePlan({ onDone }: { onDone: () => void }) {
   const me = useAuth().profile?.id;
-  const { friends } = useFriends();
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
   const [city, setCity] = useState("");
   const [note, setNote] = useState("");
   const [drinks, setDrinks] = useState("");
   const [policy, setPolicy] = useState<JoinPolicy>("friends");
-  const [invited, setInvited] = useState<Set<string>>(() => new Set());
+  const [invited, setInvited] = useState<PickedUser[]>([]);
   const [cap, setCap] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -612,13 +714,11 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
   const isPrivate = policy === "private";
   const isInvite = policy === "invite";
 
-  function toggleInvited(id: string) {
-    setInvited((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  function addInvite(u: PickedUser) {
+    setInvited((prev) => (prev.some((x) => x.id === u.id) ? prev : [...prev, u]));
+  }
+  function removeInvite(id: string) {
+    setInvited((prev) => prev.filter((x) => x.id !== id));
   }
 
   async function submit(e: React.FormEvent) {
@@ -629,6 +729,7 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
     const res = await createPlan(me, {
       title,
       date,
+      time: time || undefined,
       city,
       note,
       drinks: drinks.split(",").map((s) => s.trim()).filter(Boolean),
@@ -640,9 +741,9 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
       setErr(res.error);
       return;
     }
-    // Invite the chosen friends now that the plan exists (server re-checks each).
-    if (isInvite && invited.size > 0) {
-      await Promise.all([...invited].map((id) => inviteToPlan(res.id, id)));
+    // Invite the chosen people now that the plan exists (server re-checks each).
+    if (isInvite && invited.length > 0) {
+      await Promise.all(invited.map((u) => inviteToPlan(res.id, u.id)));
     }
     setBusy(false);
     onDone();
@@ -653,14 +754,23 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
       <p className="label mb-3 text-faint">Plan a night</p>
       <div className="space-y-2.5">
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What's the plan?" className={inputClass} aria-label="Title" />
-        <input
-          type="date"
-          value={date}
-          min={today}
-          onChange={(e) => setDate(e.target.value)}
-          className={inputClass}
-          aria-label="Date"
-        />
+        <div className="flex gap-2">
+          <input
+            type="date"
+            value={date}
+            min={today}
+            onChange={(e) => setDate(e.target.value)}
+            className={clsx(inputClass, "flex-1")}
+            aria-label="Date"
+          />
+          <input
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            className={clsx(inputClass, "w-32")}
+            aria-label="Start time (optional)"
+          />
+        </div>
         <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City or area (optional)" className={inputClass} aria-label="City" />
         <textarea
           value={note}
@@ -696,37 +806,24 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
         </div>
 
         {isInvite && (
-          <div className="rounded-ctl border border-line p-3">
-            {friends.length === 0 ? (
-              <p className="text-xs text-faint">
-                You don&apos;t have friends added yet. Add some in Together, then invite them — or you can invite
-                them from the plan later.
-              </p>
-            ) : (
-              <>
-                <p className="mb-2 text-xs text-faint">Pick who to invite</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {friends.map((f) => {
-                    const on = invited.has(f.id);
-                    return (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => toggleInvited(f.id)}
-                        aria-pressed={on}
-                        className={clsx(
-                          "rounded-ctl px-2.5 py-1 text-xs transition-colors",
-                          on ? "bg-ink text-paper" : "glass text-muted hover:text-ink",
-                        )}
-                      >
-                        {on ? "✓ " : "+ "}
-                        {f.name}
-                      </button>
-                    );
-                  })}
-                </div>
-                {invited.size > 0 && <p className="mt-2 text-xs text-faint">{invited.size} invited</p>}
-              </>
+          <div className="space-y-2 rounded-ctl border border-line p-3">
+            <p className="text-xs text-faint">Invite people by name or @handle</p>
+            <UserSearch exclude={new Set(invited.map((u) => u.id))} onPick={addInvite} />
+            {invited.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {invited.map((u) => (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => removeInvite(u.id)}
+                    aria-label={`Remove ${u.name}`}
+                    className="inline-flex items-center gap-1.5 rounded-ctl bg-ink px-2.5 py-1 text-xs text-paper transition-opacity hover:opacity-90"
+                  >
+                    {u.name}
+                    <span aria-hidden>×</span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         )}

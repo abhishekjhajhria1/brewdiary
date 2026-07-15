@@ -83,7 +83,7 @@ try {
     "venue_insights", "discover_venues",
     "plan_visible_to", "blocked_between", "request_join", "respond_join",
     "withdraw_join", "block_user", "plan_signals", "upcoming_plans", "search_users",
-    "is_plan_invited", "invite_to_plan", "uninvite_from_plan", "plan_invitees", "my_plan_days",
+    "is_plan_invited", "invite_to_plan", "uninvite_from_plan", "plan_invitees", "my_plan_days", "respond_invite",
     "vouch_count",
     "is_moderator", "is_sanctioned", "suspend_user", "ban_user", "lift_sanction", "open_reports",
   ];

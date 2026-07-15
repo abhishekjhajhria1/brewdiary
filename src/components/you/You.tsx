@@ -11,7 +11,7 @@ import { useGoals, setGoal, anyGoalSet, GOAL_MAX, type GoalKey } from "@/lib/goa
 import { MilestoneMeter } from "../ui/MilestoneMeter";
 import { MONTH_NAMES, parseKey, todayKey } from "@/lib/date";
 import type { Entry } from "@/lib/types";
-import { useWishlist, addWish, removeWish, toggleWish, type WishItem } from "@/lib/wishlist";
+import { useWishlist, addWish, removeWish, type WishItem } from "@/lib/wishlist";
 import { usePantry, addIngredient, removeIngredient } from "@/lib/pantry";
 import { useProfile, signOut, updateHandle } from "@/lib/profile";
 import { reroll } from "@/lib/handles";
@@ -994,8 +994,6 @@ function ToTry() {
   const entries = useEntries();
   const [draft, setDraft] = useState("");
   const [logging, setLogging] = useState<WishItem | null>(null);
-  const active = items.filter((w) => !w.done);
-  const done = items.filter((w) => w.done);
 
   // Suggestions: every dictionary drink you haven't logged and haven't listed yet.
   // A stand-in for the personalised pick Ninkasi will make once the app matures — for
@@ -1033,27 +1031,6 @@ function ToTry() {
     <section className="mt-10">
       <h2 className="label mb-3">To try</h2>
 
-      {pick && (
-        <div className="glass mb-3 flex items-center justify-between gap-3 rounded-tile p-4">
-          <div className="min-w-0">
-            <p className="label text-faint">A drink to try</p>
-            <p className="mt-0.5 truncate font-display text-xl text-ink">{pick}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-3">
-            <button type="button" onClick={another} className="text-xs text-faint transition-colors hover:text-ink">
-              Another
-            </button>
-            <button
-              type="button"
-              onClick={() => addWish(pick)}
-              className="rounded-ctl bg-ink px-3 py-1.5 text-xs uppercase tracking-[0.12em] text-paper transition-colors hover:bg-ink/90"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-      )}
-
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -1065,7 +1042,7 @@ function ToTry() {
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Or add your own…"
+          placeholder="Add a drink you're curious about…"
           className="flex-1 border-b border-line-strong bg-transparent pb-2 text-sm outline-none placeholder:text-faint focus:border-ink"
         />
         <button
@@ -1080,31 +1057,45 @@ function ToTry() {
         </button>
       </form>
 
-      {items.length === 0 ? (
-        <p className="py-2 text-sm text-faint">
-          Nothing on the list yet — add a drink you&apos;re curious about, or take the suggestion above.
-        </p>
+      {!pick && items.length === 0 ? (
+        <p className="py-2 text-sm text-faint">Nothing to try yet — add a drink above.</p>
       ) : (
-        <ul className="glass divide-y divide-line rounded-tile px-5">
-          {[...active, ...done].map((w) => (
+        // Scrolls once it grows; the suggestion sits at the very top of the list.
+        <ul className="glass max-h-80 divide-y divide-line overflow-y-auto rounded-tile px-5">
+          {pick && (
+            <li className="flex items-center justify-between gap-3 py-2.5">
+              <div className="min-w-0">
+                <p className="label text-faint">suggested</p>
+                <p className="truncate text-[15px] text-ink">{pick}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <button type="button" onClick={another} className="text-xs text-faint transition-colors hover:text-ink">
+                  Another
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addWish(pick)}
+                  className="rounded-ctl bg-ink px-3 py-1.5 text-xs uppercase tracking-[0.12em] text-paper transition-colors hover:bg-ink/90"
+                >
+                  Add
+                </button>
+              </div>
+            </li>
+          )}
+          {items.map((w) => (
             <li key={w.id} className="flex items-center justify-between gap-3 py-2.5">
               <button
-                onClick={() => (w.done ? toggleWish(w.id) : setLogging(w))}
+                onClick={() => setLogging(w)}
                 className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                aria-label={w.done ? `Mark ${w.drink} not tried` : `Log ${w.drink} to your diary`}
+                aria-label={`Log ${w.drink} to your diary`}
               >
                 <span
                   aria-hidden
-                  className={clsx(
-                    "flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border text-[10px] leading-none",
-                    w.done ? "border-accent bg-accent text-accent-contrast" : "border-line-strong text-transparent",
-                  )}
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border border-line-strong text-[10px] leading-none text-transparent"
                 >
                   ✓
                 </span>
-                <span className={clsx("truncate text-[15px]", w.done ? "text-faint line-through" : "text-ink")}>
-                  {w.drink}
-                </span>
+                <span className="truncate text-[15px] text-ink">{w.drink}</span>
               </button>
               <button
                 onClick={() => removeWish(w.id)}
@@ -1123,16 +1114,17 @@ function ToTry() {
   );
 }
 
-// Checking off a "to try" drink offers to write it into the diary — the calendar is the
-// home, so trying something new belongs on a day. Pick the day (today by default) and it
-// logs the entry + marks the item tried in one step. Kind is pre-derived from the name.
+// Tapping a "to try" drink offers to write it into the diary — the calendar is the home,
+// so trying something new belongs on a day. Pick the day (today by default); it logs the
+// entry and takes the drink OFF the list. Kind is pre-derived from the name. Styled to
+// match the log sheet so it feels like the rest of the app.
 function LogWishPopup({ item, onClose }: { item: WishItem; onClose: () => void }) {
   const [date, setDate] = useState(todayKey());
 
   function log() {
     const canon = canonicalize(item.drink);
     addEntry({ date, drink: item.drink, type: canon.type });
-    toggleWish(item.id); // mark it tried
+    void removeWish(item.id); // logged → off the to-try list
     onClose();
   }
 
@@ -1141,33 +1133,35 @@ function LogWishPopup({ item, onClose }: { item: WishItem; onClose: () => void }
       role="dialog"
       aria-modal="true"
       aria-label={`Log ${item.drink}`}
-      className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
     >
-      <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-ink/30 backdrop-blur-sm" />
-      <div className="glass-strong animate-sheet relative w-full max-w-sm rounded-tile p-5">
+      <button aria-label="Close" onClick={onClose} className="animate-fade absolute inset-0 bg-ink/40 backdrop-blur-sm" />
+      <div className="glass-strong animate-sheet relative w-full max-w-md rounded-t-[28px] bg-canvas/90 px-5 pb-8 pt-4 sm:rounded-tile">
+        <div aria-hidden className="mx-auto mb-4 h-1 w-9 rounded-full bg-line-strong sm:hidden" />
         <p className="label text-faint">Log to your diary</p>
-        <p className="mt-1 font-display text-2xl leading-tight text-ink">{item.drink}</p>
-        <label className="mt-4 block">
-          <span className="mb-1 block text-xs text-muted">Which day</span>
+        <p className="mt-1 font-display text-3xl leading-none text-ink">{item.drink}</p>
+        <label className="mt-5 block">
+          <span className="mb-1.5 block text-xs text-muted">Which day</span>
           <input
             type="date"
             value={date}
             max={todayKey()}
             onChange={(e) => setDate(e.target.value)}
-            className="glass w-full rounded-ctl px-4 py-2.5 text-[15px] text-ink"
+            className="glass w-full rounded-ctl px-4 py-3 text-[15px] text-ink"
           />
         </label>
-        <div className="mt-5 flex items-center gap-3">
-          <button
-            onClick={log}
-            className="rounded-ctl bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-opacity hover:opacity-90"
-          >
-            Log it
-          </button>
-          <button onClick={onClose} className="text-sm text-faint transition-colors hover:text-ink">
-            Cancel
-          </button>
-        </div>
+        <button
+          onClick={log}
+          className="mt-5 flex h-12 w-full items-center justify-center rounded-ctl bg-ink text-base font-medium text-paper transition-opacity hover:opacity-90"
+        >
+          Log it
+        </button>
+        <button
+          onClick={onClose}
+          className="mt-2 flex h-11 w-full items-center justify-center rounded-ctl text-sm text-faint transition-colors hover:text-ink"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   );

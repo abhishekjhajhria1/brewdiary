@@ -119,11 +119,13 @@ export function Bartender() {
           messages.map((m, i) => (
             <div key={i} className={clsx("flex", m.role === "user" ? "justify-end" : "justify-start")}>
               {m.role === "user" ? (
-                <p className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-4 py-2 text-[15px] text-accent-contrast">
+                // Your message — the stronger, more opaque glass so "you" reads distinctly.
+                <p className="glass-strong max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] text-ink">
                   {m.content}
                 </p>
               ) : (
-                <p className="max-w-[90%] whitespace-pre-wrap text-[15px] leading-relaxed text-ink">
+                // Ninkasi's reply — the lighter glass, a different shade, left-aligned.
+                <p className="glass max-w-[90%] whitespace-pre-wrap rounded-2xl rounded-bl-md px-4 py-2.5 text-[15px] leading-relaxed text-ink">
                   {m.content || <span className="text-faint">pouring…</span>}
                 </p>
               )}

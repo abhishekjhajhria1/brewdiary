@@ -32,6 +32,7 @@ export interface Plan {
   hostHandle: string;
   title: string;
   date: string;
+  time?: string;
   city?: string;
   venueId?: string;
   note?: string;
@@ -48,6 +49,7 @@ export interface MyPlan {
   id: string;
   title: string;
   date: string;
+  time?: string;
   city?: string;
   venueId?: string;
   note?: string;
@@ -148,6 +150,7 @@ export function useMyPlans(): { plans: MyPlan[]; loading: boolean } {
           id: r.id as string,
           title: r.title as string,
           date: r.plan_date as string,
+          time: (r.plan_time as string) ?? undefined,
           city: (r.city as string) ?? undefined,
           venueId: (r.venue_id as string) ?? undefined,
           note: (r.note as string) ?? undefined,
@@ -241,9 +244,13 @@ export function usePlanSignals(planId: string | null): PlanSignals | null {
 }
 
 // ── the calendar overlay: which upcoming days have a plan I'm part of ─────────
+export interface PlanDayItem {
+  title: string;
+  time?: string;
+}
 /** A plan on a given calendar day (host's own, or one I'm approved to join). */
 export interface PlanDay {
-  titles: string[];
+  items: PlanDayItem[];
   /** true if I host at least one plan that day (vs. only joining). */
   mine: boolean;
 }
@@ -267,8 +274,8 @@ export function usePlanDays(): Map<string, PlanDay> {
       const m = new Map<string, PlanDay>();
       for (const r of (data as Record<string, unknown>[]) ?? []) {
         const key = r.plan_date as string;
-        const cur = m.get(key) ?? { titles: [], mine: false };
-        cur.titles.push(r.title as string);
+        const cur = m.get(key) ?? { items: [], mine: false };
+        cur.items.push({ title: r.title as string, time: (r.plan_time as string) ?? undefined });
         if (r.host) cur.mine = true;
         m.set(key, cur);
       }
@@ -280,6 +287,30 @@ export function usePlanDays(): Map<string, PlanDay> {
   }, [me, v]);
 
   return map;
+}
+
+/** Block/sanction-aware people search — for the invite-by-username field. */
+export async function searchUsers(q: string): Promise<{ id: string; handle: string; name: string }[]> {
+  if (!supabase) return [];
+  const query = q.trim().replace(/^@/, "");
+  if (query.length < 2) return [];
+  const { data } = await supabase.rpc("search_users", { q: query });
+  return ((data as Record<string, unknown>[]) ?? []).map((r) => ({
+    id: r.id as string,
+    handle: r.handle as string,
+    name: (r.display_name as string) ?? (r.handle as string),
+  }));
+}
+
+/** An invited guest RSVPs directly — going or not — no host approval needed. */
+export async function respondInvite(planId: string, going: boolean): Promise<string | null> {
+  if (!supabase) return "offline";
+  const { error } = await supabase.rpc("respond_invite", { pid: planId, going });
+  bump();
+  if (!error) return null;
+  if (/full/i.test(error.message)) return "This plan is full.";
+  if (/taking people/i.test(error.message)) return "This plan isn't taking people right now.";
+  return "Couldn't update that — try again.";
 }
 
 // ── invites (for 'invite' plans — the named-guest tier) ──────────────────────
@@ -349,6 +380,7 @@ function toPlan(r: Record<string, unknown>): Plan {
     hostHandle: r.host_handle as string,
     title: r.title as string,
     date: r.plan_date as string,
+    time: (r.plan_time as string) ?? undefined,
     city: (r.city as string) ?? undefined,
     venueId: (r.venue_id as string) ?? undefined,
     note: (r.note as string) ?? undefined,
@@ -366,6 +398,7 @@ function toPlan(r: Record<string, unknown>): Plan {
 export interface NewPlan {
   title: string;
   date: string; // YYYY-MM-DD, today or later
+  time?: string; // HH:MM, optional start time
   city?: string;
   venueId?: string;
   note?: string;
@@ -390,6 +423,7 @@ export async function createPlan(meId: string, p: NewPlan): Promise<{ id: string
     host_id: meId,
     title,
     plan_date: p.date,
+    plan_time: p.time || null,
     city: p.city?.trim() || null,
     venue_id: p.venueId || null,
     note: p.note?.trim() || null,

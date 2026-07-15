@@ -1,18 +1,13 @@
 "use client";
 
-// The trust card in You → settings. Shows the person their own trust level and how to
-// raise it — a coarse anti-bot standing (are you a real, settled human), NOT a rating
-// of you as a person and NOT a public ranking. The camera check and, later, friend
-// vouches raise it; photo-ID verification is the paid void, shown as "coming soon"
-// rather than a dead button.
-import { useState } from "react";
-import dynamic from "next/dynamic";
+// The trust card in You → settings. Shows the person their own trust level and how it's
+// built — a coarse anti-bot standing (are you a real, settled human), NOT a rating of you
+// as a person and NOT a public ranking. It grows from tenure, real diary use, and friend
+// vouches. (The on-device camera check is off for now.) Photo-ID verification is the paid
+// void, shown as "coming soon" rather than a dead button.
 import { useMyTrust, trustScore, TRUST_LABEL, identityVerificationAvailable, type TrustLevel } from "@/lib/verify";
 import { useMyVouchCount } from "@/lib/vouch";
 import { useProfile } from "@/lib/profile";
-
-// MediaPipe lives inside Liveness — load it only when opened, and never on the server.
-const Liveness = dynamic(() => import("./Liveness").then((m) => m.Liveness), { ssr: false });
 
 // The score needed to reach the NEXT band, and what that band is called — so we can
 // show honest progress instead of a static badge. Mirrors the thresholds in verify.ts.
@@ -28,8 +23,6 @@ export function TrustCard() {
   const profile = useProfile();
   const { level, signals } = useMyTrust();
   const vouches = useMyVouchCount();
-  const [checking, setChecking] = useState(false);
-  const done = Boolean(profile?.presenceChecked);
 
   if (!profile) return null;
 
@@ -70,24 +63,8 @@ export function TrustCard() {
         </div>
       )}
 
-      {done ? (
-        <p className="text-sm text-accent">✓ You passed the camera check</p>
-      ) : (
-        <button
-          onClick={() => setChecking(true)}
-          className="rounded-ctl bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90"
-        >
-          Do a quick camera check
-        </button>
-      )}
-      {!done && (
-        <p className="mt-1.5 text-xs text-faint">
-          On-device only — no photo is taken or uploaded. Earns a &ldquo;trusted member&rdquo; mark.
-        </p>
-      )}
-
       {vouches > 0 && (
-        <p className="mt-3 text-xs text-faint">
+        <p className="text-xs text-faint">
           <span className="text-muted">{vouches}</span> {vouches === 1 ? "friend vouches" : "friends vouch"} for you.
         </p>
       )}
@@ -97,8 +74,6 @@ export function TrustCard() {
         <span>Photo-ID verification</span>
         <span>{identityVerificationAvailable ? "Available" : "Coming soon"}</span>
       </p>
-
-      {checking && <Liveness onClose={() => setChecking(false)} />}
     </div>
   );
 }
