@@ -7,6 +7,7 @@ import clsx from "clsx";
 import { useProfile } from "@/lib/profile";
 import { useIsVenueApp } from "@/lib/host";
 import { ViewSquircle } from "./ViewSquircle";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function TopBar() {
   const pathname = usePathname();
@@ -41,9 +42,11 @@ export function TopBar() {
         >
           {onDiscover ? "Close" : "Discover"}
         </Link>
-        {/* The calendar view toggle lives here now (it used to be the theme switch, which
-            moved to You › Settings). It only makes sense on the home, where the calendar is. */}
+        {/* The calendar view toggle only makes sense on the home, where the calendar is. */}
         {pathname === "/" && <ViewSquircle />}
+        {/* Theme switch — reachable from every page (also mirrored in You › Settings), so
+            the app is never "stuck" in one theme with no visible way out. */}
+        <ThemeToggle />
       </div>
     </div>
   );
