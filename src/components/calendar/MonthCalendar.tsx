@@ -5,6 +5,7 @@ export function MonthCalendar({
   year,
   month,
   counts,
+  planKeys,
   onSelect,
   onPrev,
   onNext,
@@ -13,6 +14,8 @@ export function MonthCalendar({
   year: number;
   month: number;
   counts: Map<string, number>;
+  /** Days with an upcoming plan I'm part of — marked, and tappable even in the future. */
+  planKeys?: Set<string>;
   onSelect: (key: string) => void;
   onPrev: () => void;
   onNext: () => void;
@@ -48,7 +51,13 @@ export function MonthCalendar({
 
         <div className="grid grid-cols-7 gap-1.5">
           {grid.map((day) => (
-            <DayCell key={day.key} day={day} count={counts.get(day.key) ?? 0} onSelect={onSelect} />
+            <DayCell
+              key={day.key}
+              day={day}
+              count={counts.get(day.key) ?? 0}
+              hasPlan={planKeys?.has(day.key) ?? false}
+              onSelect={onSelect}
+            />
           ))}
         </div>
       </div>

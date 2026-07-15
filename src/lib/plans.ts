@@ -9,15 +9,17 @@
 // database (031_plans.sql), never here.
 //
 // Two safety facts this file relies on and must not undermine:
-//   • join_policy is only ever 'friends' or 'fof' — there is no stranger option, by
-//     design; the DB CHECK refuses anything else, so a bug here can't open a plan up.
+//   • join_policy is only ever 'private' | 'invite' | 'friends' | 'fof' — there is
+//     still NO stranger option; the DB CHECK refuses anything else, so a bug here
+//     can't open a plan to the public. 'private' = only me, 'invite' = named guests.
 //   • soft signals are COUNTS, never a rating — see PlanSignals.
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { useAuth } from "./profile";
 
-/** Who may see and ask to join. No 'open'/stranger tier exists yet — deliberately. */
-export type JoinPolicy = "friends" | "fof";
+/** Who may see and ask to join. 'private' = only the host; 'invite' = specific people
+ *  the host named; then the graph tiers. No public/stranger tier exists — deliberately. */
+export type JoinPolicy = "private" | "invite" | "friends" | "fof";
 export type PlanStatus = "open" | "closed" | "cancelled";
 /** Where a join request stands. null = I haven't asked. */
 export type JoinStatus = "requested" | "approved" | "declined" | "withdrawn";
@@ -236,6 +238,107 @@ export function usePlanSignals(planId: string | null): PlanSignals | null {
     };
   }, [planId]);
   return signals;
+}
+
+// ── the calendar overlay: which upcoming days have a plan I'm part of ─────────
+/** A plan on a given calendar day (host's own, or one I'm approved to join). */
+export interface PlanDay {
+  titles: string[];
+  /** true if I host at least one plan that day (vs. only joining). */
+  mine: boolean;
+}
+
+/** Map of `YYYY-MM-DD` → the plan(s) I have that day. Powers the home calendar's
+ *  plan markers. Only ever the caller's own plans/approved joins (the rpc enforces it). */
+export function usePlanDays(): Map<string, PlanDay> {
+  const me = useAuth().profile?.id;
+  const v = useVersion();
+  const [map, setMap] = useState<Map<string, PlanDay>>(() => new Map());
+
+  useEffect(() => {
+    if (!supabase || !me) {
+      setMap(new Map());
+      return;
+    }
+    let active = true;
+    (async () => {
+      const { data } = await supabase!.rpc("my_plan_days");
+      if (!active) return;
+      const m = new Map<string, PlanDay>();
+      for (const r of (data as Record<string, unknown>[]) ?? []) {
+        const key = r.plan_date as string;
+        const cur = m.get(key) ?? { titles: [], mine: false };
+        cur.titles.push(r.title as string);
+        if (r.host) cur.mine = true;
+        m.set(key, cur);
+      }
+      setMap(m);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [me, v]);
+
+  return map;
+}
+
+// ── invites (for 'invite' plans — the named-guest tier) ──────────────────────
+export interface PlanInvitee {
+  userId: string;
+  name: string;
+  handle: string;
+}
+
+/** The guest list for one of MY plans (host-only; the rpc enforces it). */
+export function usePlanInvitees(planId: string | null): { invitees: PlanInvitee[]; loading: boolean } {
+  const v = useVersion();
+  const [invitees, setInvitees] = useState<PlanInvitee[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!supabase || !planId) {
+      setInvitees([]);
+      setLoading(false);
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    (async () => {
+      const { data } = await supabase!.rpc("plan_invitees", { pid: planId });
+      if (!active) return;
+      setInvitees(
+        ((data as Record<string, unknown>[]) ?? []).map((r) => ({
+          userId: r.user_id as string,
+          name: (r.display_name as string) ?? (r.handle as string),
+          handle: r.handle as string,
+        })),
+      );
+      setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [planId, v]);
+
+  return { invitees, loading };
+}
+
+/** Invite a specific person to an 'invite' plan. Host-only + block-aware server-side. */
+export async function inviteToPlan(planId: string, userId: string): Promise<string | null> {
+  if (!supabase) return "offline";
+  const { error } = await supabase.rpc("invite_to_plan", { pid: planId, target: userId });
+  bump();
+  if (!error) return null;
+  if (/can't invite|blocked/i.test(error.message)) return "You can't invite this person.";
+  return "Couldn't send that invite — try again.";
+}
+
+/** Withdraw an invite (also pulls any join they started off it). */
+export async function uninviteFromPlan(planId: string, userId: string): Promise<string | null> {
+  if (!supabase) return "offline";
+  const { error } = await supabase.rpc("uninvite_from_plan", { pid: planId, target: userId });
+  bump();
+  return error ? "Couldn't update the guest list — try again." : null;
 }
 
 function toPlan(r: Record<string, unknown>): Plan {

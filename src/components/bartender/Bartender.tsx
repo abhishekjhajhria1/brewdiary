@@ -12,7 +12,7 @@ import {
   type BartenderContext,
   type ChatMessage,
 } from "@/lib/bartender";
-import { logExchange, isCollecting, useTrainingCount, toJSONL, snapshotTraining } from "@/lib/training";
+import { logExchange, isCollecting } from "@/lib/training";
 import { useFeed } from "@/lib/friends";
 import { useTasteTrends } from "@/lib/trends";
 
@@ -25,7 +25,6 @@ export function Bartender() {
   const [busy, setBusy] = useState(false);
   const [offline, setOffline] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const trainingCount = useTrainingCount();
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -89,17 +88,6 @@ export function Bartender() {
     } finally {
       setBusy(false);
     }
-  }
-
-  function exportDataset() {
-    const jsonl = toJSONL(snapshotTraining());
-    const blob = new Blob([jsonl], { type: "application/jsonl" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ninkasi-training-${new Date().toISOString().slice(0, 10)}.jsonl`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   const empty = messages.length === 0;
@@ -172,17 +160,6 @@ export function Bartender() {
           {busy ? "…" : "Ask"}
         </button>
       </form>
-
-      {trainingCount > 0 && (
-        <button
-          type="button"
-          onClick={exportDataset}
-          className="mt-3 self-start text-xs text-faint underline-offset-4 transition-colors hover:text-muted hover:underline"
-          title="Export collected conversations as JSONL to fine-tune your own Ninkasi"
-        >
-          Export {trainingCount} exchange{trainingCount === 1 ? "" : "s"} for training (JSONL)
-        </button>
-      )}
     </div>
   );
 }

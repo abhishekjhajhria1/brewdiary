@@ -898,6 +898,52 @@ try {
   // Even a raw insert (bypassing the client) can't stack a duplicate — the DB blocks it.
   ok("a duplicate report is rejected by the database itself",
     await refused(() => as(rohan, `insert into public.reports (reporter_id, subject_user_id, reason) values ($1,$2,'spam')`, [rohan, stranger])));
+
+  console.log("\n── 15. plans: private (only me) + invite (named guests) ──");
+  // Fresh graph so §12's block doesn't muddy it: priya ── dev are friends; the stranger
+  // stays outside everyone's circle.
+  const priya = await mkUser("Priya", `vf-priya-${Date.now()}`);
+  const dev = await mkUser("Dev", `vf-dev-${Date.now()}`);
+  await db.query(`insert into public.friendships (requester_id, addressee_id, status) values ($1,$2,'accepted')`, [priya, dev]);
+  const countsPlan = async (uid, planId) =>
+    (await as(uid, `select count(*)::int n from public.plans where id=$1`, [planId])).rows[0].n;
+
+  // PRIVATE — nobody but the host, ever. Not even a friend; not joinable.
+  const planPriv = randomUUID();
+  await as(priya, `insert into public.plans (id, host_id, title, plan_date, join_policy)
+                   values ($1,$2,'Just me', current_date + 3, 'private')`, [planPriv, priya]);
+  ok("a PRIVATE plan: the host sees it", (await countsPlan(priya, planPriv)) === 1);
+  ok("a PRIVATE plan: even a friend CANNOT see it", (await countsPlan(dev, planPriv)) === 0);
+  ok("a PRIVATE plan: nobody can ask to join",
+    await refused(() => as(dev, `select public.request_join($1, null)`, [planPriv])));
+
+  // INVITE — only the named guest sees it, and only someone in the graph can be named.
+  const planInv = randomUUID();
+  await as(priya, `insert into public.plans (id, host_id, title, plan_date, join_policy)
+                   values ($1,$2,'Just us two', current_date + 4, 'invite')`, [planInv, priya]);
+  ok("an INVITE plan: an un-invited friend CANNOT see it yet", (await countsPlan(dev, planInv)) === 0);
+  ok("only the host can invite (a guest can't invite themselves)",
+    await refused(() => as(dev, `select public.invite_to_plan($1,$2)`, [planInv, dev])));
+  ok("a stranger outside the graph CANNOT be invited (no stranger path)",
+    await refused(() => as(priya, `select public.invite_to_plan($1,$2)`, [planInv, stranger])));
+  await as(priya, `select public.invite_to_plan($1,$2)`, [planInv, dev]);
+  ok("once invited, the named guest CAN see the plan", (await countsPlan(dev, planInv)) === 1);
+  await as(dev, `select public.request_join($1, 'yes!')`, [planInv]);
+  const jidInv = (await as(priya, `select id from public.plan_joins where plan_id=$1 and user_id=$2`, [planInv, dev])).rows[0].id;
+  await as(priya, `select public.respond_join($1, true)`, [jidInv]);
+  ok("the invited guest, once approved, is going", (await as(priya, `select public.plan_going_count($1) n`, [planInv])).rows[0].n === 2);
+
+  // the calendar overlay: the host sees both her days; the guest sees only the one she joined
+  const priyaDays = (await as(priya, `select * from public.my_plan_days()`)).rows.map((r) => r.title);
+  ok("my_plan_days lists the host's own plans (private + invite)",
+    priyaDays.includes("Just me") && priyaDays.includes("Just us two"));
+  const devDays = (await as(dev, `select * from public.my_plan_days()`)).rows.map((r) => r.title);
+  ok("my_plan_days lists a plan I'm approved to join, not the host's private one",
+    devDays.includes("Just us two") && !devDays.includes("Just me"));
+
+  // pulling the invite removes the guest's view (and withdraws their join)
+  await as(priya, `select public.uninvite_from_plan($1,$2)`, [planInv, dev]);
+  ok("uninviting withdraws the guest's view of the plan", (await countsPlan(dev, planInv)) === 0);
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

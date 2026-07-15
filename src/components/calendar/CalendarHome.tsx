@@ -2,14 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import clsx from "clsx";
 import { useEntries } from "@/lib/store";
 import { countsByDate, memory, recentDrinks, recentMoods, stats } from "@/lib/derive";
 import { addMonths, MONTH_NAMES, parseKey, todayKey } from "@/lib/date";
+import { useCalendarView } from "@/lib/calendarView";
+import { usePlanDays } from "@/lib/plans";
 import { MonthCalendar } from "./MonthCalendar";
 import { YearMosaic } from "./YearMosaic";
 import { StreakStrip } from "./StreakStrip";
 import { DayCounters } from "../ui/DayCounters";
+import { AchievementTile } from "./AchievementTile";
 import { LogSheet } from "../log/LogSheet";
 
 export function CalendarHome() {
@@ -18,11 +20,24 @@ export function CalendarHome() {
   const now = new Date();
 
   const [cursor, setCursor] = useState({ y: now.getFullYear(), m: now.getMonth() });
-  const [view, setView] = useState<"month" | "year">("month");
+  // View is shared with the TopBar's squircle toggle (see lib/calendarView).
+  const view = useCalendarView();
   const [selected, setSelected] = useState<string | null>(null);
 
-  const canNext =
-    cursor.y < now.getFullYear() || (cursor.y === now.getFullYear() && cursor.m < now.getMonth());
+  // Upcoming plans I'm part of, keyed by day — the home marks these on the grid.
+  const planDays = usePlanDays();
+  const planKeys = new Set(planDays.keys());
+
+  // You can page FORWARD as far as your furthest plan (past that is empty diary, so
+  // there's no reason to). Normally that's just the current month.
+  const nowYM = now.getFullYear() * 12 + now.getMonth();
+  const curYM = cursor.y * 12 + cursor.m;
+  let lastYM = nowYM;
+  for (const k of planKeys) {
+    const d = parseKey(k);
+    lastYM = Math.max(lastYM, d.getFullYear() * 12 + d.getMonth());
+  }
+  const canNext = curYM < lastYM;
 
   const s = stats(entries);
   const mem = memory(entries);
@@ -39,17 +54,6 @@ export function CalendarHome() {
 
   return (
     <>
-      <div className="mb-5 flex justify-end">
-        <div className="glass flex rounded-full p-1">
-          <Toggle active={view === "month"} onClick={() => setView("month")}>
-            Month
-          </Toggle>
-          <Toggle active={view === "year"} onClick={() => setView("year")}>
-            Year
-          </Toggle>
-        </div>
-      </div>
-
       <StreakStrip stats={s} />
 
       {mem && (
@@ -68,8 +72,14 @@ export function CalendarHome() {
         </button>
       )}
 
-      {/* optional quick-trackers (cigarettes, water…) for TODAY — sit above the calendar */}
-      <DayCounters dateKey={todayKey()} className="mt-4" />
+      {/* Month view: the per-day quick-trackers (cigarettes, water…) for TODAY.
+          Year view: a collectible tracker made no sense there, so it becomes the
+          rotating achievement tile instead (item 8). */}
+      {view === "month" ? (
+        <DayCounters dateKey={todayKey()} className="mt-4" />
+      ) : (
+        <AchievementTile entries={entries} className="mt-4" />
+      )}
 
       <div className="mt-8">
         {view === "month" ? (
@@ -77,6 +87,7 @@ export function CalendarHome() {
             year={cursor.y}
             month={cursor.m}
             counts={counts}
+            planKeys={planKeys}
             onSelect={setSelected}
             onPrev={() => step(-1)}
             onNext={() => step(1)}
@@ -106,34 +117,12 @@ export function CalendarHome() {
         <LogSheet
           dateKey={selected}
           dayEntries={dayEntries}
+          plans={planDays.get(selected)?.titles ?? []}
           recentDrinks={recentDrinks(entries)}
           recentMoods={recentMoods(entries)}
           onClose={() => setSelected(null)}
         />
       )}
     </>
-  );
-}
-
-function Toggle({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={clsx(
-        "rounded-full px-4 py-1.5 text-xs uppercase tracking-[0.14em] transition-all duration-200 ease-out",
-        active ? "bg-ink text-paper shadow-sm" : "text-muted hover:text-ink",
-      )}
-    >
-      {children}
-    </button>
   );
 }

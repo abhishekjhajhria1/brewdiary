@@ -18,18 +18,22 @@ import { canonicalize, suggestDrinks } from "@/lib/drinks";
 import { useEntries } from "@/lib/store";
 import { Chip } from "../ui/Chip";
 import { ShareCard } from "../share/ShareCard";
+import { DayCounters } from "../ui/DayCounters";
 
 const WEEKDAY_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 export function LogSheet({
   dateKey,
   dayEntries,
+  plans = [],
   recentDrinks,
   recentMoods,
   onClose,
 }: {
   dateKey: string;
   dayEntries: Entry[];
+  /** Titles of upcoming plans that fall on this day (shown as a quiet "Planned" note). */
+  plans?: string[];
   recentDrinks: string[];
   recentMoods: string[];
   onClose: () => void;
@@ -249,6 +253,17 @@ export function LogSheet({
             ×
           </button>
         </header>
+
+        {plans.length > 0 && (
+          <div className="mb-5 rounded-ctl border border-line px-3 py-2.5">
+            <p className="label text-accent">Planned</p>
+            {plans.map((t, i) => (
+              <p key={i} className="mt-0.5 text-sm text-ink">
+                {t}
+              </p>
+            ))}
+          </div>
+        )}
 
         {pendingDelete && (
           <div className="animate-fade mb-5 flex items-center justify-between rounded-ctl border border-line px-3 py-2 text-sm text-muted">
@@ -532,6 +547,11 @@ export function LogSheet({
             Nothing today — log a dry day
           </button>
         )}
+
+        {/* Any enabled Extras (cigarettes, water…) for THIS day — so the counters live
+            on the calendar day itself, not only on today's home. Renders nothing until
+            you switch an Extra on in You › Settings. */}
+        <DayCounters dateKey={dateKey} className="mt-5" />
       </div>
 
       {sharing && <ShareCard entry={sharing} onClose={() => setSharing(null)} />}

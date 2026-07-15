@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { useProfile } from "@/lib/profile";
 import { useIsVenueApp } from "@/lib/host";
-import { ThemeToggle } from "./ThemeToggle";
+import { ViewSquircle } from "./ViewSquircle";
 
 export function TopBar() {
   const pathname = usePathname();
@@ -41,7 +41,9 @@ export function TopBar() {
         >
           {onDiscover ? "Close" : "Discover"}
         </Link>
-        <ThemeToggle />
+        {/* The calendar view toggle lives here now (it used to be the theme switch, which
+            moved to You › Settings). It only makes sense on the home, where the calendar is. */}
+        {pathname === "/" && <ViewSquircle />}
       </div>
     </div>
   );

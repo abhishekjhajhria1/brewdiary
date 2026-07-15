@@ -56,7 +56,7 @@ try {
     "point_events", "venues", "venue_staff", "venue_perks", "venue_verifications",
     "spend_events", "room_consent", "jurisdiction_policy",
     "perk_redemptions", "staff_kudos",
-    "plans", "plan_joins", "blocks", "reports",
+    "plans", "plan_joins", "plan_invites", "blocks", "reports",
     "vouches",
     "moderators", "user_sanctions", "moderation_actions",
   ];
@@ -83,6 +83,7 @@ try {
     "venue_insights", "discover_venues",
     "plan_visible_to", "blocked_between", "request_join", "respond_join",
     "withdraw_join", "block_user", "plan_signals", "upcoming_plans", "search_users",
+    "is_plan_invited", "invite_to_plan", "uninvite_from_plan", "plan_invitees", "my_plan_days",
     "vouch_count",
     "is_moderator", "is_sanctioned", "suspend_user", "ban_user", "lift_sanction", "open_reports",
   ];
@@ -104,9 +105,10 @@ try {
     ok(`${t}: NO client write policy (server-written only)`, w.length === 0, `— found ${w.map((x) => x.policyname).join(", ")}`);
   }
 
-  // Plans/meetups (031). plan_joins and reports are server-written only — a client
-  // that could insert an 'approved' join, or read reports back, breaks the feature.
-  for (const t of ["plan_joins", "reports"]) {
+  // Plans/meetups (031/036). plan_joins, plan_invites and reports are server-written
+  // only — a client that could insert an 'approved' join, forge an invite, or read
+  // reports back, breaks the feature.
+  for (const t of ["plan_joins", "plan_invites", "reports"]) {
     const w = await all(
       `select policyname, cmd from pg_policies where schemaname='public' and tablename=$1 and cmd <> 'SELECT'`,
       [t],
@@ -133,16 +135,23 @@ try {
   const blockSel = await one(`select qual::text q from pg_policies where schemaname='public' and tablename='blocks' and cmd='SELECT'`);
   ok("blocks: readable only by the blocker (a block is undetectable)", blockSel && /blocker_id/.test(blockSel.q) && !/blocked_id/.test(blockSel.q));
 
-  // THE deny-by-default gate for the meetup layer: there is NO 'open'/stranger join
-  // policy. If this check ever fails, someone widened plans to strangers without the
-  // trust-&-safety work — exactly the thing we said would be a separate decision.
+  // THE deny-by-default gate for the meetup layer: the ONLY policies are private /
+  // invite / friends / fof — there is NO 'open'/stranger tier. 036 added private+invite
+  // (narrower audiences, still in the graph). If this ever fails, someone widened plans
+  // to strangers without the trust-&-safety work — a separate decision, by design.
   const jpDef = await one(`
     select pg_get_constraintdef(c.oid) d from pg_constraint c
     where c.conrelid='public.plans'::regclass and c.contype='c'
       and pg_get_constraintdef(c.oid) ilike '%join_policy%'`);
-  ok("plans: join_policy allows only friends/fof — NO stranger tier",
-    jpDef && /friends/.test(jpDef.d) && /fof/.test(jpDef.d) && !/open|public|anyone|stranger/i.test(jpDef.d),
+  ok("plans: join_policy = private/invite/friends/fof — still NO stranger tier",
+    jpDef && /friends/.test(jpDef.d) && /fof/.test(jpDef.d) && /private/.test(jpDef.d) && /invite/.test(jpDef.d)
+      && !/open|public|anyone|stranger/i.test(jpDef.d),
     `— ${jpDef?.d ?? "constraint missing"}`);
+  // The 'invite' branch must be wired through is_plan_invited (named-guest gate), and
+  // 'private' must have NO branch (host-only) — so a private plan can never leak.
+  const pvDef = await one(`select pg_get_functiondef('public.plan_visible_to(uuid,uuid)'::regprocedure) d`);
+  ok("plan_visible_to: 'invite' opens only to named guests (is_plan_invited), and 'private' has NO branch",
+    pvDef && /is_plan_invited/.test(pvDef.d) && !/join_policy\s*=\s*'private'/i.test(pvDef.d));
 
   // Vouches (033): a friend stakes their word. The insert MUST be friend-gated in the
   // DB (are_friends), not just the UI, and MUST be yourself-as-voucher — otherwise a

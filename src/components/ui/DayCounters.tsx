@@ -7,6 +7,7 @@
 import clsx from "clsx";
 import { useExtras, enabledCounters, type ExtraDef } from "@/lib/features";
 import { useTally, bumpTally } from "@/lib/tallies";
+import { useWaterMl, formatVolume } from "@/lib/waterPref";
 
 export function DayCounters({ dateKey, className }: { dateKey: string; className?: string }) {
   const extras = useExtras();
@@ -23,11 +24,15 @@ export function DayCounters({ dateKey, className }: { dateKey: string; className
 
 function DayCounter({ dateKey, def }: { dateKey: string; def: ExtraDef }) {
   const n = useTally(dateKey, def.key);
+  const waterMl = useWaterMl();
+  // Water, if you've set a glass size (You › Extras), also reads as a volume.
+  const volume = def.key === "water" && waterMl ? n * waterMl : null;
   return (
     <div className="glass flex flex-1 basis-40 items-center justify-between gap-3 rounded-tile px-4 py-3">
       <div className="min-w-0">
         <p className="label text-faint">{def.label}</p>
         <p className="tnum mt-0.5 text-2xl leading-none text-ink">{n}</p>
+        {volume !== null && <p className="tnum mt-1 text-xs text-faint">{formatVolume(volume)}</p>}
       </div>
       <div className="flex items-center gap-1.5">
         <Step label={`One fewer ${def.unit}`} disabled={n === 0} onClick={() => bumpTally(dateKey, def.key, -1)}>

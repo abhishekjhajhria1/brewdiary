@@ -4,13 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import clsx from "clsx";
-import { useEntries, reseed, resetAll, replaceAll, snapshot } from "@/lib/store";
+import { useEntries, addEntry, reseed, resetAll, replaceAll, snapshot } from "@/lib/store";
 import { lexicon, stats, yearReview, weekBalance } from "@/lib/derive";
+import { DRINKS, canonicalize, normalize } from "@/lib/drinks";
 import { useGoals, setGoal, anyGoalSet, GOAL_MAX, type GoalKey } from "@/lib/goals";
 import { MilestoneMeter } from "../ui/MilestoneMeter";
-import { MONTH_NAMES, parseKey } from "@/lib/date";
+import { MONTH_NAMES, parseKey, todayKey } from "@/lib/date";
 import type { Entry } from "@/lib/types";
-import { useWishlist, addWish, removeWish, toggleWish } from "@/lib/wishlist";
+import { useWishlist, addWish, removeWish, toggleWish, type WishItem } from "@/lib/wishlist";
+import { usePantry, addIngredient, removeIngredient } from "@/lib/pantry";
 import { useProfile, signOut, updateHandle } from "@/lib/profile";
 import { reroll } from "@/lib/handles";
 import { TrustCard } from "../verify/TrustCard";
@@ -21,11 +23,13 @@ import { useShareTrends, setShareTrends } from "@/lib/trends";
 import { useCompeteVisible, setCompeteVisible } from "@/lib/points";
 import { useProfilePrivacy, setProfileVisibility, setSocialHandle, type ProfileVisibility } from "@/lib/publicProfile";
 import { useExtras, setExtra, EXTRAS, type ExtraKey } from "@/lib/features";
+import { useWaterMl, setWaterMl } from "@/lib/waterPref";
 import { exportEverything, deleteAccount } from "@/lib/dataRights";
 import { savedCountry, moveTo, confirmAge, legalAgeFor } from "@/lib/age";
 import { KNOWN_COUNTRIES } from "@/lib/jurisdiction";
 import { Chip } from "../ui/Chip";
 import { VenueLink } from "../ui/VenueLink";
+import { ThemeToggle } from "../ui/ThemeToggle";
 
 export function You() {
   const entries = useEntries();
@@ -143,6 +147,11 @@ export function You() {
             </button>
           )}
         </div>
+
+        {/* What you keep at home (for Ninkasi later) + a look back over the whole journey. */}
+        <Pantry />
+        <JourneyTile entries={entries} />
+
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -228,6 +237,14 @@ function Settings() {
         </p>
       )}
       <div className="flex items-center justify-between gap-4 py-1">
+        <div>
+          <p className="text-sm text-ink">Appearance</p>
+          <p className="text-xs text-faint">Switch between the light and dark themes.</p>
+        </div>
+        <ThemeToggle />
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-4 border-t border-line py-3">
         <div>
           <p className="text-sm text-ink">Nightly reminder</p>
           <p className="text-xs text-faint">A gentle nudge to log before bed.</p>
@@ -904,19 +921,44 @@ function ExtrasSettings() {
         Optional trackers. Turn one on and a small counter shows up on each day in your log.
       </p>
       {EXTRAS.map((e) => (
-        <div key={e.key} className="flex items-center justify-between gap-4 py-2">
-          <div>
-            <p className="text-sm text-ink">{e.label}</p>
-            <p className="text-xs text-faint">{e.hint}</p>
+        <div key={e.key}>
+          <div className="flex items-center justify-between gap-4 py-2">
+            <div>
+              <p className="text-sm text-ink">{e.label}</p>
+              <p className="text-xs text-faint">{e.hint}</p>
+            </div>
+            <Toggle
+              on={flags[e.key] ?? false}
+              label={e.label}
+              onToggle={(next) => setExtra(e.key as ExtraKey, next)}
+            />
           </div>
-          <Toggle
-            on={flags[e.key] ?? false}
-            label={e.label}
-            onToggle={(next) => setExtra(e.key as ExtraKey, next)}
-          />
+          {e.key === "water" && (flags.water ?? false) && <WaterMeasure />}
         </div>
       ))}
     </div>
+  );
+}
+
+// When Water is on, an optional glass size (ml). Set it and the day's water counter
+// also shows a volume (3 × 250 ml = 750 ml); leave it blank to just count glasses.
+function WaterMeasure() {
+  const ml = useWaterMl();
+  return (
+    <label className="flex items-center justify-between gap-4 pb-2 pl-0">
+      <span className="text-xs text-faint">Glass size (ml) — optional, adds a volume</span>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={2000}
+        value={ml ?? ""}
+        onChange={(e) => setWaterMl(e.target.value.trim() === "" ? null : Number(e.target.value))}
+        placeholder="glasses"
+        aria-label="Water glass size in millilitres"
+        className="tnum glass w-24 rounded-ctl px-3 py-1.5 text-sm text-ink placeholder:text-faint"
+      />
+    </label>
   );
 }
 
@@ -949,13 +991,69 @@ function Toggle({ on, label, onToggle }: { on: boolean; label: string; onToggle:
 
 function ToTry() {
   const items = useWishlist();
+  const entries = useEntries();
   const [draft, setDraft] = useState("");
+  const [logging, setLogging] = useState<WishItem | null>(null);
   const active = items.filter((w) => !w.done);
   const done = items.filter((w) => w.done);
+
+  // Suggestions: every dictionary drink you haven't logged and haven't listed yet.
+  // A stand-in for the personalised pick Ninkasi will make once the app matures — for
+  // now a shuffle of what's known, and it never repeats something already yours, so
+  // the top tile stays useful as the list below fills up.
+  const suggestions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const e of entries) seen.add(normalize(e.drink));
+    for (const w of items) seen.add(normalize(w.drink));
+    return DRINKS.map((d) => d.canonical).filter((name) => !seen.has(normalize(name)));
+  }, [entries, items]);
+
+  const [pick, setPick] = useState<string | null>(null);
+  useEffect(() => {
+    // Keep a valid pick: choose one initially, and re-choose if the current pick just
+    // left the pool (you logged it or added it to the list).
+    if (suggestions.length === 0) {
+      setPick(null);
+      return;
+    }
+    setPick((cur) => (cur && suggestions.includes(cur) ? cur : suggestions[Math.floor(Math.random() * suggestions.length)]));
+  }, [suggestions]);
+
+  function another() {
+    if (suggestions.length === 0) return;
+    setPick((cur) => {
+      if (suggestions.length === 1) return suggestions[0];
+      let n = cur;
+      while (n === cur) n = suggestions[Math.floor(Math.random() * suggestions.length)];
+      return n;
+    });
+  }
 
   return (
     <section className="mt-10">
       <h2 className="label mb-3">To try</h2>
+
+      {pick && (
+        <div className="glass mb-3 flex items-center justify-between gap-3 rounded-tile p-4">
+          <div className="min-w-0">
+            <p className="label text-faint">A drink to try</p>
+            <p className="mt-0.5 truncate font-display text-xl text-ink">{pick}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <button type="button" onClick={another} className="text-xs text-faint transition-colors hover:text-ink">
+              Another
+            </button>
+            <button
+              type="button"
+              onClick={() => addWish(pick)}
+              className="rounded-ctl bg-ink px-3 py-1.5 text-xs uppercase tracking-[0.12em] text-paper transition-colors hover:bg-ink/90"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -967,7 +1065,7 @@ function ToTry() {
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="A drink you want to get to…"
+          placeholder="Or add your own…"
           className="flex-1 border-b border-line-strong bg-transparent pb-2 text-sm outline-none placeholder:text-faint focus:border-ink"
         />
         <button
@@ -983,15 +1081,17 @@ function ToTry() {
       </form>
 
       {items.length === 0 ? (
-        <p className="py-2 text-sm text-faint">Nothing on the list yet — add a drink you&apos;re curious about.</p>
+        <p className="py-2 text-sm text-faint">
+          Nothing on the list yet — add a drink you&apos;re curious about, or take the suggestion above.
+        </p>
       ) : (
         <ul className="glass divide-y divide-line rounded-tile px-5">
           {[...active, ...done].map((w) => (
             <li key={w.id} className="flex items-center justify-between gap-3 py-2.5">
               <button
-                onClick={() => toggleWish(w.id)}
+                onClick={() => (w.done ? toggleWish(w.id) : setLogging(w))}
                 className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                aria-label={w.done ? `Mark ${w.drink} not tried` : `Mark ${w.drink} tried`}
+                aria-label={w.done ? `Mark ${w.drink} not tried` : `Log ${w.drink} to your diary`}
               >
                 <span
                   aria-hidden
@@ -1017,7 +1117,59 @@ function ToTry() {
           ))}
         </ul>
       )}
+
+      {logging && <LogWishPopup item={logging} onClose={() => setLogging(null)} />}
     </section>
+  );
+}
+
+// Checking off a "to try" drink offers to write it into the diary — the calendar is the
+// home, so trying something new belongs on a day. Pick the day (today by default) and it
+// logs the entry + marks the item tried in one step. Kind is pre-derived from the name.
+function LogWishPopup({ item, onClose }: { item: WishItem; onClose: () => void }) {
+  const [date, setDate] = useState(todayKey());
+
+  function log() {
+    const canon = canonicalize(item.drink);
+    addEntry({ date, drink: item.drink, type: canon.type });
+    toggleWish(item.id); // mark it tried
+    onClose();
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Log ${item.drink}`}
+      className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+    >
+      <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-ink/30 backdrop-blur-sm" />
+      <div className="glass-strong animate-sheet relative w-full max-w-sm rounded-tile p-5">
+        <p className="label text-faint">Log to your diary</p>
+        <p className="mt-1 font-display text-2xl leading-tight text-ink">{item.drink}</p>
+        <label className="mt-4 block">
+          <span className="mb-1 block text-xs text-muted">Which day</span>
+          <input
+            type="date"
+            value={date}
+            max={todayKey()}
+            onChange={(e) => setDate(e.target.value)}
+            className="glass w-full rounded-ctl px-4 py-2.5 text-[15px] text-ink"
+          />
+        </label>
+        <div className="mt-5 flex items-center gap-3">
+          <button
+            onClick={log}
+            className="rounded-ctl bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-opacity hover:opacity-90"
+          >
+            Log it
+          </button>
+          <button onClick={onClose} className="text-sm text-faint transition-colors hover:text-ink">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1045,6 +1197,163 @@ function Metric({ value, label }: { value: number; label: string }) {
     <div className="flex flex-col items-center gap-1 py-3">
       <span className="tnum text-2xl font-semibold leading-none">{value}</span>
       <span className="label">{label}</span>
+    </div>
+  );
+}
+
+// Your bar — the ingredients you keep at home. Feeds nothing yet; it's the store
+// Ninkasi will read to suggest what you can make (see lib/pantry.ts). Tap a chip to
+// remove it.
+function Pantry() {
+  const items = usePantry();
+  const [draft, setDraft] = useState("");
+  return (
+    <div className="glass mb-3 rounded-tile p-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="label text-faint">Your bar</p>
+        <span className="text-xs text-faint">{items.length > 0 ? `${items.length} on hand` : "what's at home"}</span>
+      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          addIngredient(draft);
+          setDraft("");
+        }}
+        className="flex items-center gap-2"
+      >
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add an ingredient — gin, lime, tonic…"
+          className="flex-1 border-b border-line-strong bg-transparent pb-2 text-sm outline-none placeholder:text-faint focus:border-ink"
+        />
+        <button
+          type="submit"
+          disabled={!draft.trim()}
+          className={clsx(
+            "rounded-ctl px-3 py-1.5 text-xs uppercase tracking-[0.12em] transition-colors",
+            draft.trim() ? "bg-ink text-paper hover:bg-ink/90" : "cursor-not-allowed bg-ink/10 text-faint",
+          )}
+        >
+          Add
+        </button>
+      </form>
+      {items.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {items.map((it) => (
+            <button
+              key={it}
+              onClick={() => removeIngredient(it)}
+              aria-label={`Remove ${it}`}
+              className="group inline-flex items-center gap-1.5 rounded-ctl border border-line px-2.5 py-1 text-xs text-muted transition-colors hover:border-line-strong hover:text-ink"
+            >
+              {it}
+              <span aria-hidden className="text-faint group-hover:text-ink">×</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <p className="mt-2.5 text-xs text-faint">
+        Ninkasi will use this to suggest what you can make at home — coming soon.
+      </p>
+    </div>
+  );
+}
+
+interface Journey {
+  places: number;
+  people: number;
+  drinks: number;
+  days: number;
+  first: string | null;
+}
+
+// A look back over the whole diary — places been, people alongside, drinks met, days
+// kept. Everything derived from entries; a tap opens the fuller panel.
+function JourneyTile({ entries }: { entries: Entry[] }) {
+  const [open, setOpen] = useState(false);
+  const j = useMemo<Journey>(() => {
+    const places = new Set<string>();
+    const people = new Set<string>();
+    const drinks = new Set<string>();
+    const days = new Set<string>();
+    let first: string | null = null;
+    for (const e of entries) {
+      if (e.venue?.trim()) places.add(e.venue.trim().toLowerCase());
+      for (const w of e.whoWith ?? []) if (w.trim()) people.add(w.trim().toLowerCase());
+      if (e.drink?.trim() && e.type !== "none") drinks.add(e.drink.trim().toLowerCase());
+      days.add(e.date);
+      if (!first || e.date < first) first = e.date;
+    }
+    return { places: places.size, people: people.size, drinks: drinks.size, days: days.size, first };
+  }, [entries]);
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="glass glass-press mb-3 flex w-full items-center justify-between gap-4 rounded-tile p-4 text-left"
+      >
+        <div className="min-w-0">
+          <p className="label text-faint">Your journey</p>
+          <p className="mt-0.5 truncate text-[15px] text-ink">
+            {j.days > 0
+              ? `${j.places} place${j.places === 1 ? "" : "s"} · ${j.people} ${j.people === 1 ? "person" : "people"} · ${j.drinks} drink${j.drinks === 1 ? "" : "s"}`
+              : "Your story so far"}
+          </p>
+        </div>
+        <span className="shrink-0 text-sm font-medium text-accent">Open →</span>
+      </button>
+      {open && <JourneyPanel j={j} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function JourneyPanel({ j, onClose }: { j: Journey; onClose: () => void }) {
+  const since = j.first ? parseKey(j.first) : null;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Your journey"
+      className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+    >
+      <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-ink/30 backdrop-blur-sm" />
+      <div className="glass-strong animate-sheet relative w-full max-w-sm rounded-tile p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="label text-faint">Your journey</p>
+            <h3 className="mt-1 font-display text-2xl leading-none text-ink">The story so far</h3>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="-mr-1.5 -mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-2xl leading-none text-muted transition-colors hover:text-ink"
+          >
+            ×
+          </button>
+        </div>
+        <dl className="mt-4 grid grid-cols-2 gap-3">
+          <JourneyStat n={j.days} label="days kept" />
+          <JourneyStat n={j.drinks} label="drinks met" />
+          <JourneyStat n={j.places} label="places been" />
+          <JourneyStat n={j.people} label="alongside" />
+        </dl>
+        {since && (
+          <p className="mt-4 text-xs text-faint">
+            Since {MONTH_NAMES[since.getMonth()]} {since.getFullYear()}.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function JourneyStat({ n, label }: { n: number; label: string }) {
+  return (
+    <div className="glass rounded-tile p-4">
+      <p className="tnum font-display text-3xl leading-none text-ink">{n}</p>
+      <p className="mt-1 text-xs text-faint">{label}</p>
     </div>
   );
 }

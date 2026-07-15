@@ -13,14 +13,18 @@ const FILL = [
 export function DayCell({
   day,
   count,
+  hasPlan = false,
   onSelect,
 }: {
   day: GridDay;
   count: number;
+  /** An upcoming plan I'm part of sits on this day — mark it, and let it be tapped
+   *  (plans are in the future, which is otherwise non-interactive). */
+  hasPlan?: boolean;
   onSelect: (key: string) => void;
 }) {
   const level = intensityLevel(count);
-  const interactive = !day.isFuture;
+  const interactive = !day.isFuture || hasPlan;
   // The gentle month ramp (max ~33%) keeps the date number legible in BOTH themes,
   // so no theme-dependent text-colour flip is needed.
 
@@ -29,7 +33,7 @@ export function DayCell({
       type="button"
       disabled={!interactive}
       onClick={() => onSelect(day.key)}
-      aria-label={`${day.key}${count ? `, ${count} logged` : ", nothing logged yet"}`}
+      aria-label={`${day.key}${count ? `, ${count} logged` : ", nothing logged yet"}${hasPlan ? ", a plan" : ""}`}
       className={clsx(
         "relative flex aspect-square select-none items-start justify-start rounded-cell p-1.5 transition-[background,box-shadow] duration-200 sm:p-2",
         interactive
@@ -57,6 +61,10 @@ export function DayCell({
         >
           {count}
         </span>
+      )}
+
+      {hasPlan && (
+        <span aria-hidden className="absolute bottom-1 left-1.5 h-1.5 w-1.5 rounded-full bg-accent" />
       )}
 
       {day.isToday && (

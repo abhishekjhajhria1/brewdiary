@@ -19,18 +19,37 @@ import {
   useMyPlans,
   usePlanRequests,
   usePlanSignals,
+  usePlanInvitees,
   createPlan,
   setPlanStatus,
   deletePlan,
   requestJoin,
   respondJoin,
   withdrawJoin,
+  inviteToPlan,
+  uninviteFromPlan,
   type Plan,
   type MyPlan,
   type JoinPolicy,
 } from "@/lib/plans";
 import { blockUser, reportUser, REPORT_REASONS, type ReportReason } from "@/lib/safety";
 import { useMySanction } from "@/lib/moderation";
+import { useFriends } from "@/lib/friends";
+
+// The visibility tiers, most-private first. 'private' keeps a night to yourself;
+// 'invite' opens it only to specific friends you name; then the graph tiers.
+const POLICIES: { id: JoinPolicy; label: string; hint: string }[] = [
+  { id: "private", label: "Only me", hint: "A private note on your calendar — no one else sees it." },
+  { id: "invite", label: "Specific friends", hint: "Only the friends you pick can see it and ask to join." },
+  { id: "friends", label: "Friends", hint: "Any of your friends can see it and ask to join." },
+  { id: "fof", label: "Friends of friends", hint: "Friends, and their friends, can ask to join." },
+];
+const POLICY_LABEL: Record<JoinPolicy, string> = {
+  private: "just me",
+  invite: "invite only",
+  friends: "friends",
+  fof: "friends of friends",
+};
 
 const inputClass = "glass w-full rounded-ctl px-4 py-2.5 text-[15px] text-ink placeholder:text-faint";
 
@@ -304,6 +323,8 @@ function MyPlanCard({ plan }: { plan: MyPlan }) {
   const [openReqs, setOpenReqs] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const cancelled = plan.status === "cancelled";
+  const isPrivate = plan.joinPolicy === "private";
+  const isInvite = plan.joinPolicy === "invite";
 
   return (
     <li className={clsx("glass rounded-tile p-5", cancelled && "opacity-60")}>
@@ -312,20 +333,32 @@ function MyPlanCard({ plan }: { plan: MyPlan }) {
           <p className="font-display text-xl leading-tight text-ink">{plan.title}</p>
           <p className="mt-0.5 text-xs text-faint">
             {prettyDate(plan.date)}
-            {plan.city && <> · {plan.city}</>} · {plan.joinPolicy === "fof" ? "friends of friends" : "friends"}
+            {plan.city && <> · {plan.city}</>} · {POLICY_LABEL[plan.joinPolicy]}
           </p>
         </div>
         <span className={clsx("shrink-0 text-xs", cancelled ? "text-faint" : "text-muted")}>
-          {cancelled ? "cancelled" : plan.status === "closed" ? "closed" : `${plan.going} going`}
+          {cancelled
+            ? "cancelled"
+            : isPrivate
+              ? "private"
+              : plan.status === "closed"
+                ? "closed"
+                : `${plan.going} going`}
         </span>
       </div>
 
       {plan.note && <p className="mt-3 text-[15px] leading-relaxed text-muted">{plan.note}</p>}
 
-      {!cancelled && (
+      {isPrivate && !cancelled && (
+        <p className="mt-3 text-sm text-faint">Only you can see this — a quiet note on your calendar.</p>
+      )}
+
+      {isInvite && !cancelled && <Guests planId={plan.id} />}
+
+      {!cancelled && !isPrivate && (
         <button
           onClick={() => setOpenReqs((o) => !o)}
-          className="mt-3 text-sm text-accent transition-opacity hover:opacity-80"
+          className="mt-3 block text-sm text-accent transition-opacity hover:opacity-80"
         >
           {plan.pending > 0 ? `${plan.pending} waiting to join` : "Requests"} {openReqs ? "▴" : "▾"}
         </button>
@@ -416,6 +449,65 @@ function Requests({ planId }: { planId: string }) {
   );
 }
 
+// ── the guest list for an 'invite' plan (host manages it; only friends can be added) ──
+function Guests({ planId }: { planId: string }) {
+  const [open, setOpen] = useState(false);
+  const { invitees } = usePlanInvitees(open ? planId : null);
+  const { friends } = useFriends();
+  const invitedIds = new Set(invitees.map((i) => i.userId));
+  const addable = friends.filter((f) => !invitedIds.has(f.id));
+
+  return (
+    <div className="mt-3">
+      <button onClick={() => setOpen((o) => !o)} className="block text-sm text-accent transition-opacity hover:opacity-80">
+        Guests{invitees.length ? ` · ${invitees.length}` : ""} {open ? "▴" : "▾"}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-3">
+          {invitees.length > 0 ? (
+            <ul className="space-y-1.5">
+              {invitees.map((g) => (
+                <li key={g.userId} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate">
+                    <span className="text-ink">{g.name}</span> <span className="text-xs text-faint">@{g.handle}</span>
+                  </span>
+                  <button
+                    onClick={() => uninviteFromPlan(planId, g.userId)}
+                    className="shrink-0 text-faint transition-colors hover:text-ink"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-faint">No one invited yet.</p>
+          )}
+
+          {friends.length === 0 ? (
+            <p className="text-xs text-faint">Add friends first, then invite them here.</p>
+          ) : addable.length > 0 ? (
+            <div>
+              <p className="mb-1.5 text-xs text-faint">Add a friend</p>
+              <div className="flex flex-wrap gap-1.5">
+                {addable.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => inviteToPlan(planId, f.id)}
+                    className="glass rounded-ctl px-2.5 py-1 text-xs text-muted transition-colors hover:text-ink"
+                  >
+                    + {f.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── the quiet safety affordance on every person ──────────────────────────────
 function PersonMenu({
   open,
@@ -499,12 +591,14 @@ function PersonMenu({
 // ── create ───────────────────────────────────────────────────────────────────
 function CreatePlan({ onDone }: { onDone: () => void }) {
   const me = useAuth().profile?.id;
+  const { friends } = useFriends();
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [city, setCity] = useState("");
   const [note, setNote] = useState("");
   const [drinks, setDrinks] = useState("");
   const [policy, setPolicy] = useState<JoinPolicy>("friends");
+  const [invited, setInvited] = useState<Set<string>>(() => new Set());
   const [cap, setCap] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -514,6 +608,18 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }, []);
+
+  const isPrivate = policy === "private";
+  const isInvite = policy === "invite";
+
+  function toggleInvited(id: string) {
+    setInvited((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -527,13 +633,18 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
       note,
       drinks: drinks.split(",").map((s) => s.trim()).filter(Boolean),
       joinPolicy: policy,
-      capacity: cap ? Number(cap) : undefined,
+      capacity: isPrivate || !cap ? undefined : Number(cap),
     });
-    setBusy(false);
     if ("error" in res) {
+      setBusy(false);
       setErr(res.error);
       return;
     }
+    // Invite the chosen friends now that the plan exists (server re-checks each).
+    if (isInvite && invited.size > 0) {
+      await Promise.all([...invited].map((id) => inviteToPlan(res.id, id)));
+    }
+    setBusy(false);
     onDone();
   }
 
@@ -562,12 +673,9 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
         <input value={drinks} onChange={(e) => setDrinks(e.target.value)} placeholder="Drinks, comma-separated (optional)" className={inputClass} aria-label="Drinks" />
 
         <div>
-          <p className="mb-1.5 text-xs text-faint">Who can ask to join</p>
+          <p className="mb-1.5 text-xs text-faint">Who can see it</p>
           <div className="glass grid grid-cols-2 gap-1 rounded-ctl p-1">
-            {([
-              { id: "friends", label: "Friends" },
-              { id: "fof", label: "Friends of friends" },
-            ] as const).map((o) => (
+            {POLICIES.map((o) => (
               <button
                 key={o.id}
                 type="button"
@@ -583,20 +691,58 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
             ))}
           </div>
           <p className="mt-1.5 text-xs text-faint">
-            Only these people ever see it. There&apos;s no public or stranger option — on purpose.
+            {POLICIES.find((p) => p.id === policy)?.hint} No public or stranger option — on purpose.
           </p>
         </div>
 
-        <input
-          type="number"
-          min={1}
-          max={50}
-          value={cap}
-          onChange={(e) => setCap(e.target.value)}
-          placeholder="Max people (optional)"
-          className={inputClass}
-          aria-label="Capacity"
-        />
+        {isInvite && (
+          <div className="rounded-ctl border border-line p-3">
+            {friends.length === 0 ? (
+              <p className="text-xs text-faint">
+                You don&apos;t have friends added yet. Add some in Together, then invite them — or you can invite
+                them from the plan later.
+              </p>
+            ) : (
+              <>
+                <p className="mb-2 text-xs text-faint">Pick who to invite</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {friends.map((f) => {
+                    const on = invited.has(f.id);
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => toggleInvited(f.id)}
+                        aria-pressed={on}
+                        className={clsx(
+                          "rounded-ctl px-2.5 py-1 text-xs transition-colors",
+                          on ? "bg-ink text-paper" : "glass text-muted hover:text-ink",
+                        )}
+                      >
+                        {on ? "✓ " : "+ "}
+                        {f.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                {invited.size > 0 && <p className="mt-2 text-xs text-faint">{invited.size} invited</p>}
+              </>
+            )}
+          </div>
+        )}
+
+        {!isPrivate && (
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={cap}
+            onChange={(e) => setCap(e.target.value)}
+            placeholder="Max people (optional)"
+            className={inputClass}
+            aria-label="Capacity"
+          />
+        )}
       </div>
 
       {err && <p className="mt-2.5 text-sm text-accent">{err}</p>}
@@ -607,7 +753,7 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
           disabled={busy || !title.trim() || !date}
           className="rounded-ctl bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {busy ? "Creating…" : "Create plan"}
+          {busy ? "Creating…" : isPrivate ? "Save to my calendar" : "Create plan"}
         </button>
         <button type="button" onClick={onDone} className="text-sm text-faint transition-colors hover:text-ink">
           Cancel
