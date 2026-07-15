@@ -117,6 +117,16 @@ try {
   // reports must have NO select policy — a report is a one-way message to us.
   const reportSel = await all(`select policyname from pg_policies where schemaname='public' and tablename='reports' and cmd='SELECT'`);
   ok("reports: NO select policy (nobody reads reports back)", reportSel.length === 0);
+  // Report de-dup (035): one person can't inflate another's report count into a weapon.
+  const rIdx = await one(
+    `select indexdef from pg_indexes where schemaname='public' and tablename='reports' and indexname='reports_reporter_subject_uidx'`,
+  );
+  ok(
+    "reports: unique (reporter_id, subject_user_id) — one reporter counts once",
+    rIdx && /UNIQUE/i.test(rIdx.indexdef) && /reporter_id/.test(rIdx.indexdef) && /subject_user_id/.test(rIdx.indexdef),
+  );
+  const orDef = await one(`select pg_get_functiondef('public.open_reports()'::regprocedure) d`);
+  ok("open_reports: repeat-offender count is DISTINCT reporters, not total rows", orDef && /count\(\s*distinct/i.test(orDef.d));
 
   // A block list is private to its owner — you can see who YOU blocked, never who
   // blocked you (so a block can't be detected).

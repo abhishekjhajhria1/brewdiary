@@ -103,7 +103,12 @@ export async function unblockUser(otherId: string): Promise<void> {
   bump();
 }
 
-/** File a report. Write-only — it goes to the safety team, never back to anyone. */
+/** File a report. Write-only — it goes to the safety team, never back to anyone.
+ *  Upsert with ignoreDuplicates (ON CONFLICT DO NOTHING against the unique
+ *  reporter+subject index from 035): reporting the same person twice is a silent
+ *  no-op, so one person counts once and can't inflate anyone's report tally into a
+ *  harassment tool. The reporter always gets the same calm reply — dedup is never
+ *  revealed. DO NOTHING needs no update policy, so reports stays insert-only. */
 export async function reportUser(
   meId: string,
   subjectUserId: string,
@@ -111,12 +116,15 @@ export async function reportUser(
   opts?: { note?: string; planId?: string },
 ): Promise<string | null> {
   if (!supabase) return "offline";
-  const { error } = await supabase.from("reports").insert({
-    reporter_id: meId,
-    subject_user_id: subjectUserId,
-    plan_id: opts?.planId || null,
-    reason,
-    note: opts?.note?.trim() || null,
-  });
+  const { error } = await supabase.from("reports").upsert(
+    {
+      reporter_id: meId,
+      subject_user_id: subjectUserId,
+      plan_id: opts?.planId || null,
+      reason,
+      note: opts?.note?.trim() || null,
+    },
+    { onConflict: "reporter_id,subject_user_id", ignoreDuplicates: true },
+  );
   return error ? "Couldn't send the report — try again." : null;
 }

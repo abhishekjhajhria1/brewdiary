@@ -883,6 +883,21 @@ try {
   // suspend + lift each left an audit row.
   ok("every moderation action left an audit row (suspend + lift)",
     (await as(mod, `select count(*)::int n from public.moderation_actions where subject_id=$1`, [stranger])).rows[0].n === 2);
+
+  // ── report de-dup (035): one angry person can't inflate another's report count ──
+  // rohan already reported the stranger once (§12). The client path is ON CONFLICT DO
+  // NOTHING, so reporting again is a silent no-op — still ONE reporter on the counter.
+  await as(rohan, `insert into public.reports (reporter_id, subject_user_id, reason) values ($1,$2,'harassment')
+                   on conflict (reporter_id, subject_user_id) do nothing`, [rohan, stranger]);
+  const dq1 = (await as(mod, `select * from public.open_reports()`)).rows.find((r) => r.subject_id === stranger);
+  ok("the same reporter twice still counts as one", dq1 && dq1.subject_report_count === 1);
+  // A genuinely different reporter DOES move the needle — real signal still gets through.
+  await as(meera, `insert into public.reports (reporter_id, subject_user_id, reason) values ($1,$2,'unsafe')`, [meera, stranger]);
+  const dq2 = (await as(mod, `select * from public.open_reports()`)).rows.find((r) => r.subject_id === stranger);
+  ok("a second DISTINCT reporter counts as two", dq2 && dq2.subject_report_count === 2);
+  // Even a raw insert (bypassing the client) can't stack a duplicate — the DB blocks it.
+  ok("a duplicate report is rejected by the database itself",
+    await refused(() => as(rohan, `insert into public.reports (reporter_id, subject_user_id, reason) values ($1,$2,'spam')`, [rohan, stranger])));
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);
