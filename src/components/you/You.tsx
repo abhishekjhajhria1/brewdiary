@@ -15,6 +15,7 @@ import { useProfile, signOut, updateHandle } from "@/lib/profile";
 import { reroll } from "@/lib/handles";
 import { TrustCard } from "../verify/TrustCard";
 import { useIsModerator } from "@/lib/moderation";
+import { useBlocks, unblockUser } from "@/lib/safety";
 import { isCollecting, setCollecting, clearTraining, useTrainingCount } from "@/lib/training";
 import { useShareTrends, setShareTrends } from "@/lib/trends";
 import { useCompeteVisible, setCompeteVisible } from "@/lib/points";
@@ -258,6 +259,8 @@ function Settings() {
       {profile && <ProfilePrivacy meId={profile.id} handle={profile.handle} />}
 
       {profile && <ModeratorLink />}
+
+      {profile && <BlockedPeople />}
 
       <WhereYouAre />
 
@@ -672,6 +675,50 @@ function ModeratorLink() {
         <span>Moderation queue</span>
         <span className="text-faint">Review reports →</span>
       </Link>
+    </div>
+  );
+}
+
+// Your block list — the other half of the block affordance in Plans/Together. Blocking
+// is one tap from a person's menu, but until now there was no way to see who you'd
+// blocked or to undo it; a block was a one-way door. This is that door's handle.
+// The section hides itself entirely when you haven't blocked anyone, so it's never noise.
+function BlockedPeople() {
+  const { blocked, loading } = useBlocks();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  if (loading || blocked.length === 0) return null;
+
+  async function unblock(id: string) {
+    setBusy(id);
+    await unblockUser(id);
+    setBusy(null);
+  }
+
+  return (
+    <div className="mt-4 border-t border-line py-3">
+      <p className="text-sm text-ink">Blocked people</p>
+      <p className="mb-3 mt-1 text-xs leading-relaxed text-faint">
+        You don&apos;t see each other&apos;s plans, and neither of you turns up in the other&apos;s search. Unblock
+        to undo that.
+      </p>
+      <ul className="space-y-2">
+        {blocked.map((p) => (
+          <li key={p.id} className="flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate">
+              <span className="text-[15px] text-ink">{p.name}</span>{" "}
+              <span className="text-xs text-faint">@{p.handle}</span>
+            </span>
+            <button
+              onClick={() => unblock(p.id)}
+              disabled={busy === p.id}
+              className="shrink-0 text-sm text-faint transition-colors hover:text-ink disabled:opacity-50"
+            >
+              {busy === p.id ? "…" : "Unblock"}
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
