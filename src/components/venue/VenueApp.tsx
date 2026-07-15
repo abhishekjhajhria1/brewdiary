@@ -1188,7 +1188,7 @@ function StoreCounter({ venue, meId }: { venue: Venue; meId: string }) {
       setResults([]);
       return;
     }
-    const t = setTimeout(async () => setResults(await searchUsers(query, meId)), 300);
+    const t = setTimeout(async () => setResults(await searchUsers(query)), 300);
     return () => clearTimeout(t);
   }, [query, meId, guest]);
 
@@ -1564,7 +1564,7 @@ function AddStaff({ venueId, meId }: { venueId: string; meId: string }) {
       setResults([]);
       return;
     }
-    const t = setTimeout(async () => setResults(await searchUsers(query, meId)), 300);
+    const t = setTimeout(async () => setResults(await searchUsers(query)), 300);
     return () => clearTimeout(t);
   }, [query, meId]);
 

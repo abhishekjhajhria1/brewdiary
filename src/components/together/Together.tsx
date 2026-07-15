@@ -26,17 +26,20 @@ import { useWishlist, addWish } from "@/lib/wishlist";
 import { friendPicks } from "@/lib/derive";
 import { MONTH_NAMES, parseKey, timeOfDayLabel } from "@/lib/date";
 import { RecentMosaic } from "./RecentMosaic";
+import { useVouchedByMe, vouchFor, unvouch } from "@/lib/vouch";
 import { VenueLink } from "../ui/VenueLink";
 import { Circles } from "./Circles";
 import { Parties } from "./Parties";
+import { Plans } from "./Plans";
 
 // The rooms inside Together. The feed leads; circles and parties wait behind
 // their own segment instead of stacking into one overwhelming scroll. "Board"
 // only exists for people who switched the leaderboard on in You → Settings.
-type Room = "feed" | "circles" | "parties" | "board";
+type Room = "feed" | "plans" | "circles" | "parties" | "board";
 
 const BASE_ROOMS: { id: Room; label: string }[] = [
   { id: "feed", label: "Feed" },
+  { id: "plans", label: "Plans" },
   { id: "circles", label: "Circles" },
   { id: "parties", label: "Parties" },
 ];
@@ -80,7 +83,7 @@ export function Together() {
       <div
         role="tablist"
         aria-label="Together rooms"
-        className={clsx("glass mt-5 grid rounded-ctl p-1", ROOMS.length === 4 ? "grid-cols-4" : "grid-cols-3")}
+        className={clsx("glass mt-5 grid rounded-ctl p-1", ROOMS.length === 5 ? "grid-cols-5" : "grid-cols-4")}
       >
         {ROOMS.map((r, i) => (
           <button
@@ -140,6 +143,8 @@ export function Together() {
           )}
         </>
       )}
+
+      {room === "plans" && <Plans />}
 
       {room === "circles" && <Circles />}
 
@@ -263,7 +268,7 @@ function People({ friends, onOpenFriend }: { friends: SocialProfile[]; onOpenFri
     }
     setSearching(true);
     const t = setTimeout(async () => {
-      const r = await searchUsers(query, me);
+      const r = await searchUsers(query);
       setResults(r);
       setSearching(false);
     }, 300);
@@ -576,10 +581,55 @@ function FriendSheet({ friend, onClose }: { friend: SocialProfile; onClose: () =
         <p className="label mt-7 mb-3 text-faint">Their last 12 weeks</p>
         <RecentMosaic counts={counts} />
 
+        <VouchRow friend={friend} />
+
         <p className="mt-6 text-xs text-faint">
           Peeking at a friend&apos;s mosaic — never their scores. Together is for the glance, not the scoreboard.
         </p>
       </div>
+    </div>
+  );
+}
+
+// Vouch for a friend — stake your word that they're a real person. It's OTHER-only
+// (you can't vouch for yourself), a count and never a rating, and it nudges their
+// trust standing up a little. Undoable.
+function VouchRow({ friend }: { friend: SocialProfile }) {
+  const me = useAuth().profile?.id;
+  const vouched = useVouchedByMe();
+  const [busy, setBusy] = useState(false);
+  const has = vouched.has(friend.id);
+
+  if (!me) return null;
+
+  async function toggle() {
+    if (!me || busy) return;
+    setBusy(true);
+    if (has) await unvouch(me, friend.id);
+    else await vouchFor(me, friend.id);
+    setBusy(false);
+  }
+
+  return (
+    <div className="mt-6 border-t border-line pt-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-ink">Vouch for {friend.name}</p>
+        <button
+          onClick={toggle}
+          disabled={busy}
+          aria-pressed={has}
+          className={clsx(
+            "rounded-ctl px-3.5 py-1.5 text-sm font-medium transition-opacity disabled:opacity-50",
+            has ? "glass text-muted" : "bg-ink text-paper hover:opacity-90",
+          )}
+        >
+          {has ? "Vouched ✓" : "Vouch"}
+        </button>
+      </div>
+      <p className="mt-1.5 text-xs leading-relaxed text-faint">
+        Stake your word that they&apos;re a real person you know — it gently raises their standing. It&apos;s a count,
+        never a rating, and you can undo it any time.
+      </p>
     </div>
   );
 }

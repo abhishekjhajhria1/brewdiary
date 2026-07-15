@@ -220,23 +220,20 @@ export function useFriendEntries(friendId: string | null): { id: string; date: s
 }
 
 // ── search ───────────────────────────────────────────────────────────────────
-export async function searchUsers(query: string, meId: string): Promise<SocialProfile[]> {
+export async function searchUsers(query: string): Promise<SocialProfile[]> {
   if (!supabase) return [];
   // People type the leading "@" (the placeholder invites it) and often search by
-  // NAME, not handle — match both. Strip chars that would break the .or() filter.
+  // NAME, not handle. Strip the wildcard/grouping chars so they can't smuggle an
+  // ilike pattern through. The search runs as a SECURITY DEFINER rpc so it can drop
+  // anyone on either side of a block — someone you blocked (or who blocked you) can't
+  // be found here at all. (Self-exclusion + blocks are handled by the rpc via auth.uid.)
   const q = query
     .trim()
     .replace(/^@+/, "")
     .replace(/[%,()]/g, "");
   if (q.length < 2) return [];
-  const like = `%${q}%`;
-  const { data } = await supabase
-    .from("profiles")
-    .select("id, handle, display_name")
-    .or(`handle.ilike.${like},display_name.ilike.${like}`)
-    .neq("id", meId)
-    .limit(10);
-  return (data ?? []).map((r) => toProfile(r as ProfileRow));
+  const { data } = await supabase.rpc("search_users", { q });
+  return ((data as ProfileRow[]) ?? []).map((r) => toProfile(r));
 }
 
 // ── mutations ────────────────────────────────────────────────────────────────

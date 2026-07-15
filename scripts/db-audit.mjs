@@ -56,6 +56,9 @@ try {
     "point_events", "venues", "venue_staff", "venue_perks", "venue_verifications",
     "spend_events", "room_consent", "jurisdiction_policy",
     "perk_redemptions", "staff_kudos",
+    "plans", "plan_joins", "blocks", "reports",
+    "vouches",
+    "moderators", "user_sanctions", "moderation_actions",
   ];
   const have = (await all(`select tablename from pg_tables where schemaname = 'public'`)).map((r) => r.tablename);
   for (const t of wantTables) ok(`table ${t}`, have.includes(t), "— MISSING");
@@ -78,6 +81,10 @@ try {
     "perk_status", "redeem_perk", "last_redeemed", "visit_weight",
     "room_staff", "thank_staff", "my_kudos", "venue_kudos_total",
     "venue_insights", "discover_venues",
+    "plan_visible_to", "blocked_between", "request_join", "respond_join",
+    "withdraw_join", "block_user", "plan_signals", "upcoming_plans", "search_users",
+    "vouch_count",
+    "is_moderator", "is_sanctioned", "suspend_user", "ban_user", "lift_sanction", "open_reports",
   ];
   const fns = (await all(`
     select p.proname from pg_proc p
@@ -96,6 +103,80 @@ try {
     );
     ok(`${t}: NO client write policy (server-written only)`, w.length === 0, `— found ${w.map((x) => x.policyname).join(", ")}`);
   }
+
+  // Plans/meetups (031). plan_joins and reports are server-written only — a client
+  // that could insert an 'approved' join, or read reports back, breaks the feature.
+  for (const t of ["plan_joins", "reports"]) {
+    const w = await all(
+      `select policyname, cmd from pg_policies where schemaname='public' and tablename=$1 and cmd <> 'SELECT'`,
+      [t],
+    );
+    const bad = w.filter((x) => !(t === "reports" && x.cmd === "INSERT")); // reports: insert-only is allowed
+    ok(`${t}: no unexpected client write policy`, bad.length === 0, `— found ${bad.map((x) => `${x.policyname}/${x.cmd}`).join(", ")}`);
+  }
+  // reports must have NO select policy — a report is a one-way message to us.
+  const reportSel = await all(`select policyname from pg_policies where schemaname='public' and tablename='reports' and cmd='SELECT'`);
+  ok("reports: NO select policy (nobody reads reports back)", reportSel.length === 0);
+
+  // A block list is private to its owner — you can see who YOU blocked, never who
+  // blocked you (so a block can't be detected).
+  const blockSel = await one(`select qual::text q from pg_policies where schemaname='public' and tablename='blocks' and cmd='SELECT'`);
+  ok("blocks: readable only by the blocker (a block is undetectable)", blockSel && /blocker_id/.test(blockSel.q) && !/blocked_id/.test(blockSel.q));
+
+  // THE deny-by-default gate for the meetup layer: there is NO 'open'/stranger join
+  // policy. If this check ever fails, someone widened plans to strangers without the
+  // trust-&-safety work — exactly the thing we said would be a separate decision.
+  const jpDef = await one(`
+    select pg_get_constraintdef(c.oid) d from pg_constraint c
+    where c.conrelid='public.plans'::regclass and c.contype='c'
+      and pg_get_constraintdef(c.oid) ilike '%join_policy%'`);
+  ok("plans: join_policy allows only friends/fof — NO stranger tier",
+    jpDef && /friends/.test(jpDef.d) && /fof/.test(jpDef.d) && !/open|public|anyone|stranger/i.test(jpDef.d),
+    `— ${jpDef?.d ?? "constraint missing"}`);
+
+  // Vouches (033): a friend stakes their word. The insert MUST be friend-gated in the
+  // DB (are_friends), not just the UI, and MUST be yourself-as-voucher — otherwise a
+  // client could forge a vouch for a stranger, or vouch on someone else's behalf.
+  const vIns = await one(
+    `select with_check::text w from pg_policies where schemaname='public' and tablename='vouches' and cmd='INSERT'`,
+  );
+  ok("vouches: insert is friend-gated in the DB (are_friends), not just the UI",
+    vIns && /are_friends/.test(vIns.w) && /voucher_id\s*=\s*auth\.uid\(\)/.test(vIns.w) && /blocked_between/.test(vIns.w),
+    `— ${vIns?.w ?? "no insert policy"}`);
+  // No self-vouch: the table CHECK forbids voucher = vouchee, so nobody inflates their own standing.
+  const vChk = await one(`
+    select pg_get_constraintdef(c.oid) d from pg_constraint c
+    where c.conrelid='public.vouches'::regclass and c.contype='c'`);
+  ok("vouches: no self-vouch (voucher <> vouchee, a guest can't reward themselves)",
+    vChk && /voucher_id\s*<>\s*vouchee_id/.test(vChk.d), `— ${vChk?.d ?? "constraint missing"}`);
+  // The full "who vouched for whom" graph is never public — only voucher/vouchee see a row.
+  const vSel = await one(`select qual::text q from pg_policies where schemaname='public' and tablename='vouches' and cmd='SELECT'`);
+  ok("vouches: readable only by voucher or vouchee (a count is public, the graph is not)",
+    vSel && /voucher_id\s*=\s*auth\.uid\(\)/.test(vSel.q) && /vouchee_id\s*=\s*auth\.uid\(\)/.test(vSel.q));
+  // plan_signals now carries the host's vouch COUNT (a soft signal, never a rating).
+  const psCols = await one(`select pg_get_function_result('public.plan_signals(uuid)'::regprocedure) r`);
+  ok("plan_signals: returns host_vouches (soft meetup signal, counts-only)",
+    psCols && /host_vouches/.test(psCols.r), `— ${psCols?.r ?? "?"}`);
+
+  // Moderation (034). The `moderators` table is the trust root — if a client could
+  // write it, anyone could make themselves a moderator and then ban anyone. It, plus
+  // sanctions and the audit log, must be server-written only.
+  for (const t of ["moderators", "user_sanctions", "moderation_actions"]) {
+    const w = await all(
+      `select policyname, cmd from pg_policies where schemaname='public' and tablename=$1 and cmd <> 'SELECT'`,
+      [t],
+    );
+    ok(`${t}: NO client write policy (server-seeded / server-written only)`, w.length === 0,
+      `— found ${w.map((x) => `${x.policyname}/${x.cmd}`).join(", ")}`);
+  }
+  // A person can only ever read their OWN moderator row (the team list isn't exposed).
+  const modSel = await one(`select qual::text q from pg_policies where schemaname='public' and tablename='moderators' and cmd='SELECT'`);
+  ok("moderators: readable only as your own row (team roster not exposed to the client)",
+    modSel && /user_id\s*=\s*auth\.uid\(\)/.test(modSel.q) && !/is_moderator/.test(modSel.q));
+  // A sanctioned account is walled out of creating a plan — the gate is in the policy.
+  const planIns = await one(`select with_check::text w from pg_policies where schemaname='public' and tablename='plans' and cmd='INSERT'`);
+  ok("plans: a sanctioned account can't create one (is_sanctioned in the insert gate)",
+    planIns && /is_sanctioned/.test(planIns.w), `— ${planIns?.w ?? "no insert policy"}`);
 
   // Sparks became server-authoritative in 016: the client may insert VIBE, never SPARK.
   const sparkPolicy = await all(
@@ -172,6 +253,8 @@ try {
   ok("venues.quiet_nights", await col("venues", "quiet_nights"));
   ok("venue_perks.reward_alcoholic", await col("venue_perks", "reward_alcoholic"));
   ok("venue_staff.thankable", await col("venue_staff", "thankable"));
+  ok("profiles.presence_checked (free anti-bot trust signal, 032)", await col("profiles", "presence_checked"));
+  ok("profiles.verified (paid-KYC output, separate from presence)", await col("profiles", "verified"));
 
   console.log("\n── perk tiers (029) ─────────────────────────────────");
   // A venue offers up to 3 rewards, each an independent punch-card. The PK moved

@@ -747,6 +747,142 @@ try {
   card = (await as(anita, `select * from public.perk_status($1,$2)`, [sid, anita])).rows[0];
   ok("once claimed, her shop card starts again from zero", Number(card.progress) === 0 && card.claims === 1);
   ok("it cannot be claimed twice off the same earn", await refused(() => as(owner, `select public.redeem_perk($1,$2)`, [cardId, anita])));
+
+  console.log("\n── 12. plans: friends/fof only, host approves, blocks bite ──");
+  // The graph from earlier: anita ── rohan ── meera. So meera is anita's FoF, and
+  // the stranger is nobody's friend. Exactly the shape a meetup feature must respect.
+  const seesPlan = async (uid, planId) =>
+    (await as(uid, `select count(*)::int n from public.plans where id=$1`, [planId])).rows[0].n === 1;
+
+  const planF = randomUUID();
+  await as(anita, `insert into public.plans (id, host_id, title, plan_date, join_policy)
+                   values ($1,$2,'Negronis Friday', current_date + 7, 'friends')`, [planF, anita]);
+  ok("a FRIENDS plan: the host's friend can see it", await seesPlan(rohan, planF));
+  ok("a FRIENDS plan: a friend-of-friend CANNOT", !(await seesPlan(meera, planF)));
+  ok("a FRIENDS plan: a stranger CANNOT", !(await seesPlan(stranger, planF)));
+
+  const planG = randomUUID();
+  await as(anita, `insert into public.plans (id, host_id, title, plan_date, join_policy)
+                   values ($1,$2,'Open-ish Saturday', current_date + 8, 'fof')`, [planG, anita]);
+  ok("a FOF plan: the friend-of-friend CAN see it", await seesPlan(meera, planG));
+  ok("a FOF plan: a stranger still CANNOT", !(await seesPlan(stranger, planG)));
+
+  // there is NO stranger tier — the CHECK refuses it
+  ok("a plan CANNOT be opened to strangers (no such join_policy)",
+    await refused(() => as(anita, `insert into public.plans (id, host_id, title, plan_date, join_policy)
+                                   values ($1,$2,'Nope', current_date + 1, 'open')`, [randomUUID(), anita])));
+  ok("a plan CANNOT be in the past (trigger)",
+    await refused(() => as(anita, `insert into public.plans (id, host_id, title, plan_date)
+                                   values ($1,$2,'Yesterday', current_date - 1)`, [randomUUID(), anita])));
+
+  // joining: a stranger can't even ask; a friend can, and only the host decides
+  ok("a stranger cannot ask to join a plan they can't see",
+    await refused(() => as(stranger, `select public.request_join($1, null)`, [planF])));
+  await as(rohan, `select public.request_join($1, 'in!')`, [planF]);
+  const jid = (await as(anita, `select id from public.plan_joins where plan_id=$1 and user_id=$2`, [planF, rohan])).rows[0].id;
+  ok("the joiner cannot approve their own request", await refused(() => as(rohan, `select public.respond_join($1, true)`, [jid])));
+  ok("a guest cannot forge an approved join row (no write policy)",
+    await refused(() => as(rohan, `insert into public.plan_joins (plan_id, user_id, status) values ($1,$2,'approved')`, [planG, rohan])));
+  await as(anita, `select public.respond_join($1, true)`, [jid]);
+  ok("once the host approves, the going count rises", (await as(anita, `select public.plan_going_count($1) n`, [planF])).rows[0].n === 2);
+
+  // reports are a one-way message: you can file, you can't read them back
+  await as(rohan, `insert into public.reports (reporter_id, subject_user_id, reason) values ($1,$2,'spam')`, [rohan, stranger]);
+  ok("a report can't be read back by its author (no select policy)",
+    (await as(rohan, `select count(*)::int n from public.reports`)).rows[0].n === 0);
+
+  // block: anita blocks rohan → he loses sight of her plan, and his join is torn down
+  await as(anita, `select public.block_user($1)`, [rohan]);
+  ok("after a block, the blocked person can no longer see the plan", !(await seesPlan(rohan, planF)));
+  ok("after a block, the live join is withdrawn",
+    (await as(anita, `select status from public.plan_joins where plan_id=$1 and user_id=$2`, [planF, rohan])).rows[0].status === "withdrawn");
+  ok("a blocked pair can't find each other in search",
+    (await as(rohan, `select count(*)::int n from public.search_users($1)`, ["Anita"])).rows[0].n === 0);
+
+  console.log("\n── 13. vouches: a friend's word, other-only, a count not a rating ──");
+  // rohan ── meera are accepted friends (from §8). anita blocked rohan in §12.
+  // A vouch is directional — you stake your word FOR someone else, never yourself.
+  ok("nobody vouches for meera yet", (await as(rohan, `select public.vouch_count($1) n`, [meera])).rows[0].n === 0);
+
+  // self-vouch is impossible — the table CHECK and the friend-gate both forbid it,
+  // so no one can inflate their own standing (the "no self-reward" line, for trust).
+  ok("you cannot vouch for yourself",
+    await refused(() => as(rohan, `insert into public.vouches (voucher_id, vouchee_id) values ($1,$1)`, [rohan])));
+  // the friend-gate lives in the DB, not just the UI: a non-friend insert is refused.
+  ok("a non-friend cannot vouch",
+    await refused(() => as(stranger, `insert into public.vouches (voucher_id, vouchee_id) values ($1,$2)`, [stranger, meera])));
+  // and a vouch can't cross a block (anita ↔ rohan are blocked from §12).
+  ok("a vouch cannot cross a block",
+    await refused(() => as(anita, `insert into public.vouches (voucher_id, vouchee_id) values ($1,$2)`, [anita, rohan])));
+
+  // a real accepted friend CAN vouch, and it's counted.
+  await as(rohan, `insert into public.vouches (voucher_id, vouchee_id) values ($1,$2)`, [rohan, meera]);
+  ok("a friend's vouch is counted", (await as(meera, `select public.vouch_count($1) n`, [meera])).rows[0].n === 1);
+
+  // it surfaces as a SOFT signal on meera's plan — a count, never a rating of her.
+  const planM = randomUUID();
+  await as(meera, `insert into public.plans (id, host_id, title, plan_date, join_policy)
+                   values ($1,$2,'Meera hosts', current_date + 5, 'friends')`, [planM, meera]);
+  const sig = (await as(rohan, `select * from public.plan_signals($1)`, [planM])).rows[0];
+  ok("plan_signals surfaces the host's vouch count", sig && Number(sig.host_vouches) === 1);
+
+  // a vouch is withdrawable.
+  await as(rohan, `delete from public.vouches where voucher_id=$1 and vouchee_id=$2`, [rohan, meera]);
+  ok("a withdrawn vouch is gone", (await as(meera, `select public.vouch_count($1) n`, [meera])).rows[0].n === 0);
+
+  console.log("\n── 14. moderation: reports become actionable, sanctions bite ──");
+  // The trust root: a moderator is SEEDED (server-side), never grantable from the app.
+  const mod = await mkUser("Mod", `vf-mod-${Date.now()}`);
+  await db.query(`insert into public.moderators (user_id) values ($1)`, [mod]);
+
+  // the roster is not readable by the world; you only ever see your own row.
+  ok("a person can't read the moderator roster",
+    (await as(anita, `select count(*)::int n from public.moderators`)).rows[0].n === 0);
+  ok("a moderator sees their own row",
+    (await as(mod, `select count(*)::int n from public.moderators where user_id=$1`, [mod])).rows[0].n === 1);
+
+  // the queue is moderator-only. (rohan reported the stranger back in §12.)
+  ok("a non-moderator cannot read the report queue",
+    await refused(() => as(anita, `select * from public.open_reports()`)));
+  const queue = await as(mod, `select * from public.open_reports()`);
+  ok("the moderator sees the queued report on the stranger", queue.rows.some((r) => r.subject_id === stranger));
+
+  // only a moderator can sanction, and never themselves.
+  ok("a non-moderator cannot suspend anyone",
+    await refused(() => as(anita, `select public.suspend_user($1, now() + interval '7 days', 'nope')`, [stranger])));
+  ok("a moderator cannot sanction themselves",
+    await refused(() => as(mod, `select public.ban_user($1, 'x')`, [mod])));
+
+  // suspend the stranger → the account is frozen, and the freeze bites everywhere.
+  await as(mod, `select public.suspend_user($1, now() + interval '7 days', 'spam')`, [stranger]);
+  ok("after a suspension the account reads as sanctioned",
+    (await as(mod, `select public.is_sanctioned($1) s`, [stranger])).rows[0].s === true);
+  ok("a suspended account cannot create a plan",
+    await refused(() => as(stranger, `insert into public.plans (id, host_id, title, plan_date)
+                                       values ($1,$2,'nope', current_date + 2)`, [randomUUID(), stranger])));
+  ok("a suspended account cannot ask to join",
+    await refused(() => as(stranger, `select public.request_join($1, null)`, [planG])));
+  ok("a sanctioned user doesn't surface in search",
+    (await as(anita, `select count(*)::int n from public.search_users($1)`, ["Stranger"])).rows[0].n === 0);
+  ok("a sanctioned user can't use search either",
+    (await as(stranger, `select count(*)::int n from public.search_users($1)`, ["Anita"])).rows[0].n === 0);
+
+  // the audit log records it, and only a moderator can read it.
+  ok("the audit log is not readable by a non-moderator",
+    (await as(anita, `select count(*)::int n from public.moderation_actions`)).rows[0].n === 0);
+
+  // lifting restores the account fully.
+  await as(mod, `select public.lift_sanction($1)`, [stranger]);
+  ok("lifting the sanction restores the account",
+    (await as(mod, `select public.is_sanctioned($1) s`, [stranger])).rows[0].s === false);
+  const backPlan = randomUUID();
+  await as(stranger, `insert into public.plans (id, host_id, title, plan_date) values ($1,$2,'back', current_date + 2)`, [backPlan, stranger]);
+  ok("…and it can create a plan again once lifted",
+    (await db.query(`select count(*)::int n from public.plans where id=$1`, [backPlan])).rows[0].n === 1);
+
+  // suspend + lift each left an audit row.
+  ok("every moderation action left an audit row (suspend + lift)",
+    (await as(mod, `select count(*)::int n from public.moderation_actions where subject_id=$1`, [stranger])).rows[0].n === 2);
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

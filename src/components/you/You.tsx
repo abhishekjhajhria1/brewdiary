@@ -11,7 +11,10 @@ import { MilestoneMeter } from "../ui/MilestoneMeter";
 import { MONTH_NAMES, parseKey } from "@/lib/date";
 import type { Entry } from "@/lib/types";
 import { useWishlist, addWish, removeWish, toggleWish } from "@/lib/wishlist";
-import { useProfile, signOut } from "@/lib/profile";
+import { useProfile, signOut, updateHandle } from "@/lib/profile";
+import { reroll } from "@/lib/handles";
+import { TrustCard } from "../verify/TrustCard";
+import { useIsModerator } from "@/lib/moderation";
 import { isCollecting, setCollecting, clearTraining, useTrainingCount } from "@/lib/training";
 import { useShareTrends, setShareTrends } from "@/lib/trends";
 import { useCompeteVisible, setCompeteVisible } from "@/lib/points";
@@ -248,7 +251,13 @@ function Settings() {
 
       {profile && <VenueScreenNote />}
 
+      {profile && profile.handle && <HandleCard handle={profile.handle} />}
+
+      {profile && <TrustCard />}
+
       {profile && <ProfilePrivacy meId={profile.id} handle={profile.handle} />}
+
+      {profile && <ModeratorLink />}
 
       <WhereYouAre />
 
@@ -650,6 +659,116 @@ const VIS_LABEL: Record<ProfileVisibility, string> = {
   fof: "Friends of friends",
   public: "Public",
 };
+
+// A quiet doorway to the moderation queue, shown only to moderators (membership is
+// seeded by hand, never grantable in-app). Everyone else never sees it — and couldn't
+// use it if they did, since every action is re-checked server-side.
+function ModeratorLink() {
+  const isMod = useIsModerator();
+  if (!isMod) return null;
+  return (
+    <div className="mt-4 border-t border-line py-3">
+      <Link href="/moderation" className="flex items-center justify-between gap-3 text-sm text-ink transition-colors hover:text-accent">
+        <span>Moderation queue</span>
+        <span className="text-faint">Review reports →</span>
+      </Link>
+    </div>
+  );
+}
+
+// Your handle, and a button to trade it for a nicer one. We generate the candidate —
+// the person never types it — so there's nothing to validate and no way to pick
+// something crude; they just keep pressing "try another" until a word lands. Saving
+// changes their /u/<handle> url, so it's a deliberate press, never automatic.
+function HandleCard({ handle }: { handle: string }) {
+  const [candidate, setCandidate] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  // Climbs only when a save loses the "taken" race — it pushes reroll() from clean
+  // words toward numbered ones, so a very popular name still finds a free handle
+  // rather than offering the same taken words forever.
+  const takenRef = useRef(0);
+
+  async function save() {
+    if (!candidate) return;
+    setBusy(true);
+    setNote(null);
+    const res = await updateHandle(candidate);
+    setBusy(false);
+    if (res.ok) {
+      setCandidate(null); // the card now shows the new handle from the store
+      takenRef.current = 0;
+      return;
+    }
+    // The only expected failure: someone grabbed that exact handle a moment ago.
+    if (res.error === "taken") {
+      takenRef.current += 1;
+      setCandidate((c) => reroll(c ?? handle, takenRef.current));
+      setNote("Someone just took that one — here's another.");
+      return;
+    }
+    setNote(res.error);
+  }
+
+  return (
+    <div className="mt-4 border-t border-line py-3">
+      <p className="text-sm text-ink">Your handle</p>
+      <p className="mb-3 text-xs text-faint">
+        How friends find you, and your address at /u/&lt;handle&gt;. Trade it for another whenever you like — you
+        pick from ones we spin up, so it stays clean.
+      </p>
+
+      {candidate === null ? (
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-display text-lg text-ink">@{handle}</span>
+          <button
+            onClick={() => {
+              setNote(null);
+              takenRef.current = 0;
+              setCandidate(reroll(handle));
+            }}
+            className="glass glass-press shrink-0 rounded-ctl px-3.5 py-1.5 text-sm text-muted transition-colors hover:text-ink"
+          >
+            Change
+          </button>
+        </div>
+      ) : (
+        <div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-display text-lg text-accent">@{candidate}</span>
+            <button
+              onClick={() => setCandidate(reroll(candidate, takenRef.current))}
+              disabled={busy}
+              className="glass glass-press shrink-0 rounded-ctl px-3.5 py-1.5 text-sm text-muted transition-colors hover:text-ink disabled:opacity-50"
+            >
+              Try another
+            </button>
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={save}
+              disabled={busy}
+              className="rounded-ctl bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? "Saving…" : "Use this"}
+            </button>
+            <button
+              onClick={() => {
+                setCandidate(null);
+                setNote(null);
+              }}
+              disabled={busy}
+              className="text-sm text-faint transition-colors hover:text-ink disabled:opacity-50"
+            >
+              Keep @{handle}
+            </button>
+          </div>
+        </div>
+      )}
+      {note && <p className="mt-2 text-xs text-accent">{note}</p>}
+    </div>
+  );
+}
 
 function ProfilePrivacy({ meId, handle }: { meId: string; handle: string }) {
   const { visibility, socialHandle, loaded } = useProfilePrivacy();
