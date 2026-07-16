@@ -19,7 +19,8 @@ import { TrustCard } from "../verify/TrustCard";
 import { useIsModerator } from "@/lib/moderation";
 import { useBlocks, unblockUser } from "@/lib/safety";
 import { isCollecting, setCollecting, clearTraining, useTrainingCount } from "@/lib/training";
-import { useShareTrends, setShareTrends } from "@/lib/trends";
+import { useShareTrends, setShareTrends, useTrendsGeo, requestLocationGeohash, setTrendsGeo } from "@/lib/trends";
+import { useMyVenueBooks, forgetVenueBook } from "@/lib/guestbook";
 import { useCompeteVisible, setCompeteVisible } from "@/lib/points";
 import { useProfilePrivacy, setProfileVisibility, setSocialHandle, type ProfileVisibility } from "@/lib/publicProfile";
 import { useExtras, setExtra, EXTRAS, type ExtraKey } from "@/lib/features";
@@ -279,6 +280,8 @@ function Settings() {
 
       {profile && <BlockedPeople />}
 
+      {profile && <VenueBooks meId={profile.id} />}
+
       <WhereYouAre />
 
       <GoalsSettings />
@@ -414,10 +417,68 @@ function DataRights() {
   );
 }
 
+/** Transparency: every venue that keeps a first-party note on you, and the button
+ *  to erase it. A venue can only note a guest who's been to it (server-enforced),
+ *  and the note never includes your diary — but you still get to see and delete it. */
+function VenueBooks({ meId }: { meId: string }) {
+  const { books, loading, reload } = useMyVenueBooks();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function forget(venueId: string) {
+    setBusy(venueId);
+    await forgetVenueBook(meId, venueId);
+    setBusy(null);
+    reload();
+  }
+
+  if (loading || books.length === 0) return null; // nothing kept on you → nothing to show
+
+  return (
+    <div className="mt-4 border-t border-line py-3">
+      <p className="text-sm text-ink">Notes venues keep on you</p>
+      <p className="mb-3 text-xs leading-relaxed text-faint">
+        A bar you&apos;ve visited can keep its own notes on you — never your diary or what you do elsewhere. Here&apos;s
+        every one, and you can erase any of them.
+      </p>
+      <ul className="space-y-2">
+        {books.map((b) => (
+          <li key={b.venueId} className="glass rounded-ctl px-3.5 py-2.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm text-ink">{b.venueName}</p>
+                {b.body && <p className="mt-0.5 text-xs leading-relaxed text-muted">{b.body}</p>}
+                {b.tags.length > 0 && (
+                  <p className="mt-1 flex flex-wrap gap-1">
+                    {b.tags.map((t) => (
+                      <span key={t} className="text-xs text-faint">
+                        #{t}
+                      </span>
+                    ))}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => forget(b.venueId)}
+                disabled={busy === b.venueId}
+                className="shrink-0 text-xs text-faint transition-colors hover:text-accent disabled:opacity-50"
+              >
+                {busy === b.venueId ? "…" : "Forget"}
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** Opt-in (default OFF) to counting this diary in the anonymous taste trends. */
 function TrendsOptIn({ meId }: { meId: string }) {
   const { shareTrends, loaded } = useShareTrends();
+  const { hasArea, loaded: geoLoaded, reload } = useTrendsGeo();
   const [on, setOn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
   useEffect(() => {
     if (loaded) setOn(shareTrends);
   }, [loaded, shareTrends]);
@@ -428,15 +489,71 @@ function TrendsOptIn({ meId }: { meId: string }) {
     setShareTrends(meId, next);
   }
 
+  async function setArea() {
+    setBusy(true);
+    setMsg(null);
+    const { geohash, error } = await requestLocationGeohash();
+    if (error || !geohash) {
+      setBusy(false);
+      setMsg(error ?? "Couldn't set your area.");
+      return;
+    }
+    const err = await setTrendsGeo(meId, geohash);
+    setBusy(false);
+    if (err) {
+      setMsg("Couldn't save your area — try again.");
+      return;
+    }
+    reload();
+  }
+
+  async function clearArea() {
+    await setTrendsGeo(meId, null);
+    reload();
+  }
+
   return (
-    <div className="mt-4 flex items-center justify-between gap-4 border-t border-line py-3">
-      <div>
-        <p className="text-sm text-ink">Anonymous taste trends</p>
-        <p className="text-xs text-faint">
-          Count my logs in the &quot;what&apos;s pouring&quot; trends — counts only, never my name or notes.
-        </p>
+    <div className="mt-4 border-t border-line py-3">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm text-ink">Anonymous taste trends</p>
+          <p className="text-xs text-faint">
+            Count my logs in the &quot;what&apos;s pouring&quot; trends — counts only, never my name or notes.
+          </p>
+        </div>
+        <Toggle on={on} label="Anonymous taste trends" onToggle={toggle} />
       </div>
-      <Toggle on={on} label="Anonymous taste trends" onToggle={toggle} />
+
+      {/* Optional coarse AREA from your location — lets local bars read their
+          neighbourhood's taste. We keep only a ~40 km cell, never your exact spot,
+          and nothing shows until ≥5 people share it. */}
+      {on && geoLoaded && (
+        <div className="mt-3">
+          {hasArea ? (
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+              <span className="text-accent">Area set</span>
+              <span className="text-faint">a rough ~40&nbsp;km cell — never your exact spot</span>
+              <button onClick={clearArea} className="text-faint underline-offset-2 transition-colors hover:text-ink hover:underline">
+                Clear
+              </button>
+            </p>
+          ) : (
+            <>
+              <p className="mb-1.5 text-xs text-muted">
+                Set your area from your location so nearby bars can read the local taste — never your exact spot.
+              </p>
+              <button
+                onClick={setArea}
+                disabled={busy}
+                className="rounded-ctl bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {busy ? "Locating…" : "Set my area from location"}
+              </button>
+            </>
+          )}
+          {msg && <p className="mt-2 text-xs text-accent">{msg}</p>}
+        </div>
+      )}
     </div>
   );
 }

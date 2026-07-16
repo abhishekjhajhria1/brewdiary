@@ -473,6 +473,16 @@ try {
   ok("a manager gets counts for their own venue", Number(row.guests) >= 2 && Number(row.rooms) >= 2);
   ok("…including their own takings (their staff typed them in)", Number(row.takings) === 2400);
 
+  // v2 metrics (038): weekday visit volume + a previous-window baseline. Applied
+  // incrementally, so only assert the columns when the migration is present.
+  if ("visits_by_dow" in row) {
+    ok("insights v2: weekday visits come back as 7 slots", Array.isArray(row.visits_by_dow) && row.visits_by_dow.length === 7);
+    ok("insights v2: a previous-window trend baseline is returned",
+      row.prev_guests !== undefined && row.prev_takings !== undefined);
+  } else {
+    console.log("  ~ venue_insights v2 (038) not applied — skipping");
+  }
+
   // THE SUPPRESSION. With only 2 guests, a new/returning split would point at a
   // named person ("the new one" = that individual). It must come back NULL, and
   // NULL must be distinguishable from 0.
@@ -501,6 +511,44 @@ try {
     "a manager cannot read ANOTHER venue's insights",
     await refused(() => as(owner, `select * from public.venue_insights($1, 30)`, [otherVid])),
   );
+
+  // Area taste trends: aggregate, k-anon (≥5). With no consenting pool in a made-up
+  // area, it must hand back NOTHING — never a sub-threshold row.
+  // 039 (area trends) may be on hold — calling a missing function would abort the
+  // whole run, so probe first (to_regprocedure returns NULL instead of throwing).
+  const hasAreaTrends = (
+    await db.query(`select to_regprocedure('public.area_taste_trends(text,int)') is not null as ok`)
+  ).rows[0].ok;
+  if (hasAreaTrends) {
+    const areaEmpty = await as(owner, `select * from public.area_taste_trends($1, 30)`, [`Nowhere-${randomUUID()}`]);
+    ok("area trends: an area with no consenting pool yields nothing (k-anon)", areaEmpty.rows.length === 0);
+  } else {
+    console.log("  ~ area_taste_trends (039) not applied — skipping");
+  }
+
+  console.log("\n── 5f2. guest book: a first-party CRM, done legally ──");
+  // A book may only ever be opened on a guest who has ACTUALLY been to the venue.
+  ok(
+    "a note on a STRANGER who never visited is refused (interaction gate)",
+    await refused(() => as(owner, `select public.set_guest_note($1,$2,'hi','{}')`, [vid, stranger])),
+  );
+  // anita joined the room, so she's a real guest of this venue — staff may note her.
+  await as(owner, `select public.set_guest_note($1,$2,'Likes a smoky mezcal',array['regular','friday'])`, [vid, anita]);
+  const gbCard = (await as(owner, `select * from public.venue_guest_card($1,$2)`, [vid, anita])).rows[0];
+  ok(
+    "the card shows first-party history + the staff note",
+    gbCard && gbCard.been_here === true && Number(gbCard.visits) >= 1 && gbCard.note === "Likes a smoky mezcal",
+  );
+  ok(
+    "a non-staff person cannot read the venue's guest book",
+    await refused(() => as(stranger, `select * from public.venue_guest_card($1,$2)`, [vid, anita])),
+  );
+  // TRANSPARENCY: the guest can see every note kept on them, and erase it.
+  const books = await as(anita, `select * from public.my_venue_books()`);
+  ok("the guest sees the note kept on them", books.rows.some((r) => r.venue_id === vid && r.body === "Likes a smoky mezcal"));
+  await as(anita, `delete from public.venue_guest_notes where venue_id = $1 and subject_id = $2`, [vid, anita]);
+  const gone = await as(anita, `select * from public.my_venue_books()`);
+  ok("…and can ERASE it — their right", !gone.rows.some((r) => r.venue_id === vid));
 
   console.log("\n── 5g. Discover: the bar, never the offer ───────────");
   let disc = await anon(`select * from public.discover_venues('IN', 30)`);

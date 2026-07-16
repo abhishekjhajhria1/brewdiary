@@ -35,6 +35,9 @@ export interface Venue {
   /** Weekdays this bar calls quiet (0 = Sun … 6 = Sat). A visit on one counts
    *  double toward the house perk — never a drink discount. */
   quietNights: number[];
+  /** Coarse geohash of the venue (owner-set from the dashboard). Matches drinkers'
+   *  opt-in coarse cell for area taste trends — see 041 / geohash.ts. */
+  geohash?: string;
   verified: boolean;
   myRole: StaffRole;
 }
@@ -105,7 +108,7 @@ export function useMyVenues(): { venues: Venue[]; loading: boolean } {
     (async () => {
       const { data } = await supabase!
         .from("venue_staff")
-        .select("role, venue:venues(id, name, slug, created_by, city, kind, country, region, quiet_nights, verified)")
+        .select("role, venue:venues(id, name, slug, created_by, city, kind, country, region, quiet_nights, geohash, verified)")
         .eq("user_id", me);
       if (!active) return;
       setVenues(
@@ -123,6 +126,7 @@ export function useMyVenues(): { venues: Venue[]; loading: boolean } {
               country: (vv.country as string) ?? "IN",
               region: (vv.region as string) ?? undefined,
               quietNights: (vv.quiet_nights as number[]) ?? [],
+              geohash: (vv.geohash as string) ?? undefined,
               verified: Boolean(vv.verified),
               myRole: r.role as StaffRole,
             };
@@ -284,10 +288,11 @@ export async function createVenue(
 
 export async function updateVenue(
   venueId: string,
-  fields: { name?: string; city?: string; quietNights?: number[] },
+  fields: { name?: string; city?: string; quietNights?: number[]; geohash?: string | null },
 ): Promise<string | null> {
   if (!supabase) return "offline";
   const patch: Record<string, string | number[] | null> = {};
+  if (fields.geohash !== undefined) patch.geohash = fields.geohash ? fields.geohash.slice(0, 12) : null;
   if (fields.name !== undefined) {
     const n = fields.name.trim();
     if (!n) return "Name can't be empty.";
@@ -375,6 +380,11 @@ export interface VenueInsights {
   tabs: number;
   takings: number;
   kudos: number;
+  // v2 — visits by weekday (index 0 = Sunday … 6 = Saturday), and the previous
+  // equal-length window, for busiest/deadest-night and growth-trend reads.
+  visitsByDow: number[];
+  prevGuests: number;
+  prevTakings: number;
 }
 
 export function useVenueInsights(venueId: string | null, days = 30): { data: VenueInsights | null; loading: boolean } {
@@ -410,6 +420,12 @@ export function useVenueInsights(venueId: string | null, days = 30): { data: Ven
           tabs: Number(r.tabs ?? 0),
           takings: Number(r.takings ?? 0),
           kudos: Number(r.kudos ?? 0),
+          // Postgres int[] comes back as a JS array; default to 7 zeroes if absent.
+          visitsByDow: Array.isArray(r.visits_by_dow)
+            ? (r.visits_by_dow as unknown[]).map((x) => Number(x ?? 0))
+            : [0, 0, 0, 0, 0, 0, 0],
+          prevGuests: Number(r.prev_guests ?? 0),
+          prevTakings: Number(r.prev_takings ?? 0),
         },
         loading: false,
       });

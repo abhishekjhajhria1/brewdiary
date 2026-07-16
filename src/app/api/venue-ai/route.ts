@@ -57,6 +57,17 @@ function coerceBrief(raw: unknown): InsightBrief | null {
           .slice(0, 3)
           .map((p) => ({ reward: str(p.reward, 60), at: str(p.at, 40) }))
       : [],
+    areaLabel: str(b.areaLabel, 80) || undefined,
+    areaTrends: Array.isArray(b.areaTrends)
+      ? b.areaTrends
+          .filter((t): t is Record<string, unknown> => typeof t === "object" && t !== null)
+          .slice(0, 12)
+          .map((t) => ({
+            kind: t.kind === "mood" ? ("mood" as const) : ("drink" as const),
+            name: str(t.name, 60),
+            users: num(t.users),
+          }))
+      : undefined,
     insights: {
       rooms: num(ins.rooms),
       guests: num(ins.guests),
@@ -69,6 +80,11 @@ function coerceBrief(raw: unknown): InsightBrief | null {
       tabs: num(ins.tabs),
       takings: num(ins.takings),
       kudos: num(ins.kudos),
+      visitsByDow: Array.isArray(ins.visitsByDow)
+        ? ins.visitsByDow.slice(0, 7).map((x) => num(x))
+        : [0, 0, 0, 0, 0, 0, 0],
+      prevGuests: num(ins.prevGuests),
+      prevTakings: num(ins.prevTakings),
     },
   };
 }

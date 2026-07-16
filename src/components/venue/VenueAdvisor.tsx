@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import type { Venue } from "@/lib/venues";
 import { useVenuePerks } from "@/lib/perks";
+import { useAreaTrends } from "@/lib/trends";
 import { currencyForCountry, formatMoney } from "@/lib/money";
 import {
   ADVISOR_STARTERS,
@@ -30,6 +31,9 @@ export function VenueAdvisor({
   days: number;
 }) {
   const { perks } = useVenuePerks(venue.id);
+  // The neighbourhood's anonymous taste, scoped to this venue's coarse cell (k-anon ≥5).
+  // Empty until the owner sets the venue's location (Setup) and ≥5 locals opt in.
+  const { trends: areaTrends } = useAreaTrends(venue.geohash, days);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,8 +55,10 @@ export function VenueAdvisor({
         at: p.kind === "spend" ? formatMoney(p.threshold, currency, { round: true }) : `${p.threshold} visits`,
       })),
       insights,
+      areaLabel: venue.city || undefined,
+      areaTrends: areaTrends.map((t) => ({ kind: t.kind, name: t.name, users: t.users })),
     };
-  }, [venue, days, perks, insights]);
+  }, [venue, days, perks, insights, areaTrends]);
 
   async function ask(question?: string) {
     if (busy) return;

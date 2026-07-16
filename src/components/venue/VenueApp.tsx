@@ -46,7 +46,10 @@ import { KNOWN_COUNTRIES } from "@/lib/jurisdiction";
 import { currencyForCountry, currencySymbol, formatMoney } from "@/lib/money";
 import { useRoomGuests, staffAwardVibe, recordSpend, STAFF_VIBE_REASONS } from "@/lib/points";
 import { todayKey } from "@/lib/date";
+import { peakDays, pctChange } from "@/lib/venueAdvisor";
+import { requestLocationGeohash } from "@/lib/trends";
 import { VenueAdvisor } from "./VenueAdvisor";
+import { GuestBook } from "./GuestBook";
 
 // Written for a BAR OWNER, not for us. They care about three things: do people come
 // back, does tonight feel good, and what does it cost me. Everything below answers
@@ -472,7 +475,7 @@ function VenueCard({ venue, meId, open, onToggle }: { venue: Venue; meId: string
 // and vibe controls — and everything administrative (perks, team, setup) is a tab
 // away rather than a scroll away. A bartender should never have to walk past the
 // "delete venue" button to record someone's tab.
-type Section = "tonight" | "perks" | "team" | "insights" | "setup";
+type Section = "tonight" | "perks" | "team" | "insights" | "guests" | "setup";
 
 function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; canManage: boolean }) {
   const { staff } = useVenueStaff(venue.id);
@@ -490,6 +493,7 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
         { id: "tonight", label: store ? "Till" : "Tonight" },
         { id: "perks", label: store ? "Card" : "Perks" },
         { id: "insights", label: "Insights" },
+        { id: "guests", label: "Guests" },
         { id: "team", label: "Team" },
         { id: "setup", label: "Setup" },
       ]
@@ -504,7 +508,7 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
       )}
 
       {sections.length > 1 && (
-        <div className="glass mb-4 grid grid-cols-5 gap-1 rounded-ctl p-1">
+        <div className="glass mb-4 grid grid-cols-3 gap-1 rounded-ctl p-1">
           {sections.map((s) => (
             <button
               key={s.id}
@@ -538,6 +542,8 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
       )}
 
       {section === "insights" && canManage && <Insights venue={venue} />}
+
+      {section === "guests" && canManage && <GuestBook venue={venue} />}
 
       {section === "team" && canManage && (
         <>
@@ -576,6 +582,7 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
         <>
           {!venue.verified && <VerificationPanel venue={venue} meId={meId} />}
           <EditVenue venue={venue} />
+          <VenueLocation venue={venue} />
 
           {venue.myRole === "owner" && (
             <div className="mt-6 border-t border-line pt-4 text-sm">
@@ -785,8 +792,26 @@ function Insights({ venue }: { venue: Venue }) {
         <Stat label="perks given" value={String(data.perksClaimed)} />
         <Stat label="tabs" value={String(data.tabs)} />
         <Stat label="takings" value={money(data.takings)} />
+        <Stat
+          label="came back"
+          value={data.returningGuests === null ? "—" : `${Math.round((data.returningGuests / data.guests) * 100)}%`}
+        />
+        {/* Average tab is HIDDEN below k tabs — over 1–4 it would be one guest's spend. */}
+        <Stat label="avg tab" value={data.tabs >= 5 ? money(data.takings / data.tabs) : "—"} />
         <Stat label="team thanked" value={String(data.kudos)} />
       </div>
+
+      {/* Growth vs the previous equal-length window — the "are we up?" glance. */}
+      {(data.prevGuests > 0 || data.prevTakings > 0) && (
+        <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-faint">
+          <span>vs the previous {days} days:</span>
+          <TrendChip label="guests" cur={data.guests} prev={data.prevGuests} />
+          <TrendChip label="takings" cur={data.takings} prev={data.prevTakings} />
+        </p>
+      )}
+
+      {/* Busiest / deadest night — the read that feeds the quiet-night lever. */}
+      <WeekdayVisits visits={data.visitsByDow} quietNights={venue.quietNights ?? []} />
 
       {(data.quietVisits > 0 || venue.quietNights.length > 0) && (
         <p className="mt-3 text-xs leading-relaxed text-faint">
@@ -807,9 +832,10 @@ function Insights({ venue }: { venue: Venue }) {
       <VenueAdvisor venue={venue} insights={data} days={days} />
 
       <p className="mt-4 border-t border-line pt-3 text-xs leading-relaxed text-faint">
-        Counts only, and only for this venue. We&apos;ll never show you a list of who came, who stopped
-        coming, or what anyone does at another bar — that isn&apos;t ours to hand over, and we won&apos;t
-        build it.
+        These are counts, for this venue only. Your <span className="text-ink">guest book</span> keeps notes on
+        the regulars you serve — first-party, only ever your own guests, and they can see and erase it. What we
+        never hand over, anywhere, is a churn list of strangers, or what a guest does at another bar or in their
+        private diary.
       </p>
     </div>
   );
@@ -820,6 +846,71 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
     <div>
       <p className={clsx("tnum font-display text-2xl leading-none", accent ? "text-accent" : "text-ink")}>{value}</p>
       <p className="mt-1 text-xs text-faint">{label}</p>
+    </div>
+  );
+}
+
+// A single up/down delta vs the previous window. Renders nothing when there's no
+// prior period to compare against (a first month has no honest trend to show).
+function TrendChip({ label, cur, prev }: { label: string; cur: number; prev: number }) {
+  const pct = pctChange(cur, prev);
+  if (pct === null) return null;
+  const up = pct >= 0;
+  return (
+    <span className="inline-flex items-baseline gap-1">
+      <span className="text-muted">{label}</span>
+      <span className={clsx("tnum font-medium", up ? "text-accent" : "text-ink")}>
+        {up ? "↑" : "↓"} {Math.abs(pct)}%
+      </span>
+    </span>
+  );
+}
+
+// Visit volume by weekday — one tall bright bar is your big night, and the caption
+// names the quietest so the owner can point the quiet-night boost straight at it.
+const DOW_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
+const DOW_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function WeekdayVisits({ visits, quietNights }: { visits: number[]; quietNights: number[] }) {
+  if (!visits || visits.length < 7) return null;
+  const total = visits.reduce((a, b) => a + b, 0);
+  if (total === 0) return null;
+  const max = Math.max(...visits);
+  const { busiest, deadest } = peakDays(visits);
+  const deadMarked = deadest !== null && quietNights.includes(deadest);
+
+  return (
+    <div className="glass mt-3 rounded-tile p-4">
+      <p className="label mb-3 text-faint">By night</p>
+      <div className="flex h-20 items-end gap-1.5">
+        {visits.map((v, i) => (
+          <div key={i} className="flex h-full flex-1 flex-col items-center justify-end gap-1.5">
+            <div
+              className="w-full rounded-t-sm bg-accent transition-[height] duration-300"
+              style={{ height: `${Math.max(6, (v / max) * 100)}%`, opacity: i === busiest ? 1 : 0.3 }}
+              title={`${DOW_FULL[i]}: ${v} ${v === 1 ? "visit" : "visits"}`}
+            />
+            <span className={clsx("text-[10px]", i === busiest || i === deadest ? "text-muted" : "text-faint")}>
+              {DOW_LETTERS[i]}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2.5 text-xs leading-relaxed text-faint">
+        Busiest <span className="text-ink">{busiest !== null ? DOW_FULL[busiest] : "—"}</span>
+        {deadest !== null && deadest !== busiest && (
+          <>
+            {" · "}quietest <span className="text-ink">{DOW_FULL[deadest]}</span>
+            {!deadMarked && (
+              <>
+                {" — "}
+                <span className="text-accent">worth marking a quiet night</span>, so a visit then counts double toward
+                the perk.
+              </>
+            )}
+          </>
+        )}
+      </p>
     </div>
   );
 }
@@ -1616,6 +1707,57 @@ function AddStaff({ venueId, meId }: { venueId: string; meId: string }) {
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+// The owner sets the venue's coarse location once — standing in the bar. We keep only
+// a ~40 km geohash cell (never a pin), which is what area taste trends match on so
+// Ninkasi can read the neighbourhood. updateVenue bumps the version, so the label here
+// flips to "set" on its own once the venue reloads.
+function VenueLocation({ venue }: { venue: Venue }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function setLoc() {
+    setBusy(true);
+    setMsg(null);
+    const { geohash, error } = await requestLocationGeohash();
+    if (error || !geohash) {
+      setBusy(false);
+      setMsg(error ?? "Couldn't read a location.");
+      return;
+    }
+    const err = await updateVenue(venue.id, { geohash });
+    setBusy(false);
+    setMsg(err ? "Couldn't save — try again." : "Location set.");
+  }
+
+  return (
+    <div className="mt-6 border-t border-line pt-4">
+      <p className="text-sm text-ink">Venue location</p>
+      <p className="mb-2.5 text-xs leading-relaxed text-faint">
+        Stand in your venue and set its location once. We keep only a rough ~40&nbsp;km cell — never a pin — so
+        Ninkasi can read what your neighbourhood is drinking. {venue.geohash ? "It's set." : "Not set yet."}
+      </p>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={setLoc}
+          disabled={busy}
+          className="rounded-ctl bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {busy ? "Locating…" : venue.geohash ? "Update location" : "Use my location"}
+        </button>
+        {venue.geohash && (
+          <button
+            onClick={() => updateVenue(venue.id, { geohash: null })}
+            className="text-sm text-faint transition-colors hover:text-ink"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      {msg && <p className="mt-2 text-xs text-accent">{msg}</p>}
     </div>
   );
 }

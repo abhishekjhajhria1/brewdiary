@@ -59,6 +59,7 @@ try {
     "plans", "plan_joins", "plan_invites", "blocks", "reports",
     "vouches",
     "moderators", "user_sanctions", "moderation_actions",
+    "venue_guest_notes",
   ];
   const have = (await all(`select tablename from pg_tables where schemaname = 'public'`)).map((r) => r.tablename);
   for (const t of wantTables) ok(`table ${t}`, have.includes(t), "— MISSING");
@@ -80,12 +81,13 @@ try {
     "perk_policy", "currency_for_country", "k_anon",
     "perk_status", "redeem_perk", "last_redeemed", "visit_weight",
     "room_staff", "thank_staff", "my_kudos", "venue_kudos_total",
-    "venue_insights", "discover_venues",
+    "venue_insights", "discover_venues", "taste_trends",
     "plan_visible_to", "blocked_between", "request_join", "respond_join",
     "withdraw_join", "block_user", "plan_signals", "upcoming_plans", "search_users",
     "is_plan_invited", "invite_to_plan", "uninvite_from_plan", "plan_invitees", "my_plan_days", "respond_invite",
     "vouch_count",
     "is_moderator", "is_sanctioned", "suspend_user", "ban_user", "lift_sanction", "open_reports",
+    "has_venue_interaction", "set_guest_note", "venue_guest_card", "my_venue_books",
   ];
   const fns = (await all(`
     select p.proname from pg_proc p
@@ -354,6 +356,51 @@ try {
     vi && !/\(\s*select\s+earned\s+from\s+public\.perk_status/i.test(vi.d));
   ok("venue_insights(): counts a shop's punched cards, not just rooms",
     vi && /venue_checkins/.test(vi.d));
+  // 038 (venue_insights v2) is applied incrementally — assert it only when present,
+  // so this audit stays green while the migration is still on hold.
+  if (vi && /visits_by_dow/.test(vi.d)) {
+    ok("venue_insights(): v2 exposes weekday visits + previous-window trend",
+      /prev_guests/.test(vi.d) && /prev_takings/.test(vi.d));
+  } else {
+    console.log("  ~ venue_insights v2 (038) not applied — skipping");
+  }
+
+  // 039 (area_taste_trends). When applied, it must be k-anon at ≥5 (a city slice is a
+  // smaller crowd than global taste_trends' ≥3) and gate on the OPT-IN flag.
+  const at = await one(`
+    select pg_get_functiondef(p.oid) d from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname='public' and p.proname='area_taste_trends'`);
+  if (at) {
+    ok("area_taste_trends(): suppresses below 5 distinct people (k-anon for a small area)",
+      /count\(distinct[^)]*\)\s*>=\s*5/i.test(at.d) && !/>=\s*3\b/.test(at.d));
+    ok("area_taste_trends(): only counts opt-in sharers (share_trends), matched by coarse geohash",
+      /share_trends/.test(at.d) && /trends_geo/.test(at.d));
+  } else {
+    console.log("  ~ area_taste_trends (039) not applied — skipping");
+  }
+
+  // ── the guest book (040): a FIRST-PARTY CRM, machine-enforced ──────────────
+  // Writes are staff-only via set_guest_note(): the table itself takes no client
+  // INSERT/UPDATE (a guest can't be made to author their own file).
+  const gbWrite = await all(
+    `select policyname, cmd from pg_policies where schemaname='public' and tablename='venue_guest_notes' and cmd in ('INSERT','UPDATE')`);
+  ok("venue_guest_notes: no client INSERT/UPDATE (staff-written via set_guest_note only)",
+    gbWrite.length === 0, `— found ${gbWrite.map((x) => `${x.policyname}/${x.cmd}`).join(", ")}`);
+
+  // THE line that makes this a CRM and not surveillance: a venue's view of a guest —
+  // and the guest's own view — NEVER read public.entries. No diary ever reaches a bar.
+  const gcDef = await one(`select pg_get_functiondef('public.venue_guest_card(uuid,uuid)'::regprocedure) d`);
+  ok("venue_guest_card(): FIRST-PARTY — never touches public.entries (no diary leak)",
+    gcDef && !/\bentries\b/.test(gcDef.d));
+  const mbDef = await one(`select pg_get_functiondef('public.my_venue_books()'::regprocedure) d`);
+  ok("my_venue_books(): the guest's own view never touches the diary either",
+    mbDef && !/\bentries\b/.test(mbDef.d));
+
+  // A book may only be opened on a guest who actually came (interaction gate) by staff.
+  const sgDef = await one(`select pg_get_functiondef('public.set_guest_note(uuid,uuid,text,text[])'::regprocedure) d`);
+  ok("set_guest_note(): gated on has_venue_interaction + is_venue_staff",
+    sgDef && /has_venue_interaction/.test(sgDef.d) && /is_venue_staff/.test(sgDef.d));
 
   console.log("\n── orphans / drift ──────────────────────────────────");
   const badCurrency = await one(`

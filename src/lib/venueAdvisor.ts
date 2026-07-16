@@ -30,6 +30,9 @@ export interface AdvisorInsights {
   tabs: number;
   takings: number;
   kudos: number;
+  visitsByDow: number[]; // index 0 = Sunday … 6 = Saturday (visit volume)
+  prevGuests: number; // guests in the previous equal-length window
+  prevTakings: number; // takings in the previous equal-length window
 }
 
 // The brief the client assembles from data it already holds. Everything here is the
@@ -42,24 +45,53 @@ export interface InsightBrief {
   quietNightLabels: string[]; // e.g. ["Tue", "Wed"] — the owner's own setting
   perks: { reward: string; at: string }[]; // the venue's own live tiers, pre-labelled
   insights: AdvisorInsights;
+  // The market layer: what CONSENTING drinkers in the venue's area log (k-anon ≥5,
+  // counts only, no individuals). Optional — absent until there's a local pool.
+  areaLabel?: string;
+  areaTrends?: { kind: "drink" | "mood"; name: string; users: number }[];
 }
 
 // The persona. Bounded hard: read the given totals, advise inside the product's
 // ethics, refuse to invent per-guest knowledge she was never given.
 export const ADVISOR_SYSTEM_PROMPT = `You are Ninkasi, keeping the books for a publican — the same goddess who tends the bar inside the brewdiary diary, but here you are talking shop with the owner: plain, unhurried, without flourish. You have watched ten thousand houses open and close, and you know what actually brings people back.
 
-You are handed ONLY the totals for this one venue over a chosen window — counts, a single takings figure, and the owner's own perk and quiet-night settings. Nothing more. You never see a guest list, a name, or what any one person spent or drank, and you must never pretend to. If asked about a particular customer, say plainly that you only ever see totals, never individuals — that is how this app is built on purpose, and it is a feature, not a shortcoming.
+You are handed ONLY the totals for this one venue over a chosen window — counts, a single takings figure, and the owner's own perk and quiet-night settings. You may ALSO be given a short list of what consenting drinkers in the venue's wider area have been logging lately: anonymous, counts only, with at least five different people behind every item. You never see a guest list, a name, or what any one person spent or drank, and you must never pretend to. If asked about a particular customer, say plainly that you only ever see totals, never individuals — that is how this app is built on purpose, and it is a feature, not a shortcoming.
 
 How you advise:
 - Read the numbers you were given and say, in 2 to 4 short sentences, what they mean and the ONE or TWO things worth doing next. Be specific to THESE numbers. No preamble, no headers, no bulleted essays.
 - A number shown as "—" was hidden because too few people came to split it without pointing at an individual. Treat it as unknown; never guess what it hides.
-- Your counsel lives inside this house's rules. You NEVER advise anything that rewards drinking more or faster: no pushing a second round, no volume targets, and no discounting drink (it is often unlawful and never your advice). What you DO reach for: mark a dead night as a quiet night so a visit there counts double toward the house perk; set or tune a loyalty tier to turn a new face into a regular; make sure the staff are being thanked; give people a reason to try something new.
+- Your counsel lives inside this house's rules. You NEVER advise anything that rewards drinking more or faster: no pushing a second round, no volume targets, and no discounting drink (it is often unlawful and never your advice). What you DO reach for: mark a dead night as a quiet night so a visit there counts double toward the house perk; set or tune a loyalty tier to turn a new face into a regular; make sure the staff are being thanked; give people a reason to try something new; and when you're shown the area's taste, suggest what to feature, pour or stock to match the neighbourhood — an anonymous crowd's leaning, never a person's.
 - Speak of the takings as a rough total for the window, never a per-head figure.
 - Plain, warm, direct — a wise landlord, not a consultant. No emoji, no asterisks, none of the empty words ("elevate", "seamless", "unlock").
 
 Stay Ninkasi: ancient, calm, and on the owner's side.`;
 
 const WEEKDAY_ORDER = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const K_ANON = 5; // mirror public.k_anon() — below this, an average tab would leak one person
+
+// Busiest / deadest weekday from the 7-slot visit-volume array. Deadest is the
+// lowest weekday that saw ANY visit — a weekday with zero visits is "never open",
+// a different story from "open but dead", and not what the quiet-night lever fixes.
+export function peakDays(visitsByDow: number[]): { busiest: number | null; deadest: number | null } {
+  if (!visitsByDow || visitsByDow.length < 7) return { busiest: null, deadest: null };
+  let busiest: number | null = null;
+  let deadest: number | null = null;
+  for (let i = 0; i < 7; i++) {
+    const v = visitsByDow[i] ?? 0;
+    if (busiest === null || v > (visitsByDow[busiest] ?? 0)) busiest = i;
+    if (v > 0 && (deadest === null || v < (visitsByDow[deadest] ?? 0))) deadest = i;
+  }
+  // If nothing was logged, there's no busiest either.
+  if (busiest !== null && (visitsByDow[busiest] ?? 0) === 0) busiest = null;
+  return { busiest, deadest };
+}
+
+/** Whole-number percent change vs a previous value; null when there's no base to compare. */
+export function pctChange(current: number, previous: number): number | null {
+  if (!previous || previous <= 0) return null;
+  return Math.round(((current - previous) / previous) * 100);
+}
 
 function money(amount: number, currency: string): string {
   try {
@@ -100,9 +132,53 @@ export function summarizeInsights(brief: InsightBrief): string {
       : `Nights open: ${i.rooms}. Guests: ${i.guests}. New faces: ${n(i.newGuests)}. Regulars: ${n(i.returningGuests)}.`,
   );
   lines.push(`Visits on a quiet night: ${i.quietVisits}; on other nights: ${i.otherVisits}.`);
+
+  // Busiest / deadest weekday — the lever into quiet nights.
+  const { busiest, deadest } = peakDays(i.visitsByDow);
+  if (busiest !== null || deadest !== null) {
+    const parts: string[] = [];
+    if (busiest !== null) parts.push(`busiest ${WEEKDAY_FULL[busiest]} (${i.visitsByDow[busiest]} visits)`);
+    if (deadest !== null && deadest !== busiest) {
+      const isQuiet = brief.quietNightLabels.includes(WEEKDAY_ORDER[deadest]);
+      parts.push(
+        `deadest ${WEEKDAY_FULL[deadest]} (${i.visitsByDow[deadest]} visits${isQuiet ? ", already marked quiet" : ", NOT marked quiet"})`,
+      );
+    }
+    lines.push(`By weekday: ${parts.join("; ")}.`);
+  }
+
+  // Growth trend vs the previous equal-length window.
+  const gPct = pctChange(i.guests, brief.insights.prevGuests);
+  const tPct = pctChange(i.takings, brief.insights.prevTakings);
+  const trend: string[] = [];
+  if (gPct !== null) trend.push(`guests ${gPct >= 0 ? "up" : "down"} ${Math.abs(gPct)}% (${brief.insights.prevGuests} before)`);
+  if (tPct !== null) trend.push(`takings ${tPct >= 0 ? "up" : "down"} ${Math.abs(tPct)}%`);
+  if (trend.length) lines.push(`Versus the previous ${brief.days} days: ${trend.join(", ")}.`);
+
+  // Return rate — derived from the k-anon-suppressed split, so it's only present
+  // when it's safe to show. Speak of it as retention.
+  if (i.returningGuests !== null && i.guests > 0) {
+    lines.push(`Return rate: ${Math.round((i.returningGuests / i.guests) * 100)}% of guests had been before.`);
+  }
+
   lines.push(`Perks earned and waiting to be claimed: ${n(i.perksEarned)}. Perks given: ${i.perksClaimed}.`);
-  lines.push(`Tabs recorded: ${i.tabs}. Takings over the window (rough total): ${money(i.takings, currency)}.`);
+
+  // Average tab only when there are enough tabs that it can't point at one person.
+  const avgTab = i.tabs >= K_ANON ? `; average tab about ${money(i.takings / i.tabs, currency)}` : "";
+  lines.push(`Tabs recorded: ${i.tabs}. Takings over the window (rough total): ${money(i.takings, currency)}${avgTab}.`);
   lines.push(`Times the team was thanked by guests: ${i.kudos}.`);
+
+  // The area layer — anonymous neighbourhood taste (≥5 people behind each item).
+  if (brief.areaTrends && brief.areaTrends.length) {
+    const where = brief.areaLabel ? `in ${brief.areaLabel}` : "in this area";
+    const drinks = brief.areaTrends.filter((t) => t.kind === "drink").map((t) => t.name).slice(0, 5);
+    const moods = brief.areaTrends.filter((t) => t.kind === "mood").map((t) => t.name).slice(0, 4);
+    const parts: string[] = [];
+    if (drinks.length) parts.push(`drinks: ${drinks.join(", ")}`);
+    if (moods.length) parts.push(`moods: ${moods.join(", ")}`);
+    if (parts.length)
+      lines.push(`What consenting drinkers ${where} have been logging lately (anonymous, counts only): ${parts.join("; ")}.`);
+  }
 
   return `\n\nThe numbers for this venue (aggregate totals only — no individual is described here):\n${lines.join("\n")}`;
 }
@@ -130,11 +206,31 @@ export function fallbackAdvice(brief: InsightBrief): string {
       : "A quiet stretch — no guests logged in this window. Open a room, put the code on the tables, and let your bartenders hand out a good word as they serve. The numbers will come once the room does.";
   }
 
-  // The dead-night lever — the one fix that fills a Tuesday without discounting a drop.
+  // Trend first — "are we growing" is the question an owner opens the dashboard with.
+  const gPct = pctChange(i.guests, i.prevGuests);
+  if (gPct !== null && gPct <= -20) {
+    bits.push(
+      `Fewer people than the ${brief.days} days before — down about ${Math.abs(gPct)}%. Before anything fancy, lean on the regulars: make sure every earned perk gets honoured, and give a dead night a reason to fill.`,
+    );
+  } else if (gPct !== null && gPct >= 25) {
+    bits.push(
+      `Up about ${gPct}% on the previous ${brief.days} days — whatever you're doing, it's working. Lock it in with a perk so this month's new faces have a reason to make it three visits, not one.`,
+    );
+  }
+
+  // The dead-night lever — now it can name the actual deadest weekday from the data.
   if (!store) {
-    if (brief.quietNightLabels.length === 0) {
+    const { deadest } = peakDays(i.visitsByDow);
+    const deadLabel = deadest !== null ? WEEKDAY_FULL[deadest] : null;
+    const deadIsMarked = deadest !== null && brief.quietNightLabels.includes(WEEKDAY_ORDER[deadest]);
+
+    if (deadLabel && !deadIsMarked) {
       bits.push(
-        "You've marked no quiet nights. Pick your deadest one and set it — a visit that night counts double toward your perk, so people have a reason to come when the room's empty. No drink discounted, nobody asked to drink more.",
+        `${deadLabel} is your quietest night and it isn't marked quiet. Set it under Perks — a visit that ${deadLabel} then counts double toward the house perk, so people have a reason to come when the room's empty. No drink discounted, nobody asked to drink more.`,
+      );
+    } else if (brief.quietNightLabels.length === 0) {
+      bits.push(
+        "You've marked no quiet nights. Pick your deadest one and set it — a visit that night counts double toward your perk, so the empty nights have a pull. No drink discounted, nobody asked to drink more.",
       );
     } else if (i.quietVisits === 0 && i.otherVisits > 0) {
       bits.push(
@@ -165,6 +261,15 @@ export function fallbackAdvice(brief: InsightBrief): string {
   if (!store && i.kudos === 0 && i.guests >= 3) {
     bits.push(
       "Nobody's thanked your team yet. Remind the room they can — a guest tapping a bartender's name to say thanks costs you nothing and keeps good staff longer than a raise sometimes does.",
+    );
+  }
+
+  // The neighbourhood nudge — only when there's a real local pool behind it.
+  const areaDrinks = (brief.areaTrends ?? []).filter((t) => t.kind === "drink").map((t) => t.name).slice(0, 3);
+  if (areaDrinks.length) {
+    const where = brief.areaLabel ? `around ${brief.areaLabel}` : "around here";
+    bits.push(
+      `${areaDrinks.join(", ")} ${areaDrinks.length === 1 ? "is" : "are"} what drinkers ${where} have been logging lately. If it's not already on your list, a night built around one of those is an easy pull — the neighbourhood's already reaching for it.`,
     );
   }
 
