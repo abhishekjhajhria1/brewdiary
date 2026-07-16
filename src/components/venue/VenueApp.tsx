@@ -46,6 +46,7 @@ import { KNOWN_COUNTRIES } from "@/lib/jurisdiction";
 import { currencyForCountry, currencySymbol, formatMoney } from "@/lib/money";
 import { useRoomGuests, staffAwardVibe, recordSpend, STAFF_VIBE_REASONS } from "@/lib/points";
 import { todayKey } from "@/lib/date";
+import { VenueAdvisor } from "./VenueAdvisor";
 
 // Written for a BAR OWNER, not for us. They care about three things: do people come
 // back, does tonight feel good, and what does it cost me. Everything below answers
@@ -65,6 +66,11 @@ const SECTIONS: { name: string; blurb: string }[] = [
     name: "A room for the night, and a screen on the wall",
     blurb:
       "Open a room, put the code on the table. Guests who join can appear on a board you cast to a TV — by choice, for that night only. Nobody's name lingers on your screen after closing.",
+  },
+  {
+    name: "Numbers that tell you what to do",
+    blurb:
+      "Ninkasi reads your takings, your regulars, your quiet nights — the totals only, never a guest or a name — and tells you the one or two things worth doing next. A read of the books, not a file on your customers.",
   },
   {
     name: "Nobody is ranked by what they spent",
@@ -795,6 +801,10 @@ function Insights({ venue }: { venue: Venue }) {
           at somebody. With five or more guests they&apos;ll appear.
         </p>
       )}
+
+      {/* The AI reads the SAME aggregates above — never an individual — and says what
+          to do next. Lives here, under the numbers it's grounded in. */}
+      <VenueAdvisor venue={venue} insights={data} days={days} />
 
       <p className="mt-4 border-t border-line pt-3 text-xs leading-relaxed text-faint">
         Counts only, and only for this venue. We&apos;ll never show you a list of who came, who stopped
