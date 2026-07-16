@@ -11,6 +11,7 @@
 // See VenuesNearby.tsx and 027_discover_venues.sql.
 import Link from "next/link";
 import { Trends } from "@/components/discover/Trends";
+import { NearbyTrends } from "@/components/discover/NearbyTrends";
 import { DiscoverLive } from "@/components/discover/DiscoverLive";
 import { VenuesNearby } from "@/components/discover/VenuesNearby";
 
@@ -49,7 +50,8 @@ export default function Page() {
       {/* Real, verified bars on brewdiary — the bar, never its offer. */}
       <VenuesNearby />
 
-      {/* live, key-free data: anonymous taste trends across consenting users */}
+      {/* live, key-free data: anonymous taste trends — your area first, then everywhere */}
+      <NearbyTrends />
       <Trends />
 
       <p className="mt-8 text-xs leading-relaxed text-faint">

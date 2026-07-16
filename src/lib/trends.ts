@@ -90,20 +90,25 @@ export function useAreaTrends(geo: string | null | undefined, daysBack = 30): { 
 }
 
 // ── the opt-in coarse cell on my profile (only meaningful with share_trends on) ──
-export function useTrendsGeo(): { hasArea: boolean; loaded: boolean; reload: () => void } {
+export function useTrendsGeo(): { hasArea: boolean; geo: string | null; loaded: boolean; reload: () => void } {
   const me = useAuth().profile?.id;
-  const [state, setState] = useState({ hasArea: false, loaded: false });
+  const [state, setState] = useState<{ hasArea: boolean; geo: string | null; loaded: boolean }>({
+    hasArea: false,
+    geo: null,
+    loaded: false,
+  });
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     if (!supabase || !me) {
-      setState({ hasArea: false, loaded: true });
+      setState({ hasArea: false, geo: null, loaded: true });
       return;
     }
     let active = true;
     (async () => {
       const { data } = await supabase!.from("profiles").select("trends_geo").eq("id", me).maybeSingle();
-      if (active) setState({ hasArea: Boolean(data?.trends_geo), loaded: true });
+      const g = (data?.trends_geo as string) ?? null;
+      if (active) setState({ hasArea: Boolean(g), geo: g, loaded: true });
     })();
     return () => {
       active = false;
