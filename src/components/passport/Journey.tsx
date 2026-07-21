@@ -85,6 +85,13 @@ export function Journey() {
 
   useEffect(() => () => void (raf.current != null && cancelAnimationFrame(raf.current)), []);
 
+  // Tap a landmark to glide the "you are here" dot to it (the road scrolls it to centre).
+  const scrollToNode = (i: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ left: Math.max(0, nodeX[i] - el.clientWidth / 2), behavior: "smooth" });
+  };
+
   const dotY = roadY(playX);
   const here = j.nodes[focused];
 
@@ -118,7 +125,9 @@ export function Journey() {
             const x = nodeX[i];
             const y = roadY(x);
             return (
-              <g key={node.id}>
+              <g key={node.id} onClick={() => scrollToNode(i)} className="cursor-pointer" aria-label={node.label}>
+                {/* a generous invisible hit-target so the small dot is easy to tap */}
+                <circle cx={x} cy={y} r={22} fill="transparent" />
                 {node.reached && <circle cx={x} cy={y} r={R + 6} fill="var(--color-accent)" opacity={0.16} />}
                 <circle
                   cx={x}

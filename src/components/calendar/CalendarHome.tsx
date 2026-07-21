@@ -14,7 +14,6 @@ import { DayCounters } from "../ui/DayCounters";
 import { AchievementTile } from "./AchievementTile";
 import { LogSheet } from "../log/LogSheet";
 import { Passport } from "../passport/Passport";
-import { Expeditions } from "../expeditions/Expeditions";
 
 export function CalendarHome() {
   const entries = useEntries();
@@ -103,12 +102,7 @@ export function CalendarHome() {
       {/* The collectible layer lives WITH the year mosaic (its companion, per the Passport's
           own intent): the palate map + its trophies, then tonight's expedition hand — the
           "explore" block, on the most-visible page. Month view stays the lean daily ritual. */}
-      {view === "year" && (
-        <>
-          <Passport />
-          <Expeditions />
-        </>
-      )}
+      {view === "year" && <Passport />}
 
       {entries.length === 0 && (
         <p className="mt-10 text-center text-sm text-faint">Tap a day to log your first drink.</p>

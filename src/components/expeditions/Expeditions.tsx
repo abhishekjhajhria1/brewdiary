@@ -46,10 +46,10 @@ export function Expeditions() {
   );
 
   return (
-    <section className="mt-10">
+    <div>
       <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 className="label">Expeditions</h2>
-        <span className="text-xs text-faint">a few doors, for tonight</span>
+        <p className="label text-faint">Tonight</p>
+        <span className="text-xs text-faint">a few doors to wander</span>
       </div>
 
       {/* Choose your path — biases the flavour of the hand, never the difficulty. Tapping the
@@ -80,7 +80,7 @@ export function Expeditions() {
           <QuestCard key={q.id} quest={q} />
         ))}
       </div>
-    </section>
+    </div>
   );
 }
 

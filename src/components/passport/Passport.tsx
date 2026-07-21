@@ -8,13 +8,13 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { useEntries } from "@/lib/store";
-import { addWish, useWishlist } from "@/lib/wishlist";
-import { useFeed } from "@/lib/friends";
+import { addWish } from "@/lib/wishlist";
 import { intensityLevel } from "@/lib/derive";
-import { adjacentStamps, palateNeighbours, passport, type Stamp, type World } from "@/lib/passport";
+import { adjacentStamps, passport, type Stamp, type World } from "@/lib/passport";
 import { chartedBy, commons } from "@/lib/cartography";
 import { useChartedFamilies, useMyProposals, type ChartedFamily } from "@/lib/charts";
 import { Journey } from "./Journey";
+import { Expeditions } from "../expeditions/Expeditions";
 import { ChartThis } from "./ChartThis";
 import type { DrinkType } from "@/lib/types";
 import { MONTH_NAMES, parseKey } from "@/lib/date";
@@ -58,29 +58,22 @@ export function Passport() {
           Shown even before your first stamp — a whole trail of landmarks lying ahead. */}
       <Journey />
 
+      {/* Tonight — the one actionable thing, right under the road (a new user has quests too). */}
+      <div className="mt-8">
+        <Expeditions />
+      </div>
+
       {p.exploredFamilies === 0 ? (
-        <p className="mt-3 text-center text-xs text-faint">
+        <p className="mt-6 text-center text-xs text-faint">
           Log a drink and its family lights the first landmark — the road fills in as you wander.
         </p>
       ) : (
-        <div className="mt-6 space-y-6">
+        <div className="mt-10 space-y-8">
           {/* The silhouette of a taste — the ownable identity. */}
           <PaletteSilhouette worlds={p.worlds} />
 
-          {/* One or two doors out of the map you have. Widens, never deepens. */}
-          <WanderHere />
-
-          {/* The worlds — stamps you've lit, and the ones still to wander. */}
-          {p.worlds.map((w) => (
-            <div key={w.type}>
-              <p className="label mb-2 text-faint">{WORLD[w.type]}</p>
-              <div className="flex flex-wrap gap-1.5">
-                {w.stamps.map((s) => (
-                  <StampChip key={s.family} stamp={s} onOpen={() => setStamp(s)} />
-                ))}
-              </div>
-            </div>
-          ))}
+          {/* What you've collected — only the lit stamps, celebrated (no wall of empty boxes). */}
+          <Collected worlds={p.worlds} onOpen={setStamp} />
 
           {/* Off the map — novel drinks that are regions all your own, and the ones
               you can offer to the shared dictionary (see ChartThis in the sheet). */}
@@ -105,50 +98,80 @@ export function Passport() {
         </div>
       )}
 
+      {/* The full territory — every family the map knows, tucked behind one tap so the
+          section reads as a gallery of what you HAVE, not a checklist of what you don't. */}
+      <div className="mt-8">
+        <WholeMap worlds={p.worlds} onOpen={setStamp} />
+      </div>
+
       {stamp && <StampSheet stamp={stamp} charted={charted} onClose={() => setStamp(null)} />}
     </section>
   );
 }
 
-// ── the curiosity loop (CD7) ─────────────────────────────────────────────────
-// "Wander here" — a few families you HAVEN'T logged, drawn from the worlds you already
-// wander, what friends pour, and one deliberate seed from a world you've barely entered.
-// It never suggests more of what you already drink, and it never ranks by alcohol: a
-// chamomile can outrank a mezcal (see lib/passport.palateNeighbours). One action only —
-// save it to your to-try list. No spark, no perk, no discount: exploring is its own reward.
-function WanderHere() {
-  const entries = useEntries();
-  const wishlist = useWishlist();
-  const { feed } = useFeed();
-
-  const picks = palateNeighbours(
-    entries,
-    feed.map((f) => ({ drink: f.drink, author: f.author.id })),
-    wishlist.map((w) => w.drink),
-    4,
-  );
-  if (picks.length === 0) return null;
-
+// ── Collected — the lit stamps, celebrated ───────────────────────────────────
+// Only the families you've ACTUALLY explored, grouped by the worlds you've entered.
+// This is the gallery of what you have (Untappd-style collection) — the wall of every
+// unexplored family lives behind "See the whole map" instead, so this reads as a
+// keepsake, not a to-do list. Tapping a stamp opens its sheet (keepsake + next door).
+function Collected({ worlds, onOpen }: { worlds: World[]; onOpen: (s: Stamp) => void }) {
+  const entered = worlds.filter((w) => w.exploredCount > 0);
+  if (entered.length === 0) return null;
   return (
-    <div data-testid="wander-here" className="glass rounded-tile p-5">
-      <p className="label mb-1 text-faint">Wander here</p>
-      <p className="mb-3 text-xs text-faint">Corners of the map you haven&apos;t been to yet.</p>
-      <div className="flex flex-wrap gap-2">
-        {/* No "saved" state here on purpose: palateNeighbours excludes anything already on
-            your to-try list, so saving one removes it from these suggestions on the next
-            render. The confirmation is the chip leaving and the drink appearing in To try
-            just below — a "saved" label would be unreachable code pretending otherwise. */}
-        {picks.map((s) => (
-          <button
-            key={s.family}
-            onClick={() => addWish(s.family)}
-            className="min-h-11 rounded-ctl border border-line px-3 py-2 text-sm text-ink transition-colors hover:border-line-strong"
-          >
-            {s.family}
-            <span className="ml-2 text-xs text-faint">+ to try</span>
-          </button>
+    <div>
+      <p className="label mb-3 text-faint">Collected</p>
+      <div className="space-y-4">
+        {entered.map((w) => (
+          <div key={w.type}>
+            <p className="mb-1.5 flex items-baseline gap-1.5 text-xs text-muted">
+              {WORLD[w.type]}
+              <span className="tnum text-faint">{w.exploredCount}</span>
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {w.stamps
+                .filter((s) => s.explored)
+                .map((s) => (
+                  <StampChip key={s.family} stamp={s} onOpen={() => onOpen(s)} />
+                ))}
+            </div>
+          </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── The whole map — every family the dictionary knows, behind ONE tap ────────
+// The full territory (explored + not) is a reference, not the headline: collapsed by
+// default so the section is calm, opened by anyone who wants to browse where they could
+// wander. "Unexplored is an invitation, never a lack" — so a dim stamp here is a door.
+function WholeMap({ worlds, onOpen }: { worlds: World[]; onOpen: (s: Stamp) => void }) {
+  const [open, setOpen] = useState(false);
+  const total = worlds.reduce((n, w) => n + w.stamps.length, 0);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex min-h-11 w-full items-center justify-between rounded-tile border border-line px-4 text-sm text-muted transition-colors hover:border-line-strong hover:text-ink"
+      >
+        <span>See the whole map</span>
+        <span className="tnum text-xs text-faint">{total} families {open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="animate-rise mt-5 space-y-5">
+          {worlds.map((w) => (
+            <div key={w.type}>
+              <p className="label mb-2 text-faint">{WORLD[w.type]}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {w.stamps.map((s) => (
+                  <StampChip key={s.family} stamp={s} onOpen={() => onOpen(s)} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
