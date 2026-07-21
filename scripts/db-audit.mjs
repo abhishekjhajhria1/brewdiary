@@ -61,6 +61,7 @@ try {
     "moderators", "user_sanctions", "moderation_actions",
     "venue_guest_notes",
     "chart_proposals",
+    "cups", "cup_members",
   ];
   const have = (await all(`select tablename from pg_tables where schemaname = 'public'`)).map((r) => r.tablename);
   for (const t of wantTables) ok(`table ${t}`, have.includes(t), "— MISSING");
@@ -90,6 +91,7 @@ try {
     "is_moderator", "is_sanctioned", "suspend_user", "ban_user", "lift_sanction", "open_reports",
     "has_venue_interaction", "set_guest_note", "venue_guest_card", "my_venue_books",
     "force_proposal_pending", "review_chart_proposal", "pending_chart_proposals", "charted_families",
+    "cup_board", "cup_visible_to", "is_cup_member", "join_cup", "cups_add_owner",
   ];
   const fns = (await all(`
     select p.proname from pg_proc p
@@ -441,6 +443,42 @@ try {
   const cfDef = await one(`select pg_get_functiondef('public.charted_families()'::regprocedure) d`);
   ok("charted_families(): no per-author tally (no cartographer leaderboard, by construction)",
     cfDef && !/count\s*\(/i.test(cfDef.d) && !/group\s+by\s+.*author/i.test(cfDef.d));
+
+  console.log("\n── cups (Phase C-2 — competitions that can't reward volume) ──");
+
+  // THE load-bearing line: cups.axis is deny-by-default and holds NO volume/spend
+  // axis. If someone ever adds one, "who drank most" becomes buildable and the app
+  // is inducement-to-consume (illegal to ship) with a gamed corpus. Assert the CHECK
+  // lists only breadth/behaviour axes and names neither 'volume' nor 'spend'.
+  const axisDef = await one(`
+    select pg_get_constraintdef(c.oid) d
+    from pg_constraint c join pg_class t on t.oid = c.conrelid
+    where t.relname = 'cups' and c.contype = 'c' and pg_get_constraintdef(c.oid) ilike '%axis%'`);
+  ok("cups.axis CHECK exists and excludes volume/spend (deny-by-default palette)",
+    !!axisDef && /'drinks'/.test(axisDef.d) && !/volume|spend/i.test(axisDef.d), axisDef ? `— ${axisDef.d}` : "— MISSING");
+
+  // join_policy has no 'public'/'strangers' tier (same posture as plans).
+  const jpDef = await one(`
+    select pg_get_constraintdef(c.oid) d
+    from pg_constraint c join pg_class t on t.oid = c.conrelid
+    where t.relname = 'cups' and c.contype = 'c' and pg_get_constraintdef(c.oid) ilike '%join_policy%'`);
+  ok("cups.join_policy CHECK has no public/strangers tier",
+    !!jpDef && !/public|stranger/i.test(jpDef.d));
+
+  // cup_members must have NO client insert/update path — joins go through join_cup
+  // (definer) only, so a member can never forge a rival's row or their own score.
+  const cmWrite = await all(`
+    select cmd, policyname from pg_policies
+    where schemaname='public' and tablename='cup_members' and cmd in ('INSERT','UPDATE')`);
+  ok("cup_members: no client INSERT/UPDATE policy (join only via join_cup rpc)",
+    cmWrite.length === 0, `— ${cmWrite.map((r) => `${r.cmd}:${r.policyname}`).join(", ")}`);
+
+  // The board is a definer, counts-only function — never a stored total, never
+  // content. And it must not aggregate anything that could reward volume.
+  const boardDef = await one(`select pg_get_functiondef('public.cup_board(uuid)'::regprocedure) d, p.prosecdef
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='cup_board'`);
+  ok("cup_board(): SECURITY DEFINER, members-only, and returns a COUNT-derived score",
+    !!boardDef && boardDef.prosecdef && /count\s*\(\s*distinct/i.test(boardDef.d) && /is_cup_member/i.test(boardDef.d));
 
   console.log("\n── orphans / drift ──────────────────────────────────");
   const badCurrency = await one(`
