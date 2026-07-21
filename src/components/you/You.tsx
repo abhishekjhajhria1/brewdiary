@@ -17,6 +17,7 @@ import { makeable, commonStaples } from "@/lib/recipes";
 import { useProfile, signOut, updateHandle } from "@/lib/profile";
 import { reroll } from "@/lib/handles";
 import { Passport } from "../passport/Passport";
+import { Expeditions } from "../expeditions/Expeditions";
 import { WeeklyRecap } from "../passport/WeeklyRecap";
 import { useRecap, setRecap } from "@/lib/recap";
 import { TrustCard } from "../verify/TrustCard";
@@ -100,6 +101,9 @@ export function You() {
 
       {/* The palate map — breadth you've built, and the doors out of it. Derived, never stored. */}
       <Passport />
+
+      {/* Playing on that map: tonight's hand of do-able "try this" doors + a trophy shelf. */}
+      <Expeditions />
 
       <ToTry />
 
