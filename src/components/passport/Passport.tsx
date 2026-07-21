@@ -12,6 +12,8 @@ import { addWish } from "@/lib/wishlist";
 import { intensityLevel } from "@/lib/derive";
 import { adjacentStamps, passport, type Stamp, type World } from "@/lib/passport";
 import { chartedBy, commons } from "@/lib/cartography";
+import { useShareTrends } from "@/lib/trends";
+import { usePalateNeighbours } from "@/lib/neighbours";
 import { useChartedFamilies, useMyProposals, type ChartedFamily } from "@/lib/charts";
 import { Journey } from "./Journey";
 import { Expeditions } from "../expeditions/Expeditions";
@@ -99,6 +101,10 @@ export function Passport() {
             </div>
           )}
 
+          {/* Wandered next — the crowd's doors (048, opt-in, k-anon). Hidden entirely
+              unless taste-trends sharing is on: no reading the crowd while hiding from it. */}
+          <NeighbourDoors p={p} />
+
           {/* The commons: how big the shared map is, and how much of it drinkers drew.
               A count of FAMILIES — there is deliberately no per-person figure anywhere. */}
           {c.charted > 0 && (
@@ -119,6 +125,55 @@ export function Passport() {
 
       {stamp && <StampSheet stamp={stamp} charted={charted} onClose={() => setStamp(null)} />}
     </section>
+  );
+}
+
+// ── Wandered next — palate-neighbour doors (CD7, the aggregate curiosity loop) ──
+// "People whose maps look like yours wandered here next." Counts-only, k-anon,
+// opt-in both ways (048). One action per door — save it to the to-try list —
+// exactly like the Tonight hand: exploring is the reward, nothing is earned.
+function NeighbourDoors({ p }: { p: ReturnType<typeof passport> }) {
+  const { shareTrends, loaded } = useShareTrends();
+  const explored = new Set<string>();
+  for (const w of p.worlds) for (const s of w.stamps) if (s.explored) explored.add(s.family);
+  for (const s of p.offMap) explored.add(s.family);
+  const { doors } = usePalateNeighbours(loaded && shareTrends, explored);
+  const [saved, setSaved] = useState<Set<string>>(new Set());
+
+  if (!shareTrends || doors.length === 0) return null;
+
+  return (
+    <div>
+      <p className="label mb-2 text-faint">Wandered next</p>
+      <p className="mb-3 text-xs leading-relaxed text-faint">
+        Drinkers whose maps look like yours went on to these — counts only, never a name.
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {doors.map((d) => {
+          const done = saved.has(d.family);
+          return (
+            <button
+              key={d.family}
+              onClick={() => {
+                if (done) return;
+                addWish(d.family);
+                setSaved((s) => new Set(s).add(d.family));
+              }}
+              className={clsx(
+                "glass glass-press flex min-h-11 items-baseline gap-2 rounded-ctl px-3 py-2 text-sm transition-colors",
+                done ? "text-muted" : "text-ink",
+              )}
+            >
+              {d.family}
+              <span className="tnum text-xs text-faint">{d.users} wandered here</span>
+              <span className={clsx("text-xs", done ? "text-faint" : "text-accent")}>
+                {done ? "saved" : "+ to try"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

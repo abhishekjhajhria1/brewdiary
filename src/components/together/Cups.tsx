@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { useAuth } from "@/lib/profile";
+import { CupBattleCard } from "../share/CupBattleCard";
 import {
   useMyCups,
   useCupBoard,
@@ -739,6 +740,7 @@ function TeamPanel({ cup, ended }: { cup: Cup; ended: boolean }) {
   const { teams, mySide, loading } = useCupTeams(cup);
   const [busy, setBusy] = useState<CupSide | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   const a = teams.find((t) => t.team === "a") ?? { team: "a" as CupSide, players: 0, score: 0 };
   const b = teams.find((t) => t.team === "b") ?? { team: "b" as CupSide, players: 0, score: 0 };
@@ -809,6 +811,31 @@ function TeamPanel({ cup, ended }: { cup: Cup; ended: boolean }) {
             <p className="mt-2.5 text-xs text-faint">Pick a side — your exploring counts for it from then on.</p>
           )}
           {error && <p className="mt-2 text-sm text-accent">{error}</p>}
+
+          {/* the battle poster — a shareable scoreline; the card itself repeats the
+              honest-axis caption, so a screenshot can't be mistaken for a spending race */}
+          <button
+            onClick={() => setSharing(true)}
+            className="mt-3 w-full rounded-ctl border border-line py-2.5 text-xs font-medium uppercase tracking-[0.12em] text-muted transition-colors hover:border-line-strong hover:text-ink"
+          >
+            Share the battle
+          </button>
+          {sharing && (
+            <CupBattleCard
+              battle={{
+                cupName: cup.name,
+                axis: axisLabel(cup.axis),
+                status: cupStatus(cup).label,
+                teamA: cup.teamA ?? "Side one",
+                teamB: cup.teamB ?? "Side two",
+                scoreA: a.score,
+                scoreB: b.score,
+                playersA: a.players,
+                playersB: b.players,
+              }}
+              onClose={() => setSharing(false)}
+            />
+          )}
         </>
       )}
     </div>

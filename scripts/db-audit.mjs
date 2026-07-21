@@ -531,6 +531,24 @@ try {
   ok("recipe_reaction_counts(): SECURITY DEFINER, counts-only, visibility-gated",
     !!rcDef && rcDef.prosecdef && /count\s*\(/i.test(rcDef.d) && /recipe_visible_to/i.test(rcDef.d));
 
+  // 048 (palate_neighbours). When applied: k-anon at ≥5, opt-in BOTH ways
+  // (share_trends gates being counted AND asking), and a ≥3-distinct-drinks floor
+  // for the caller so tiny overlaps can't be probed.
+  const pn = await one(`
+    select pg_get_functiondef(p.oid) d, p.prosecdef from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname='public' and p.proname='palate_neighbours'`);
+  if (pn) {
+    ok("palate_neighbours(): SECURITY DEFINER, counts-only, suppresses below 5 distinct neighbours",
+      pn.prosecdef && /count\(distinct[^)]*\)\s*>=\s*5/i.test(pn.d));
+    ok("palate_neighbours(): opt-in both ways (share_trends on the caller AND the crowd)",
+      (pn.d.match(/share_trends/g) || []).length >= 2);
+    ok("palate_neighbours(): needs a real map first (≥3 distinct drinks before it answers)",
+      />=\s*3\b/.test(pn.d));
+  } else {
+    console.log("  ~ palate_neighbours (048) not applied — skipping");
+  }
+
   console.log("\n── orphans / drift ──────────────────────────────────");
   const badCurrency = await one(`
     select count(*)::int n from public.venues v

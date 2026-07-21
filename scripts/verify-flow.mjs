@@ -1282,6 +1282,58 @@ try {
     (await as(rStranger, `insert into public.recipe_reactions (recipe_id,user_id,kind) values ($1,$2,'totry') returning kind`, [recId, rStranger])).rows[0].kind === "totry");
   ok("reaction counts come back counts-only across three kinds",
     (await as(rAuthor, `select * from public.recipe_reaction_counts($1)`, [recId])).rows.length === 3);
+
+  console.log("\n── 20. palate neighbours: k-anon curiosity, opt-in both ways ──");
+  // 048 may not be applied yet — probe first (a missing fn would abort the run).
+  const hasNeighbours = (
+    await db.query(`select to_regprocedure('public.palate_neighbours(int)') is not null as ok`)
+  ).rows[0].ok;
+  if (hasNeighbours) {
+    const log = (uid, drink) =>
+      as(uid, `insert into public.entries (user_id,date,drink,type) values ($1,current_date,$2,'other')`, [uid, drink]);
+    const optIn = (uid) => db.query(`update public.profiles set share_trends=true where id=$1`, [uid]);
+
+    // The cast: nia (the asker, 3 distinct drinks) + 6 lookalikes who share two of
+    // them. Five opted-in lookalikes also pour Mead (≥k); only two pour Rakia (<k);
+    // Kvass reaches five only if the opted-OUT sixth were wrongly counted.
+    const nia = await mkUser("Nia", `vf-nia-${Date.now()}`);
+    for (const d of ["Latte", "IPA", "Chai"]) await log(nia, d);
+    const lookalikes = [];
+    for (let i = 0; i < 6; i++) {
+      const u = await mkUser(`Twin${i}`, `vf-twin${i}-${Date.now()}`);
+      lookalikes.push(u);
+      await log(u, "Latte");
+      await log(u, "IPA");
+      if (i < 5) await optIn(u); // Twin5 stays opted OUT
+      await log(u, "Mead");
+      if (i < 2) await log(u, "Rakia");
+      if (i >= 1) await log(u, "Kvass"); // 4 opted-in + the opted-out one
+    }
+
+    ok("opted-out asker gets NOTHING (no reading the crowd while hiding from it)",
+      (await as(nia, `select * from public.palate_neighbours(6)`)).rows.length === 0);
+
+    await optIn(nia);
+    const rows = (await as(nia, `select * from public.palate_neighbours(6)`)).rows;
+    const names = rows.map((r) => r.name.toLowerCase());
+    ok("a drink 5 opted-in neighbours pour comes back, counts-only", (() => {
+      const mead = rows.find((r) => r.name.toLowerCase() === "mead");
+      return !!mead && Number(mead.users) === 5 && Object.keys(rows[0]).length === 2;
+    })());
+    ok("a sub-k drink (2 neighbours) is suppressed", !names.includes("rakia"));
+    ok("an opted-out lookalike is never counted (4+1 stays below k)", !names.includes("kvass"));
+    ok("nothing the asker already drinks comes back", !names.some((n) => ["latte", "ipa", "chai"].includes(n)));
+
+    // A thin diary (2 distinct drinks) gets nothing — similarity below 3 is noise + probe risk.
+    const thin = await mkUser("Thin", `vf-thin-${Date.now()}`);
+    await optIn(thin);
+    await log(thin, "Latte");
+    await log(thin, "IPA");
+    ok("a 2-drink diary gets nothing (≥3 distinct floor)",
+      (await as(thin, `select * from public.palate_neighbours(6)`)).rows.length === 0);
+  } else {
+    console.log("  ~ palate_neighbours (048) not applied — skipping");
+  }
 } catch (e) {
   // Print WHAT failed, not just that something did. Postgres puts the useful part in
   // detail/hint/where and the offending SQL in the driver's `query`; without these a
