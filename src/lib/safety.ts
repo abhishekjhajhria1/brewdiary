@@ -104,11 +104,20 @@ export async function unblockUser(otherId: string): Promise<void> {
 }
 
 /** File a report. Write-only — it goes to the safety team, never back to anyone.
- *  Upsert with ignoreDuplicates (ON CONFLICT DO NOTHING against the unique
- *  reporter+subject index from 035): reporting the same person twice is a silent
- *  no-op, so one person counts once and can't inflate anyone's report tally into a
- *  harassment tool. The reporter always gets the same calm reply — dedup is never
- *  revealed. DO NOTHING needs no update policy, so reports stays insert-only. */
+ *  Reporting the same person twice is a silent no-op, so one person counts once and
+ *  can't inflate anyone's report tally into a harassment tool (the unique
+ *  reporter+subject index from 035 enforces it). The reporter always gets the same
+ *  calm reply — dedup is never revealed.
+ *
+ *  Plain INSERT, with the duplicate swallowed here. This used to be an upsert with
+ *  ignoreDuplicates (ON CONFLICT DO NOTHING), which LOOKS right and is what 035
+ *  describes — but it fails against this table: DO NOTHING has to read the conflicting
+ *  row to know to skip it, and `reports` deliberately has NO select policy, so Postgres
+ *  refuses the whole statement with "new row violates row-level security policy". The
+ *  effect was that reporting a repeat offender a second time told the reporter their
+ *  report had failed. Giving reports a select policy would fix the SQL and break the
+ *  design (a report must not be readable, by anyone, including its author), so the
+ *  dedup is absorbed here instead and the table stays insert-only. */
 export async function reportUser(
   meId: string,
   subjectUserId: string,
@@ -116,15 +125,15 @@ export async function reportUser(
   opts?: { note?: string; planId?: string },
 ): Promise<string | null> {
   if (!supabase) return "offline";
-  const { error } = await supabase.from("reports").upsert(
-    {
-      reporter_id: meId,
-      subject_user_id: subjectUserId,
-      plan_id: opts?.planId || null,
-      reason,
-      note: opts?.note?.trim() || null,
-    },
-    { onConflict: "reporter_id,subject_user_id", ignoreDuplicates: true },
-  );
-  return error ? "Couldn't send the report — try again." : null;
+  const { error } = await supabase.from("reports").insert({
+    reporter_id: meId,
+    subject_user_id: subjectUserId,
+    plan_id: opts?.planId || null,
+    reason,
+    note: opts?.note?.trim() || null,
+  });
+  // 23505 = unique violation: they've already reported this person. That's the dedup
+  // working, not a failure — same calm reply as a first-time report.
+  if (error && error.code !== "23505") return "Couldn't send the report — try again.";
+  return null;
 }

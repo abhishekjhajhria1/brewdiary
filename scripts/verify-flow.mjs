@@ -53,8 +53,16 @@ async function as(uid, sql, params = []) {
   try {
     return await db.query(sql, params);
   } finally {
-    await db.query("reset role");
-    await db.query("reset request.jwt.claims");
+    // If the query above failed, the transaction is aborted and these resets fail too —
+    // and a throw from a `finally` REPLACES the original error, masking every real
+    // failure as "current transaction is aborted". Swallow cleanup errors so the actual
+    // cause survives; the caller's savepoint/rollback restores role state anyway.
+    try {
+      await db.query("reset role");
+      await db.query("reset request.jwt.claims");
+    } catch {
+      /* transaction already aborted — the real error is on its way up */
+    }
   }
 }
 /** Run as a signed-OUT visitor (the kiosk screen, a stranger). */
@@ -67,11 +75,22 @@ async function anon(sql, params = []) {
   }
 }
 /** Expect a write to be REFUSED. Returns true when it was. */
+// Did the database refuse this? Every check here runs inside ONE transaction we roll
+// back at the end, and in Postgres a failed statement poisons the whole transaction —
+// so a refusal MUST be caught at a savepoint. Without one, the first expected refusal
+// aborts the run and every later assertion dies with "current transaction is aborted",
+// which reads like a harness crash rather than what it is.
+let sp = 0;
 async function refused(fn) {
+  const name = `refusal_${++sp}`;
+  await db.query(`savepoint ${name}`);
   try {
     await fn();
+    await db.query(`release savepoint ${name}`);
     return false;
   } catch {
+    // Rewind to just before the refused statement; the transaction is usable again.
+    await db.query(`rollback to savepoint ${name}`);
     return true;
   }
 }
@@ -105,6 +124,10 @@ try {
     `verify-tap-${Date.now()}`,
     owner,
   ]);
+  // createVenue() (lib/venues.ts) inserts this row immediately after the venue: being
+  // `created_by` is not the same as being STAFF, and every venue power is gated on
+  // is_venue_staff/is_venue_manager. Without it the harness wasn't playing the real flow.
+  await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [vid, owner]);
   ok("owner can create a venue", true);
 
   const selfVerify = await refused(() => as(owner, `update public.venues set verified = true where id = $1`, [vid]));
@@ -114,17 +137,24 @@ try {
   await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'bartender')`, [vid, barman]);
   ok("owner can add a bartender", true);
 
-  await as(owner, `insert into public.venue_verifications (venue_id, requested_by, note) values ($1,$2,'please')`, [
-    vid,
+  // `contact` is NOT NULL (015): a verification request must say how we reach the venue.
+  await as(
     owner,
-  ]);
+    `insert into public.venue_verifications (venue_id, requested_by, contact, note) values ($1,$2,$3,'please')`,
+    [vid, owner, "owner@example.test"],
+  );
   const stat = await db.query(`select status from public.venue_verifications where venue_id = $1`, [vid]);
   ok("verification request lands as 'pending'", stat.rows[0].status === "pending");
 
+  // There is no UPDATE policy on this table, so RLS doesn't raise — it silently matches
+  // zero rows. "Refused" therefore has to be judged on the OUTCOME, not on an exception,
+  // exactly like the self-verify check above. Asserting only on a throw would let a future
+  // stray UPDATE policy through green.
   const selfApprove = await refused(() =>
     as(owner, `update public.venue_verifications set status='approved' where venue_id = $1`, [vid]),
   );
-  ok("a venue CANNOT approve its own request", selfApprove);
+  const st2 = await db.query(`select status from public.venue_verifications where venue_id = $1`, [vid]);
+  ok("a venue CANNOT approve its own request", selfApprove || st2.rows[0].status === "pending");
 
   console.log("\n── 2. an unverified venue is powerless ───────────────");
   const pid = randomUUID();
@@ -256,6 +286,14 @@ try {
   ok("a VISIT counts rooms attended, not sparks (she's in 2 rooms)", Number(visits.rows[0].v) === 2);
 
   // Move the venue to Dublin and the same perk becomes unlawful — in the DB, not the UI.
+  // The move itself is refused while the now-unlawful perk still stands: venues_recheck_perks()
+  // re-tests every existing perk against the new jurisdiction, so a venue can't be walked
+  // across a border to escape the rules. Clear the perk first, then the move is allowed.
+  ok(
+    "a venue CANNOT relocate out from under its perks (they're re-tested on the move)",
+    await refused(() => db.query(`update public.venues set country = 'IE' where id = $1`, [vid])),
+  );
+  await db.query(`delete from public.venue_perks where venue_id = $1`, [vid]);
   await db.query(`update public.venues set country = 'IE' where id = $1`, [vid]);
   ok(
     "IRELAND: a spend-based perk is refused by the database",
@@ -293,12 +331,15 @@ try {
   ok("NEW YORK: the same reward is allowed (policy is per-jurisdiction, not global)", true);
 
   // Thailand bans discounts/giveaways outright — no perk of ANY kind.
+  // Clear the NY perk first: the venue can't cross the border while holding one that
+  // would be unlawful on the other side (asserted above), so relocating is a two-step.
+  await db.query(`delete from public.venue_perks where venue_id = $1`, [vid]);
   await db.query(`update public.venues set country = 'TH', region = null where id = $1`, [vid]);
   ok(
     "THAILAND: no loyalty perk at all — even visits + a coffee",
     await refused(() =>
-      as(owner, `update public.venue_perks set kind = 'visits', reward_alcoholic = false, reward = 'a coffee'
-                 where venue_id = $1`, [vid]),
+      as(owner, `insert into public.venue_perks (venue_id, kind, threshold, reward, reward_alcoholic)
+                 values ($1,'visits',5,'a coffee',false)`, [vid]),
     ),
   );
 
@@ -328,9 +369,18 @@ try {
   const zwPol = await as(owner, `select * from public.perk_policy('ZW', '')`);
   ok("an unresearched country returns NO ROW at all", zwPol.rows.length === 0);
 
-  // back to the home market, and restore the spend perk for the rest of the run
+  // back to the home market, and restore the spend perk for the rest of the run.
+  // INSERT, not UPDATE: the jurisdiction tour above has to clear the perk to move the
+  // venue between countries, so there may be no row left to update — an UPDATE would
+  // silently affect zero rows and the next section would read an empty perk_status.
   await db.query(`update public.venues set country = 'IN', region = null where id = $1`, [vid]);
-  await as(owner, `update public.venue_perks set kind = 'spend', threshold = 3000 where venue_id = $1`, [vid]);
+  await db.query(`delete from public.venue_perks where venue_id = $1`, [vid]);
+  await as(
+    owner,
+    `insert into public.venue_perks (venue_id, kind, threshold, reward, reward_alcoholic)
+     values ($1,'spend',3000,'a free pour',false)`,
+    [vid],
+  );
 
   console.log("\n── 5c. the perk can be CLAIMED — once ────────────────");
   // The bug 023 fixes: progress used to be all-time, so once you crossed the line
@@ -395,6 +445,9 @@ try {
   );
 
   // Jurisdiction still applies PER TIER — a Dublin bar can't sneak alcohol in as tier 2.
+  // Make the tiers it already has IE-lawful before relocating: the move re-tests every
+  // existing perk, so a venue holding an alcoholic reward can't cross into Ireland at all.
+  await db.query(`update public.venue_perks set reward_alcoholic = false, reward = 'a free coffee' where venue_id = $1`, [vid]);
   await db.query(`update public.venues set country = 'IE' where id = $1`, [vid]);
   ok(
     "IRELAND: an alcoholic reward can't sneak in as a second TIER either",
@@ -413,6 +466,18 @@ try {
     await db.query(`select extract(dow from date)::int as d from public.parties where id = $1`, [pid2])
   ).rows[0].d;
 
+  // Start from a FRESH card. 5c redeemed the perk, and a claim restarts the clock — so
+  // every visit above now predates it and progress sits at 0. Doubling zero is zero, and
+  // the assertion below would be measuring nothing. A new perk row has no claim behind it,
+  // so both readings actually see Anita's two rooms.
+  await db.query(`delete from public.venue_perks where venue_id = $1`, [vid]);
+  await as(
+    owner,
+    `insert into public.venue_perks (venue_id, kind, threshold, reward, reward_alcoholic)
+     values ($1,'visits',5,'a free coffee',false)`,
+    [vid],
+  );
+
   await db.query(`update public.venues set quiet_nights = '{}' where id = $1`, [vid]);
   let q = await as(anita, `select progress from public.perk_status($1,$2)`, [vid, anita]);
   const base = Number(q.rows[0].progress);
@@ -421,7 +486,10 @@ try {
   q = await as(anita, `select progress from public.perk_status($1,$2)`, [vid, anita]);
   const boosted = Number(q.rows[0].progress);
 
-  ok("a visit on a QUIET night is worth double toward the perk", boosted === base + 1);
+  // Both of this venue's rooms are opened on current_date, so they share a weekday:
+  // marking it quiet doubles BOTH visits, not one. (The older `base + 1` expectation
+  // assumed the rooms fell on different days, which the fixture has never done.)
+  ok("a visit on a QUIET night is worth double toward the perk", boosted === base * 2 && base > 0);
   ok("…and it is a PRIVATE perk boost — no spark was minted", true);
 
   const boardAfter = await as(anita, `select sparks from public.party_points_board($1) where user_id = $2`, [pid, anita]);
@@ -564,6 +632,9 @@ try {
   );
 
   // Deny-by-default reaches here too: no bar layer → no listing.
+  // Clear the perk before the move: a venue can't relocate while holding one that would
+  // be unlawful at the destination (venues_recheck_perks), and TH permits none at all.
+  await db.query(`delete from public.venue_perks where venue_id = $1`, [vid]);
   await db.query(`update public.venues set country = 'TH' where id = $1`, [vid]);
   disc = await anon(`select * from public.discover_venues('TH', 30)`);
   ok("a bar in a NO-PERK country (Thailand) is not listed at all", disc.rows.length === 0);
@@ -668,11 +739,15 @@ try {
   console.log("\n── 9. the guest's own view ───────────────────────────");
   const pb = await as(anita, `select * from public.party_points_board($1)`, [pid]);
   ok("the room board sums the ledger for members", pb.rows.length === 2);
-  const outsider = await refused(async () => {
+  // Two acceptable outcomes: the rpc raises, or it returns nothing. Note the older form
+  // here threw *because* rows came back and then treated that throw as "refused" — which
+  // inverted the test: a real leak passed, and the correct empty result failed.
+  let outsiderRows = null;
+  const outsiderRaised = await refused(async () => {
     const r = await as(stranger, `select * from public.party_points_board($1)`, [pid]);
-    if (r.rows.length > 0) throw new Error("leaked");
+    outsiderRows = r.rows.length;
   });
-  ok("a non-member cannot read the room board", outsider);
+  ok("a non-member cannot read the room board", outsiderRaised || outsiderRows === 0);
 
   console.log("\n── 10. off-trade: a bottle shop is NOT a quieter bar ──");
   // The whole legal argument for our bar card is that a visit and a purchase are
@@ -685,6 +760,10 @@ try {
     `vf-shop-${Date.now()}`.slice(0, 40),
     owner,
   ]);
+  // Same as the bar above: createVenue() makes the creator STAFF, and every venue power
+  // (recording a visit, redeeming a card) is gated on is_venue_staff — being created_by
+  // is not enough.
+  await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [sid, owner]);
   await db.query(`update public.venues set verified = true where id = $1`, [sid]);
 
   // IN allows an alcoholic reward AND a spend perk — for a BAR. A shop gets neither,
@@ -935,8 +1014,23 @@ try {
   // ── report de-dup (035): one angry person can't inflate another's report count ──
   // rohan already reported the stranger once (§12). The client path is ON CONFLICT DO
   // NOTHING, so reporting again is a silent no-op — still ONE reporter on the counter.
-  await as(rohan, `insert into public.reports (reporter_id, subject_user_id, reason) values ($1,$2,'harassment')
-                   on conflict (reporter_id, subject_user_id) do nothing`, [rohan, stranger]);
+  // The real client path (lib/safety.reportUser) is a PLAIN insert whose duplicate is
+  // swallowed in the client. It is NOT `on conflict do nothing`: DO NOTHING must read the
+  // conflicting row, `reports` has no select policy, and Postgres therefore refuses the
+  // statement outright — which used to tell a reporter their second report had failed.
+  ok(
+    "a repeat report is refused by the DB (the client swallows it as a no-op)",
+    await refused(() =>
+      as(rohan, `insert into public.reports (reporter_id, subject_user_id, reason) values ($1,$2,'harassment')`, [rohan, stranger]),
+    ),
+  );
+  ok(
+    "…and `on conflict do nothing` is NOT a usable path here (no select policy to read the conflict)",
+    await refused(() =>
+      as(rohan, `insert into public.reports (reporter_id, subject_user_id, reason) values ($1,$2,'harassment')
+                 on conflict (reporter_id, subject_user_id) do nothing`, [rohan, stranger]),
+    ),
+  );
   const dq1 = (await as(mod, `select * from public.open_reports()`)).rows.find((r) => r.subject_id === stranger);
   ok("the same reporter twice still counts as one", dq1 && dq1.subject_report_count === 1);
   // A genuinely different reporter DOES move the needle — real signal still gets through.
@@ -1002,8 +1096,116 @@ try {
     (await as(priya, `select public.plan_going_count($1) n`, [planInv])).rows[0].n === 1);
   await as(priya, `select public.uninvite_from_plan($1,$2)`, [planInv, guestA]);
   ok("uninviting removes the guest's view of the plan", (await countsPlan(guestA, planInv)) === 0);
+
+  console.log("\n── 16. the Cartographer: charting the shared map (042) ──");
+  // A drinker offers a drink the dictionary doesn't know. Accepting it changes what
+  // EVERY user sees, so the write path is the whole security story: status is server-
+  // forced, there is no client UPDATE policy, and only a moderator can accept.
+  const propId = randomUUID();
+  await as(
+    anita,
+    `insert into public.chart_proposals (id, author, raw_name, canonical, family, type, status)
+     values ($1,$2,'grandpas punch','Grandpa''s Punch','Grandpa''s Punch','cocktail','accepted')`,
+    [propId, anita],
+  );
+  // She ASKED for 'accepted'. The trigger must have overruled her — otherwise charting
+  // is a self-serve byline and the moderator queue is decorative.
+  const forced = await db.query(`select status from public.chart_proposals where id = $1`, [propId]);
+  ok("a proposal lands as 'pending' however it was sent (status is server-forced)",
+    forced.rows[0].status === "pending");
+
+  ok("the author can read her own pending proposal",
+    (await as(anita, `select count(*)::int n from public.chart_proposals where id = $1`, [propId])).rows[0].n === 1);
+  ok("another drinker CANNOT see an unreviewed proposal (pending is not published)",
+    (await as(rohan, `select count(*)::int n from public.chart_proposals where id = $1`, [propId])).rows[0].n === 0);
+
+  ok("a non-moderator cannot open the review queue",
+    await refused(() => as(rohan, `select * from public.pending_chart_proposals()`)));
+  const chartQueue = await as(mod, `select * from public.pending_chart_proposals()`);
+  ok("the moderator sees it queued", chartQueue.rows.some((r) => r.id === propId));
+
+  // No UPDATE policy at all ⇒ RLS matches zero rows rather than raising, so judge the
+  // OUTCOME: she must still be 'pending' afterwards.
+  await refused(() => as(anita, `update public.chart_proposals set status='accepted' where id = $1`, [propId]));
+  const selfAccept = await db.query(`select status from public.chart_proposals where id = $1`, [propId]);
+  ok("a guest CANNOT accept her own proposal (no client update path)",
+    selfAccept.rows[0].status === "pending");
+  ok("…and a non-moderator cannot call the review rpc either",
+    await refused(() => as(rohan, `select public.review_chart_proposal($1,'accepted')`, [propId])));
+
+  await as(mod, `select public.review_chart_proposal($1,'accepted')`, [propId]);
+  const decided = await db.query(`select status, reviewed_by from public.chart_proposals where id = $1`, [propId]);
+  ok("the moderator accepts it, and the review is on the record",
+    decided.rows[0].status === "accepted" && decided.rows[0].reviewed_by === mod);
+
+  ok("an accepted chart is world-readable — it IS the dictionary now",
+    (await as(rohan, `select count(*)::int n from public.chart_proposals where id = $1`, [propId])).rows[0].n === 1);
+
+  const charted = await as(rohan, `select * from public.charted_families()`);
+  const mineChart = charted.rows.find((r) => r.family === "Grandpa's Punch");
+  ok("charted_families() credits the charter by handle", Boolean(mineChart && mineChart.handle));
+  // THE TRIPWIRE (spec §2): one row per family, and no per-author tally to rank anyone by.
+  ok("…one row per family, and no contribution count anywhere in the shape",
+    charted.rows.filter((r) => r.family === "Grandpa's Punch").length === 1
+      && !Object.keys(mineChart ?? {}).some((c) => /count|total|rank|score/i.test(c)));
+
+  ok("a decision is made once — re-reviewing does nothing",
+    (await (async () => {
+      await as(mod, `select public.review_chart_proposal($1,'rejected')`, [propId]);
+      return db.query(`select status from public.chart_proposals where id = $1`, [propId]);
+    })()).rows[0].status === "accepted");
+
+  ok("the author cannot delete a chart once it is part of the map",
+    (await (async () => {
+      await as(anita, `delete from public.chart_proposals where id = $1`, [propId]);
+      return db.query(`select count(*)::int n from public.chart_proposals where id = $1`, [propId]);
+    })()).rows[0].n === 1);
+
+  // …but an unreviewed one is hers to withdraw.
+  const p2 = randomUUID();
+  await as(anita, `insert into public.chart_proposals (id, author, raw_name, canonical, family, type)
+                   values ($1,$2,'bathtub sherbet','Bathtub Sherbet','Bathtub Sherbet','soft')`, [p2, anita]);
+  await as(anita, `delete from public.chart_proposals where id = $1`, [p2]);
+  ok("an unreviewed proposal CAN be withdrawn by its author",
+    (await db.query(`select count(*)::int n from public.chart_proposals where id = $1`, [p2])).rows[0].n === 0);
+
+  console.log("\n── 17. the join paths (they had no runtime cover at all) ──");
+  // join_party / join_circle / plan_requests are table-returning plpgsql, the same shape
+  // as venue_guest_card — whose OUT parameter collided with a column name and raised
+  // "column reference is ambiguous" at RUNTIME, invisible to build, tests and db:audit
+  // alike (see 043). Nothing here ever executed them, so nothing could have caught the
+  // same fault. These calls exist mainly so that class of bug cannot hide again.
+  const jpCode = `vj${Date.now()}`.slice(0, 8);
+  const jpId = randomUUID();
+  await as(anita, `insert into public.parties (id, name, host_id, date, invite_code) values ($1,'Join Probe',$2,current_date,$3)`,
+    [jpId, anita, jpCode]);
+  const joined = await as(rohan, `select * from public.join_party($1)`, [jpCode]);
+  ok("join_party() resolves an invite code to the room", joined.rows.length === 1 && joined.rows[0].id === jpId);
+
+  const jcCode = `vc${Date.now()}`.slice(0, 8);
+  const jcId = randomUUID();
+  await as(anita, `insert into public.circles (id, name, created_by, invite_code) values ($1,'Join Circle',$2,$3)`,
+    [jcId, anita, jcCode]);
+  const joinedC = await as(rohan, `select * from public.join_circle($1)`, [jcCode]);
+  ok("join_circle() resolves an invite code to the circle", joinedC.rows.length === 1 && joinedC.rows[0].id === jcId);
+
+  ok("a bad code is refused, not silently joined",
+    await refused(() => as(rohan, `select * from public.join_party($1)`, ["nosuch99"])));
+
+  const prPlan = randomUUID();
+  await as(anita, `insert into public.plans (id, host_id, title, plan_date, join_policy) values ($1,$2,'Req probe',current_date,'friends')`,
+    [prPlan, anita]);
+  ok("plan_requests() runs for the host and starts empty",
+    (await as(anita, `select * from public.plan_requests($1)`, [prPlan])).rows.length === 0);
 } catch (e) {
+  // Print WHAT failed, not just that something did. Postgres puts the useful part in
+  // detail/hint/where and the offending SQL in the driver's `query`; without these a
+  // crash reads as "current transaction is aborted" with no way to find the statement.
   console.log(`\n!! harness crashed: ${e.message}`);
+  for (const k of ["detail", "hint", "where", "constraint", "table", "column"]) {
+    if (e[k]) console.log(`   ${k}: ${e[k]}`);
+  }
+  if (e.stack) console.log(`   at: ${e.stack.split("\n").slice(1, 3).join(" | ").trim()}`);
   fails.push(`harness: ${e.message}`);
 } finally {
   await db.query("rollback");
