@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "db:audit": "node scripts/db-audit.mjs",
     "db:verify": "node scripts/verify-flow.mjs",
-    "gates": "npm run lint && npm test && npm run build"
+    "gates": "npm run lint && npm test && npm run build",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.7",
     "@types/pg": "^8.20.0",
