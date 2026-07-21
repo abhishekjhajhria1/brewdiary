@@ -16,7 +16,7 @@ import { useEntries } from "@/lib/store";
 import { usePantry } from "@/lib/pantry";
 import { addWish, useWishlist } from "@/lib/wishlist";
 import { useFeed } from "@/lib/friends";
-import { expeditionHand, trophies, type Quest, type Vibe } from "@/lib/expeditions";
+import { expeditionHand, type Quest, type Vibe } from "@/lib/expeditions";
 import { useVibe, setVibe } from "@/lib/expeditionPath";
 
 const PATHS: { vibe: Vibe; label: string }[] = [
@@ -44,8 +44,6 @@ export function Expeditions() {
     },
     { vibe: vibe ?? undefined },
   );
-  const shelf = trophies(entries);
-  const earned = shelf.filter((t) => t.earned).length;
 
   return (
     <section className="mt-10">
@@ -82,33 +80,6 @@ export function Expeditions() {
           <QuestCard key={q.id} quest={q} />
         ))}
       </div>
-
-      {earned > 0 && (
-        <div className="mt-6">
-          <p className="label mb-2 text-faint">Trophies</p>
-          <div className="flex flex-wrap gap-1.5">
-            {shelf.map((t) => (
-              <span
-                key={t.id}
-                title={t.note}
-                className={clsx(
-                  "inline-flex items-center gap-1.5 rounded-ctl border px-2.5 py-1.5 text-xs",
-                  t.earned ? "border-transparent bg-accent/8 text-ink" : "border-line text-faint",
-                )}
-              >
-                <span
-                  aria-hidden
-                  className={clsx(
-                    "h-2 w-2 shrink-0 rounded-full",
-                    t.earned ? "bg-accent" : "shadow-[inset_0_0_0_1px_var(--color-line-strong)]",
-                  )}
-                />
-                {t.title}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
     </section>
   );
 }

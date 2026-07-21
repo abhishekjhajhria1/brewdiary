@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import clsx from "clsx";
 import { useEntries, addEntry, reseed, resetAll, replaceAll, snapshot } from "@/lib/store";
-import { lexicon, stats, yearReview, weekBalance } from "@/lib/derive";
+import { lexicon, stats, yearReview, weekBalance, type Stats } from "@/lib/derive";
 import { DRINKS, canonicalize, normalize } from "@/lib/drinks";
 import { useGoals, setGoal, anyGoalSet, GOAL_MAX, type GoalKey } from "@/lib/goals";
 import { MilestoneMeter } from "../ui/MilestoneMeter";
@@ -16,8 +16,6 @@ import { usePantry, addIngredient, removeIngredient } from "@/lib/pantry";
 import { makeable, commonStaples } from "@/lib/recipes";
 import { useProfile, signOut, updateHandle } from "@/lib/profile";
 import { reroll } from "@/lib/handles";
-import { Passport } from "../passport/Passport";
-import { Expeditions } from "../expeditions/Expeditions";
 import { WeeklyRecap } from "../passport/WeeklyRecap";
 import { useRecap, setRecap } from "@/lib/recap";
 import { TrustCard } from "../verify/TrustCard";
@@ -64,23 +62,10 @@ export function You() {
 
   return (
     <>
-      <header className="mb-6 flex items-end justify-between border-b border-line pb-4">
-        <h1 className="font-display text-5xl leading-none tracking-tight">You</h1>
-        <span className="label">{s.longest} night best</span>
-      </header>
-
-      <div className="glass rounded-tile p-5">
-        <div className="grid grid-cols-3">
-          <Metric value={s.current} label="streak" />
-          <Metric value={s.total} label="logged" />
-          <Metric value={s.kinds} label="kinds" />
-        </div>
-        {s.total > 0 && (
-          <div className="mt-4 border-t border-line pt-4">
-            <MilestoneMeter total={s.total} />
-          </div>
-        )}
-      </div>
+      {/* The profile — how you'd look to someone else. Tapping it opens your public
+          page (/u/handle). Everything below is YOUR stuff, then, past the divider,
+          your settings — the phone-settings shape you asked for. */}
+      <ProfileHeader stats={s} />
 
       {/* Both only ever appear once you've asked for them (You → Settings) */}
       <WeeklyRecap />
@@ -99,11 +84,8 @@ export function You() {
         </section>
       )}
 
-      {/* The palate map — breadth you've built, and the doors out of it. Derived, never stored. */}
-      <Passport />
-
-      {/* Playing on that map: tonight's hand of do-able "try this" doors + a trophy shelf. */}
-      <Expeditions />
+      {/* The palate map + its trophies and tonight's expedition now live on the Calendar's
+          Year view (a companion to the year mosaic) — the most-visible page. */}
 
       <ToTry />
 
@@ -182,8 +164,60 @@ export function You() {
         )}
       </section>
 
+      {/* The line: everything below is settings & account — the phone-settings shelf. */}
+      <div className="mt-14 mb-2 border-t border-line pt-2" />
       <Settings />
     </>
+  );
+}
+
+// The profile card — how you read to someone else. The identity row is a link to your
+// public page (/u/handle); the stats sit under it. A guest with no handle sees the same
+// card without the link (there's no public page to open yet).
+function ProfileHeader({ stats: s }: { stats: Stats }) {
+  const profile = useProfile();
+  const name = profile?.name?.trim() || "You";
+  const handle = profile?.handle || "";
+  const initials = name.replace(/[^\p{L}\p{N} ]/gu, "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "Y";
+
+  const identity = (
+    <>
+      <span aria-hidden className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-accent/12 font-display text-lg text-ink">
+        {initials}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-display text-2xl leading-tight text-ink">{name}</p>
+        {handle && <p className="truncate text-sm text-faint">@{handle}</p>}
+      </div>
+      {handle && <span aria-hidden className="shrink-0 text-lg text-faint">→</span>}
+    </>
+  );
+
+  return (
+    <div className="glass rounded-tile p-5">
+      {handle ? (
+        <Link
+          href={`/u/${handle}`}
+          aria-label="Your public profile"
+          className="-m-1 flex items-center gap-3 rounded-ctl p-1 transition-colors hover:bg-ink/3"
+        >
+          {identity}
+        </Link>
+      ) : (
+        <div className="flex items-center gap-3">{identity}</div>
+      )}
+
+      <div className="mt-4 grid grid-cols-3 border-t border-line pt-4">
+        <Metric value={s.current} label="streak" />
+        <Metric value={s.total} label="logged" />
+        <Metric value={s.kinds} label="kinds" />
+      </div>
+      {s.total > 0 && (
+        <div className="mt-4 border-t border-line pt-4">
+          <MilestoneMeter total={s.total} />
+        </div>
+      )}
+    </div>
   );
 }
 

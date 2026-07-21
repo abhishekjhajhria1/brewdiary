@@ -11,11 +11,12 @@ import { useEntries } from "@/lib/store";
 import { addWish, useWishlist } from "@/lib/wishlist";
 import { useFeed } from "@/lib/friends";
 import { intensityLevel } from "@/lib/derive";
-import { adjacentStamps, palateNeighbours, passport, type Stamp } from "@/lib/passport";
+import { adjacentStamps, palateNeighbours, passport, type Stamp, type World } from "@/lib/passport";
 import { chartedBy, commons } from "@/lib/cartography";
 import { useChartedFamilies, useMyProposals, type ChartedFamily } from "@/lib/charts";
+import { trophies } from "@/lib/expeditions";
 import { ChartThis } from "./ChartThis";
-import type { DrinkType } from "@/lib/types";
+import type { DrinkType, Entry } from "@/lib/types";
 import { MONTH_NAMES, parseKey } from "@/lib/date";
 
 // Same dramatic ramp the year mosaic uses — brighter square = more logged in that family.
@@ -40,10 +41,6 @@ export function Passport() {
   const [stamp, setStamp] = useState<Stamp | null>(null);
   const c = commons(charted);
 
-  // Relative shape only — the longest bar is your most-explored world. Never an "X of N"
-  // completion figure (that would turn the map into a set to finish, i.e. a reason to drink more).
-  const maxWorld = Math.max(1, ...p.worlds.map((w) => w.exploredCount));
-
   return (
     <section className="mt-10">
       {/* Section header matches every other section in You (label-scale) — the page already
@@ -64,22 +61,7 @@ export function Passport() {
       ) : (
         <div className="space-y-6">
           {/* The silhouette of a taste — the ownable identity. */}
-          <div className="glass rounded-tile p-5">
-            <p className="label mb-3 text-faint">Your palate</p>
-            <div className="space-y-2">
-              {p.worlds
-                .filter((w) => w.exploredCount > 0)
-                .map((w) => (
-                  <div key={w.type} className="flex items-center gap-3">
-                    <span className="w-20 shrink-0 text-xs text-muted">{WORLD[w.type]}</span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-ink/5">
-                      <div className="h-full rounded-full bg-accent" style={{ width: `${(w.exploredCount / maxWorld) * 100}%` }} />
-                    </div>
-                    <span className="tnum w-5 shrink-0 text-right text-xs text-faint">{w.exploredCount}</span>
-                  </div>
-                ))}
-            </div>
-          </div>
+          <PaletteSilhouette worlds={p.worlds} />
 
           {/* One or two doors out of the map you have. Widens, never deepens. */}
           <WanderHere />
@@ -116,6 +98,10 @@ export function Passport() {
               The map holds {c.families} families · {c.charted} charted by drinkers.
             </p>
           )}
+
+          {/* The collectible's trophies live WITH the map they measure — breadth &
+              behaviour, never volume or difficulty (see lib/expeditions.trophies). */}
+          <TrophyShelf entries={entries} />
         </div>
       )}
 
@@ -161,6 +147,85 @@ function WanderHere() {
             {s.family}
             <span className="ml-2 text-xs text-faint">+ to try</span>
           </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// The palate silhouette — the "shape of your taste" as one slim spectrum: each world
+// you've entered is a segment, widest = most-explored, amber deepening with its share.
+// A single family reads as one clean segment, so it never looks like an empty box (the
+// old multi-row version did, especially when the only find was off-map). Purely a
+// relative SHAPE — never an "X of N" completion figure, which would make the map a set
+// to finish, i.e. a reason to drink more. Hidden until at least one world is entered.
+function PaletteSilhouette({ worlds }: { worlds: World[] }) {
+  const explored = worlds
+    .filter((w) => w.exploredCount > 0)
+    .sort((a, b) => b.exploredCount - a.exploredCount);
+  if (explored.length === 0) return null;
+
+  const total = explored.reduce((n, w) => n + w.exploredCount, 0);
+  const max = explored[0].exploredCount;
+  // Amber deepens with a world's share of your palate — a gentle single-hue ramp, so
+  // adjacent segments read apart without a second colour (LILA: one accent, never a rainbow).
+  const amber = (c: number) => 0.4 + 0.6 * (c / max);
+
+  return (
+    <div className="glass rounded-tile p-5">
+      <p className="label mb-3 text-faint">Your palate</p>
+      <div className="flex h-3 gap-0.5">
+        {explored.map((w) => (
+          <div
+            key={w.type}
+            className="h-full rounded-full bg-accent"
+            style={{ width: `${(w.exploredCount / total) * 100}%`, opacity: amber(w.exploredCount) }}
+            title={`${WORLD[w.type]} · ${w.exploredCount}`}
+          />
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+        {explored.map((w) => (
+          <span key={w.type} className="inline-flex items-center gap-1.5 text-xs text-muted">
+            <span aria-hidden className="h-2 w-2 rounded-full bg-accent" style={{ opacity: amber(w.exploredCount) }} />
+            {WORLD[w.type]}
+            <span className="tnum text-faint">{w.exploredCount}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// The trophy shelf — a calm collection you fill by EXPLORING (Untappd-style). Breadth
+// and behaviour only; no trophy counts volume or difficulty. Hidden until you've earned
+// one, so it never reads as a to-do list. Moved here from Expeditions: trophies belong
+// with the map they measure.
+function TrophyShelf({ entries }: { entries: Entry[] }) {
+  const shelf = trophies(entries);
+  if (!shelf.some((t) => t.earned)) return null;
+  return (
+    <div>
+      <p className="label mb-2 text-faint">Trophies</p>
+      <div className="flex flex-wrap gap-1.5">
+        {shelf.map((t) => (
+          <span
+            key={t.id}
+            title={t.note}
+            className={clsx(
+              "inline-flex items-center gap-1.5 rounded-ctl border px-2.5 py-1.5 text-xs",
+              t.earned ? "border-transparent bg-accent/8 text-ink" : "border-line text-faint",
+            )}
+          >
+            <span
+              aria-hidden
+              className={clsx(
+                "h-2 w-2 shrink-0 rounded-full",
+                t.earned ? "bg-accent" : "shadow-[inset_0_0_0_1px_var(--color-line-strong)]",
+              )}
+            />
+            {t.title}
+          </span>
         ))}
       </div>
     </div>
