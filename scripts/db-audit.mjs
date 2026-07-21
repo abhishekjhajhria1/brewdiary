@@ -483,6 +483,22 @@ try {
   ok("cup_board(): SECURITY DEFINER, members-only, and returns a COUNT-derived score",
     !!boardDef && boardDef.prosecdef && /count\s*\(\s*distinct/i.test(boardDef.d) && /is_cup_member/i.test(boardDef.d));
 
+  // Team battles (047): the two-sided board must be built ON cup_board (inheriting its
+  // gate + anti-volume palette), and picking a side must run only through pick_team.
+  const teamCols = await all(`select column_name from information_schema.columns
+    where table_schema='public' and table_name='cups' and column_name in ('team_mode','team_a','team_b')`);
+  ok("cups: team battle columns present (047)", teamCols.length === 3);
+
+  const teamBoardDef = await one(`select pg_get_functiondef('public.cup_team_board(uuid)'::regprocedure) d, p.prosecdef
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='cup_team_board'`);
+  ok("cup_team_board(): SECURITY DEFINER and sums cup_board (one scoring authority)",
+    !!teamBoardDef && teamBoardDef.prosecdef && /cup_board\s*\(/i.test(teamBoardDef.d));
+
+  const pickDef = await one(`select pg_get_functiondef('public.pick_team(uuid, text)'::regprocedure) d, p.prosecdef
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='pick_team'`);
+  ok("pick_team(): SECURITY DEFINER, member-gated, refuses an ended cup",
+    !!pickDef && pickDef.prosecdef && /is_cup_member/i.test(pickDef.d) && /ends_on/i.test(pickDef.d));
+
   console.log("\n── community recipes (Phase D — medals for creativity, not volume) ──");
 
   // Reactions are POSITIVE-ONLY — there is no 'dislike' kind, so a reaction can never

@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import clsx from "clsx";
 import { getStoredTheme, setTheme, type Theme } from "@/lib/theme";
 
-// Two themes — a single toggle, not a cycle. Typographic glyphs (no icon lib, on-brand):
-// ○ a light disc, ● a filled one. The glyph shows the CURRENT theme.
-const GLYPH: Record<Theme, string> = { light: "○", dark: "●" };
-const LABEL: Record<Theme, string> = { light: "Light", dark: "Dark" };
+// The theme control — a two-option SEGMENTED switch (Light | Dark) rather than a lone
+// glyph button, so both states are visible and the current one is plainly selected.
+// It lives in You › Settings ONLY (the maintainer's call): one obvious home beats a
+// mystery icon on every page. Typographic glyphs, no icon lib (on-brand).
+const OPTIONS: { value: Theme; glyph: string; label: string }[] = [
+  { value: "light", glyph: "○", label: "Light" },
+  { value: "dark", glyph: "●", label: "Dark" },
+];
 
 export function ThemeToggle() {
   const [theme, setLocal] = useState<Theme>("dark");
@@ -17,24 +22,35 @@ export function ThemeToggle() {
     setMounted(true);
   }, []);
 
-  function toggle() {
-    const next: Theme = theme === "dark" ? "light" : "dark";
+  function pick(next: Theme) {
     setTheme(next);
     setLocal(next);
   }
 
-  // Avoid hydration mismatch: render a stable placeholder until mounted.
+  // Avoid hydration mismatch: render a stable state until mounted.
   const shown = mounted ? theme : "dark";
 
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-label={`Theme: ${LABEL[shown]}. Tap to switch.`}
-      title={`Theme: ${LABEL[shown]}`}
-      className="flex h-9 w-13 items-center justify-center rounded-ctl text-sm text-muted transition-colors hover:bg-ink/5 hover:text-ink"
-    >
-      <span aria-hidden>{GLYPH[shown]}</span>
-    </button>
+    <div role="radiogroup" aria-label="Theme" className="glass inline-flex rounded-ctl p-1">
+      {OPTIONS.map((o) => {
+        const active = shown === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => pick(o.value)}
+            className={clsx(
+              "flex min-h-9 items-center gap-1.5 rounded-[7px] px-3 text-xs font-medium uppercase tracking-widest transition-colors",
+              active ? "bg-ink text-paper" : "text-faint hover:text-ink",
+            )}
+          >
+            <span aria-hidden>{o.glyph}</span>
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }

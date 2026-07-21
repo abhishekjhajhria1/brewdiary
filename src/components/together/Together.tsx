@@ -33,11 +33,12 @@ import { Circles } from "./Circles";
 import { Parties } from "./Parties";
 import { Plans } from "./Plans";
 import { Cups } from "./Cups";
+import { Recipes } from "./Recipes";
 
-// The rooms inside Together. The feed leads; circles, parties and cups wait behind
-// their own segment instead of stacking into one overwhelming scroll. "Board"
-// only exists for people who switched the leaderboard on in You → Settings.
-type Room = "feed" | "plans" | "circles" | "parties" | "cups" | "board";
+// The rooms inside Together. The feed leads; the rest wait behind their own segment
+// instead of stacking into one overwhelming scroll. "Board" only exists for people
+// who switched the leaderboard on in You → Settings.
+type Room = "feed" | "plans" | "circles" | "parties" | "cups" | "recipes" | "board";
 
 const BASE_ROOMS: { id: Room; label: string }[] = [
   { id: "feed", label: "Feed" },
@@ -45,6 +46,7 @@ const BASE_ROOMS: { id: Room; label: string }[] = [
   { id: "circles", label: "Circles" },
   { id: "parties", label: "Parties" },
   { id: "cups", label: "Cups" },
+  { id: "recipes", label: "Recipes" },
 ];
 
 export function Together() {
@@ -83,13 +85,12 @@ export function Together() {
         Your calendar stays yours and quiet. This is the other room — what friends are pouring.
       </p>
 
+      {/* The room rail. Grown past what one grid row can hold, so it scrolls sideways —
+          every tab keeps a readable size and a full touch target instead of shrinking. */}
       <div
         role="tablist"
         aria-label="Together rooms"
-        className={clsx(
-          "glass mt-5 grid rounded-ctl p-1",
-          ROOMS.length === 6 ? "grid-cols-6" : ROOMS.length === 5 ? "grid-cols-5" : "grid-cols-4",
-        )}
+        className="scrollbar-none glass mt-5 flex gap-1 overflow-x-auto rounded-ctl p-1"
       >
         {ROOMS.map((r, i) => (
           <button
@@ -107,12 +108,11 @@ export function Together() {
               const delta = e.key === "ArrowRight" ? 1 : -1;
               const next = ROOMS[(i + delta + ROOMS.length) % ROOMS.length].id;
               setRoom(next);
+              document.getElementById(`room-tab-${next}`)?.scrollIntoView({ inline: "nearest", block: "nearest" });
               document.getElementById(`room-tab-${next}`)?.focus();
             }}
             className={clsx(
-              "rounded-[7px] py-3.5 font-medium uppercase transition-colors",
-              // tighten the type when six tabs share the row so nothing clips
-              ROOMS.length >= 6 ? "text-[10px] tracking-[0.04em]" : "text-[11px] tracking-[0.14em]",
+              "shrink-0 rounded-[7px] px-4 py-3.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors",
               room === r.id ? "bg-ink text-paper" : "text-faint hover:text-ink",
             )}
           >
@@ -161,6 +161,8 @@ export function Together() {
       {room === "parties" && <Parties />}
 
       {room === "cups" && <Cups />}
+
+      {room === "recipes" && <Recipes />}
 
       {room === "board" && <FriendsBoard me={me} />}
       </div>

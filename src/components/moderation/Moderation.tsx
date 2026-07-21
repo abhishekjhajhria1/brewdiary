@@ -20,6 +20,7 @@ import {
   type OpenReport,
 } from "@/lib/moderation";
 import { ChartQueue } from "./ChartQueue";
+import { RecipeQueue } from "./RecipeQueue";
 
 const REASON_LABEL: Record<string, string> = Object.fromEntries(REPORT_REASONS.map((r) => [r.id, r.label]));
 
@@ -72,6 +73,15 @@ export function Moderation() {
         <section className="mt-10">
           <h2 className="label mb-3">Chart proposals</h2>
           <ChartQueue />
+        </section>
+      )}
+
+      {/* The third queue: community recipes that earned their friends' backing and now
+          await the human gate to public (045). */}
+      {isMod && (
+        <section className="mt-10">
+          <h2 className="label mb-3">Recipes in review</h2>
+          <RecipeQueue />
         </section>
       )}
     </>

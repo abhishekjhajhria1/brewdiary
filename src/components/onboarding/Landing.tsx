@@ -8,7 +8,6 @@ import { countsByDate, recentDrinks, recentMoods } from "@/lib/derive";
 import { addMonths } from "@/lib/date";
 import { MonthCalendar } from "../calendar/MonthCalendar";
 import { LogSheet } from "../log/LogSheet";
-import { ThemeToggle } from "../ui/ThemeToggle";
 import { useParallax } from "../ui/useParallax";
 
 type AuthMode = "signup" | "signin";
@@ -61,7 +60,6 @@ export function Landing() {
           >
             Sign in
           </button>
-          <ThemeToggle />
         </div>
       </header>
 

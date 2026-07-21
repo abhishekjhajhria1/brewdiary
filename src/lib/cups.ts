@@ -38,6 +38,8 @@ export type CupSkin = (typeof CUP_SKINS)[number];
 
 export type JoinPolicy = "friends" | "fof" | "invite";
 
+export type CupSide = "a" | "b";
+
 export interface Cup {
   id: string;
   name: string;
@@ -48,6 +50,10 @@ export interface Cup {
   startsOn: string;
   endsOn: string;
   createdBy: string;
+  /** Team battle (047): two named sides; members pick one; the board also sums per side. */
+  teamMode: boolean;
+  teamA: string | null;
+  teamB: string | null;
 }
 
 /** One line of the board. Counts only — no entry content ever crosses this seam. */
@@ -103,6 +109,9 @@ function rowToCup(r: Record<string, unknown>): Cup {
     startsOn: r.starts_on as string,
     endsOn: r.ends_on as string,
     createdBy: r.created_by as string,
+    teamMode: (r.team_mode as boolean) ?? false,
+    teamA: (r.team_a as string) ?? null,
+    teamB: (r.team_b as string) ?? null,
   };
 }
 
@@ -123,7 +132,9 @@ export function useMyCups(): { cups: Cup[]; loading: boolean } {
     (async () => {
       const { data } = await supabase!
         .from("cup_members")
-        .select("cup:cups(id, name, skin, axis, join_policy, invite_code, starts_on, ends_on, created_by)")
+        // All columns, so the read keeps working across additive migrations (047 added
+        // the team fields; naming them here would 400 until the migration lands).
+        .select("cup:cups(*)")
         .eq("user_id", me);
       if (!active) return;
       setCups(
@@ -182,6 +193,69 @@ export function useCupBoard(cupId: string | null): { standings: CupStanding[]; l
   return { standings, loading };
 }
 
+// ── the team board (047) ─────────────────────────────────────────────────────
+/** One side's total: how many stand on it, and the SUM of their solo breadth scores.
+ *  Derived server-side (cup_team_board wraps cup_board, so the anti-volume palette
+ *  and the members-only gate are inherited, never re-implemented). */
+export interface TeamStanding {
+  team: CupSide;
+  players: number;
+  score: number;
+}
+
+export function useCupTeams(cup: Cup | null): {
+  teams: TeamStanding[];
+  mySide: CupSide | null;
+  loading: boolean;
+} {
+  const me = useAuth().profile?.id;
+  const v = useVersion();
+  const [state, setState] = useState<{ teams: TeamStanding[]; mySide: CupSide | null; loading: boolean }>({
+    teams: [],
+    mySide: null,
+    loading: true,
+  });
+
+  useEffect(() => {
+    if (!supabase || !cup || !cup.teamMode || !me) {
+      setState({ teams: [], mySide: null, loading: false });
+      return;
+    }
+    let active = true;
+    setState((s) => ({ ...s, loading: true }));
+    (async () => {
+      const [{ data: board }, { data: mine }] = await Promise.all([
+        supabase!.rpc("cup_team_board", { cup: cup.id }),
+        supabase!.from("cup_members").select("team").eq("cup_id", cup.id).eq("user_id", me).maybeSingle(),
+      ]);
+      if (!active) return;
+      const rows = (board ?? []) as Record<string, unknown>[];
+      setState({
+        teams: rows.map((r) => ({
+          team: r.team as CupSide,
+          players: (r.players as number) ?? 0,
+          score: (r.score as number) ?? 0,
+        })),
+        mySide: ((mine as { team?: CupSide | null } | null)?.team as CupSide) ?? null,
+        loading: false,
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [cup, me, v]);
+
+  return state;
+}
+
+/** Pick (or switch) my side in a team cup. Server re-checks everything (pick_team). */
+export async function pickTeam(cupId: string, side: CupSide): Promise<string | null> {
+  if (!supabase) return "offline";
+  const { error } = await supabase.rpc("pick_team", { cup: cupId, side });
+  bump();
+  return error ? error.message : null;
+}
+
 // ── mutations ────────────────────────────────────────────────────────────────
 export interface NewCup {
   name: string;
@@ -190,6 +264,9 @@ export interface NewCup {
   joinPolicy?: JoinPolicy;
   startsOn: string;
   endsOn: string;
+  /** Team battle: give both sides a name to switch it on. */
+  teamA?: string;
+  teamB?: string;
 }
 
 export async function createCup(meId: string, input: NewCup): Promise<{ id: string; inviteCode: string } | { error: string }> {
@@ -198,6 +275,7 @@ export async function createCup(meId: string, input: NewCup): Promise<{ id: stri
   if (!isValidWindow(input.startsOn, input.endsOn)) return { error: "The end date can't be before the start." };
 
   const id = crypto.randomUUID();
+  const teamMode = !!(input.teamA?.trim() && input.teamB?.trim());
   // No .select(): cups_read calls a definer fn (PostgREST RETURNING gotcha). The
   // owner is added to cup_members by a DB trigger, not from here.
   const { error } = await supabase.from("cups").insert({
@@ -209,6 +287,9 @@ export async function createCup(meId: string, input: NewCup): Promise<{ id: stri
     join_policy: input.joinPolicy ?? "invite",
     starts_on: input.startsOn,
     ends_on: input.endsOn,
+    team_mode: teamMode,
+    team_a: teamMode ? input.teamA!.trim().slice(0, 24) : null,
+    team_b: teamMode ? input.teamB!.trim().slice(0, 24) : null,
   });
   if (error) return { error: error.message };
 

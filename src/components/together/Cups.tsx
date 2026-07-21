@@ -15,10 +15,12 @@ import { useAuth } from "@/lib/profile";
 import {
   useMyCups,
   useCupBoard,
+  useCupTeams,
   createCup,
   joinCup,
   leaveCup,
   deleteCup,
+  pickTeam,
   CUP_AXES,
   CUP_SKINS,
   axisLabel,
@@ -26,6 +28,7 @@ import {
   isValidWindow,
   type Cup,
   type CupAxis,
+  type CupSide,
   type CupSkin,
   type JoinPolicy,
 } from "@/lib/cups";
@@ -48,6 +51,76 @@ const POLICY_LABEL: Record<JoinPolicy, string> = {
   invite: "Invite only",
 };
 
+// ── ready-made challenges ────────────────────────────────────────────────────
+// One-tap templates (Octalysis CD2: a clear quest beats a blank form). Each is just a
+// prefilled cup — the maker can still rename/recolour everything before creating. The
+// team ones ship with two sides on, feeding CD5: your side needs you, so you invite.
+interface Challenge {
+  id: string;
+  title: string;
+  blurb: string;
+  axis: CupAxis;
+  days: number;
+  skin: CupSkin;
+  teamA?: string;
+  teamB?: string;
+}
+
+const CHALLENGES: Challenge[] = [
+  {
+    id: "fortnight",
+    title: "The Fortnight Wander",
+    blurb: "Two weeks, most new drinks tried.",
+    axis: "drinks",
+    days: 14,
+    skin: "amber",
+  },
+  {
+    id: "townhop",
+    title: "Around the Town",
+    blurb: "A month of new places — one street further.",
+    axis: "venues",
+    days: 30,
+    skin: "forest",
+  },
+  {
+    id: "compass",
+    title: "The Compass",
+    blurb: "Most different kinds — coffee through cocktails.",
+    axis: "varied",
+    days: 21,
+    skin: "dusk",
+  },
+  {
+    id: "steady",
+    title: "Steady Hands",
+    blurb: "A week you win with easy nights.",
+    axis: "dry",
+    days: 7,
+    skin: "mono",
+  },
+  {
+    id: "housebattle",
+    title: "House Battle",
+    blurb: "Two sides, two weeks, widest palate wins.",
+    axis: "drinks",
+    days: 14,
+    skin: "rose",
+    teamA: "House Amber",
+    teamB: "House Slate",
+  },
+  {
+    id: "citysplit",
+    title: "The City Split",
+    blurb: "Team vs team — most new places in a month.",
+    axis: "venues",
+    days: 30,
+    skin: "classic",
+    teamA: "North side",
+    teamB: "South side",
+  },
+];
+
 function fmtDay(key: string): string {
   const d = parseKey(key);
   return `${MONTH_NAMES[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
@@ -64,6 +137,7 @@ export function Cups() {
   const me = useAuth().profile?.id;
   const { cups, loading } = useMyCups();
   const [pane, setPane] = useState<"none" | "new" | "join">("none");
+  const [preset, setPreset] = useState<Challenge | null>(null);
   const [open, setOpen] = useState<Cup | null>(null);
 
   if (!me) {
@@ -84,7 +158,10 @@ export function Cups() {
       {/* the two doorways in — visible buttons, side by side */}
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button
-          onClick={() => setPane(pane === "new" ? "none" : "new")}
+          onClick={() => {
+            setPreset(null);
+            setPane(pane === "new" ? "none" : "new");
+          }}
           aria-expanded={pane === "new"}
           className={clsx(
             "min-h-11 rounded-ctl px-4 py-2.5 text-sm font-medium transition-colors",
@@ -105,7 +182,42 @@ export function Cups() {
         </button>
       </div>
 
-      {pane === "new" && <CupForm meId={me} onDone={() => setPane("none")} />}
+      {/* ready-made challenges — a horizontal rail of one-tap starts */}
+      {pane !== "new" && (
+        <div className="mt-5">
+          <p className="label mb-2 text-faint">Or start from a challenge</p>
+          <div className="scrollbar-none -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+            {CHALLENGES.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => {
+                  setPreset(c);
+                  setPane("new");
+                }}
+                className="glass glass-press w-44 shrink-0 rounded-tile p-3.5 text-left"
+              >
+                <span aria-hidden className="block h-1 w-8 rounded-full" style={{ background: SKIN_COLOR[c.skin] }} />
+                <span className="mt-2 block text-sm font-medium leading-tight text-ink">{c.title}</span>
+                <span className="mt-1 block text-xs leading-snug text-faint">{c.blurb}</span>
+                <span className="mt-2 block text-xs text-muted">
+                  {c.days} days{c.teamA ? " · team vs team" : ""}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pane === "new" && (
+        <CupForm
+          meId={me}
+          preset={preset}
+          onDone={() => {
+            setPane("none");
+            setPreset(null);
+          }}
+        />
+      )}
       {pane === "join" && <JoinForm onJoined={() => setPane("none")} />}
 
       {/* my cups */}
@@ -146,6 +258,12 @@ function CupCard({ cup, onOpen }: { cup: Cup; onOpen: () => void }) {
         <p className="truncate font-display text-lg leading-tight text-ink">{cup.name}</p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-faint">
           <span className="text-muted">{axisLabel(cup.axis)}</span>
+          {cup.teamMode && (
+            <>
+              <span>·</span>
+              <span className="text-accent">team vs team</span>
+            </>
+          )}
           <span>·</span>
           <span className={clsx(status.live && "text-accent")}>{status.label}</span>
           <span>·</span>
@@ -165,24 +283,38 @@ function CupCard({ cup, onOpen }: { cup: Cup; onOpen: () => void }) {
   );
 }
 
-// Create a cup. Name → axis (the honest palette) → look → who can join → window.
-function CupForm({ meId, onDone }: { meId: string; onDone: () => void }) {
-  const [name, setName] = useState("");
-  const [axis, setAxis] = useState<CupAxis>("drinks");
-  const [skin, setSkin] = useState<CupSkin>("classic");
+// Create a cup. Name → axis (the honest palette) → look → who can join → window →
+// optionally two named sides (a team battle, 047). A preset challenge prefills it all.
+function CupForm({ meId, preset, onDone }: { meId: string; preset: Challenge | null; onDone: () => void }) {
+  const [name, setName] = useState(preset?.title ?? "");
+  const [axis, setAxis] = useState<CupAxis>(preset?.axis ?? "drinks");
+  const [skin, setSkin] = useState<CupSkin>(preset?.skin ?? "classic");
   const [policy, setPolicy] = useState<JoinPolicy>("friends");
   const [startsOn, setStartsOn] = useState(todayKey());
-  const [endsOn, setEndsOn] = useState(toKey(addDays(parseKey(todayKey()), 14)));
+  const [endsOn, setEndsOn] = useState(toKey(addDays(parseKey(todayKey()), preset?.days ?? 14)));
+  const [teams, setTeams] = useState(!!preset?.teamA);
+  const [teamA, setTeamA] = useState(preset?.teamA ?? "");
+  const [teamB, setTeamB] = useState(preset?.teamB ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [made, setMade] = useState<{ code: string } | null>(null);
 
-  const valid = isValidCupName(name) && isValidWindow(startsOn, endsOn);
+  const teamsValid = !teams || (teamA.trim().length > 0 && teamB.trim().length > 0);
+  const valid = isValidCupName(name) && isValidWindow(startsOn, endsOn) && teamsValid;
 
   async function submit() {
     setBusy(true);
     setError(null);
-    const res = await createCup(meId, { name, axis, skin, joinPolicy: policy, startsOn, endsOn });
+    const res = await createCup(meId, {
+      name,
+      axis,
+      skin,
+      joinPolicy: policy,
+      startsOn,
+      endsOn,
+      teamA: teams ? teamA : undefined,
+      teamB: teams ? teamB : undefined,
+    });
     setBusy(false);
     if ("error" in res) {
       setError(res.error);
@@ -297,6 +429,53 @@ function CupForm({ meId, onDone }: { meId: string; onDone: () => void }) {
         </div>
       </div>
 
+      {/* team battle — two named sides; members pick one after joining */}
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm text-ink">Team battle</p>
+            <p className="text-xs text-faint">Two sides — everyone who joins picks one.</p>
+          </div>
+          <button
+            onClick={() => setTeams((t) => !t)}
+            role="switch"
+            aria-checked={teams}
+            aria-label="Team battle"
+            className={clsx(
+              "relative inline-flex h-7 w-13 shrink-0 items-center rounded-full transition-colors",
+              teams ? "bg-accent" : "bg-ink/12 shadow-[inset_0_0_0_1.5px_var(--color-line-strong)]",
+            )}
+          >
+            <span
+              className={clsx(
+                "h-6 w-6 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.28)] transition-transform",
+                teams ? "translate-x-6.5" : "translate-x-0.5",
+              )}
+            />
+          </button>
+        </div>
+        {teams && (
+          <div className="mt-2.5 flex gap-2">
+            <input
+              value={teamA}
+              onChange={(e) => setTeamA(e.target.value)}
+              maxLength={24}
+              placeholder="Side one — e.g. North side"
+              aria-label="First team name"
+              className="w-full flex-1 rounded-ctl bg-ink/4 px-3 py-2.5 text-sm text-ink outline-none placeholder:text-faint focus:bg-ink/6"
+            />
+            <input
+              value={teamB}
+              onChange={(e) => setTeamB(e.target.value)}
+              maxLength={24}
+              placeholder="Side two"
+              aria-label="Second team name"
+              className="w-full flex-1 rounded-ctl bg-ink/4 px-3 py-2.5 text-sm text-ink outline-none placeholder:text-faint focus:bg-ink/6"
+            />
+          </div>
+        )}
+      </div>
+
       <div className="flex gap-3">
         <label className="flex-1">
           <span className="mb-1.5 block text-xs text-muted">Starts</span>
@@ -372,7 +551,8 @@ function JoinForm({ onJoined }: { onJoined: () => void }) {
   );
 }
 
-// The cup sheet — the full standings board, the invite code to share, and leave/delete.
+// The cup sheet — the full standings board (plus the two-sided tug-of-war in a team
+// battle), the invite code to share, and leave/delete.
 function CupSheet({ cup, meId, onClose }: { cup: Cup; meId: string; onClose: () => void }) {
   const { standings, loading } = useCupBoard(cup.id);
   const status = cupStatus(cup);
@@ -412,6 +592,9 @@ function CupSheet({ cup, meId, onClose }: { cup: Cup; meId: string; onClose: () 
             Close
           </button>
         </div>
+
+        {/* the two sides — only in a team battle */}
+        {cup.teamMode && <TeamPanel cup={cup} ended={status.ended} />}
 
         {/* the board */}
         <p className="label mt-6 mb-2 text-faint">Standings</p>
@@ -478,6 +661,90 @@ function CupSheet({ cup, meId, onClose }: { cup: Cup; meId: string; onClose: () 
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// The two sides of a team battle: a tug-of-war bar (widths = share of the combined
+// score), each side's players + total, and the JOIN-A-SIDE buttons. Your side needs
+// you — that's the whole social engine — but it needs your EXPLORING: a side's score
+// is the sum of members' distinct-count scores, so drinking more moves nothing.
+function TeamPanel({ cup, ended }: { cup: Cup; ended: boolean }) {
+  const { teams, mySide, loading } = useCupTeams(cup);
+  const [busy, setBusy] = useState<CupSide | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const a = teams.find((t) => t.team === "a") ?? { team: "a" as CupSide, players: 0, score: 0 };
+  const b = teams.find((t) => t.team === "b") ?? { team: "b" as CupSide, players: 0, score: 0 };
+  const total = a.score + b.score;
+  const aShare = total > 0 ? a.score / total : 0.5;
+
+  async function join(side: CupSide) {
+    setBusy(side);
+    setError(null);
+    const err = await pickTeam(cup.id, side);
+    setBusy(null);
+    if (err) setError(err);
+  }
+
+  const SIDES: { side: CupSide; name: string; standing: typeof a }[] = [
+    { side: "a", name: cup.teamA ?? "Side one", standing: a },
+    { side: "b", name: cup.teamB ?? "Side two", standing: b },
+  ];
+
+  return (
+    <div className="mt-6 rounded-tile bg-ink/3 p-4">
+      <p className="label mb-3 text-faint">The battle</p>
+
+      {loading ? (
+        <div className="h-16 animate-pulse rounded-ctl bg-ink/5" aria-hidden />
+      ) : (
+        <>
+          {/* tug-of-war — one bar, split by share of the combined score */}
+          <div className="flex h-2.5 overflow-hidden rounded-full bg-ink/8">
+            <div
+              className="h-full bg-accent transition-[width] duration-700 ease-out motion-reduce:transition-none"
+              style={{ width: `${aShare * 100}%` }}
+            />
+            <div className="h-full flex-1 bg-line-strong/60" />
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            {SIDES.map(({ side, name, standing }) => {
+              const mine = mySide === side;
+              const leads = total > 0 && standing.score > (side === "a" ? b.score : a.score);
+              return (
+                <div key={side} className={clsx("rounded-ctl border p-3", mine ? "border-accent bg-accent/6" : "border-line")}>
+                  <p className="flex items-baseline justify-between gap-2">
+                    <span className={clsx("truncate text-sm", leads ? "font-medium text-accent" : "text-ink")}>{name}</span>
+                    <span className={clsx("tnum shrink-0 text-lg", leads ? "text-accent" : "text-ink")}>{standing.score}</span>
+                  </p>
+                  <p className="mt-0.5 flex items-center justify-between gap-2 text-xs text-faint">
+                    <span className="tnum">
+                      {standing.players} {standing.players === 1 ? "player" : "players"}
+                    </span>
+                    {mine && <span className="text-accent">your side</span>}
+                  </p>
+                  {!ended && !mine && (
+                    <button
+                      onClick={() => join(side)}
+                      disabled={busy !== null}
+                      className="mt-2 min-h-9 w-full rounded-ctl bg-ink py-1.5 text-xs font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      {busy === side ? "…" : mySide ? "Switch here" : "Join this side"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {!mySide && !ended && (
+            <p className="mt-2.5 text-xs text-faint">Pick a side — your exploring counts for it from then on.</p>
+          )}
+          {error && <p className="mt-2 text-sm text-accent">{error}</p>}
+        </>
+      )}
     </div>
   );
 }

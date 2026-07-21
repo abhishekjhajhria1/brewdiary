@@ -28,7 +28,7 @@ import { useMyVenueBooks, forgetVenueBook } from "@/lib/guestbook";
 import { useCompeteVisible, setCompeteVisible } from "@/lib/points";
 import { useProfilePrivacy, setProfileVisibility, setSocialHandle, type ProfileVisibility } from "@/lib/publicProfile";
 import { useExtras, setExtra, EXTRAS, type ExtraKey } from "@/lib/features";
-import { useWaterMl, setWaterMl } from "@/lib/waterPref";
+import { useWaterMl, setWaterMl, formatVolume } from "@/lib/waterPref";
 import { exportEverything, deleteAccount } from "@/lib/dataRights";
 import { savedCountry, moveTo, confirmAge, legalAgeFor } from "@/lib/age";
 import { KNOWN_COUNTRIES } from "@/lib/jurisdiction";
@@ -156,9 +156,11 @@ export function You() {
         {filtered.length === 0 ? (
           <p className="py-6 text-center text-sm text-faint">Nothing here yet.</p>
         ) : (
-          <ul className="glass divide-y divide-line rounded-tile px-5">
-            {filtered.map((e) => (
-              <ShelfRow key={e.id} entry={e} />
+          // Same-day repeats fold into ONE row with a ×N (six waters is one line, not six),
+          // and the whole list scrolls in place so the page never becomes one long ledger.
+          <ul className="glass max-h-105 divide-y divide-line overflow-y-auto rounded-tile px-5">
+            {groupShelf(filtered).map((g) => (
+              <ShelfRow key={g.entry.id} entry={g.entry} count={g.count} />
             ))}
           </ul>
         )}
@@ -1497,12 +1499,38 @@ function JourneyStat({ n, label }: { n: number; label: string }) {
   );
 }
 
-function ShelfRow({ entry }: { entry: Entry }) {
+/** Fold same-day repeats of the same drink into one row (keeps the first entry for
+ *  its mood/venue, counts the rest). The order of `filtered` is preserved. */
+function groupShelf(entries: Entry[]): { entry: Entry; count: number }[] {
+  const out: { entry: Entry; count: number }[] = [];
+  const byKey = new Map<string, { entry: Entry; count: number }>();
+  for (const e of entries) {
+    const key = `${e.date}|${e.drink.trim().toLowerCase()}`;
+    const g = byKey.get(key);
+    if (g) g.count++;
+    else {
+      const fresh = { entry: e, count: 1 };
+      byKey.set(key, fresh);
+      out.push(fresh);
+    }
+  }
+  return out;
+}
+
+function ShelfRow({ entry, count }: { entry: Entry; count: number }) {
   const d = parseKey(entry.date);
+  const waterMl = useWaterMl();
+  const isWater = entry.drink.trim().toLowerCase() === "water";
+  // Water with a glass size set reads as a volume — "×6 · 1.5 L" (see lib/waterPref).
+  const volume = isWater && waterMl ? formatVolume(count * waterMl) : null;
   return (
     <li className="flex items-baseline justify-between gap-3 py-3">
       <div className="min-w-0">
-        <p className="truncate text-[15px] text-ink">{entry.drink}</p>
+        <p className="truncate text-[15px] text-ink">
+          {entry.drink}
+          {count > 1 && <span className="tnum text-muted"> ×{count}</span>}
+          {volume && <span className="tnum text-xs text-faint"> · {volume}</span>}
+        </p>
         <p className="text-xs text-muted">
           {entry.mood && <span className="italic">{entry.mood}</span>}
           {entry.mood && entry.venue ? " · " : ""}

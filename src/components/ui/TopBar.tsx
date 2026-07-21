@@ -43,9 +43,8 @@ export function TopBar() {
         </Link>
         {/* The calendar view toggle only makes sense on the home, where the calendar is. */}
         {pathname === "/" && <ViewSquircle />}
-        {/* Theme switch — reachable from every page (also mirrored in You › Settings), so
-            the app is never "stuck" in one theme with no visible way out. */}
-        
+        {/* The theme switch deliberately does NOT live here — it has one obvious home,
+            You › Settings › Appearance (the maintainer's call). */}
       </div>
     </div>
   );

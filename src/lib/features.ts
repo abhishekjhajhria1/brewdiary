@@ -12,7 +12,7 @@
 import { useSyncExternalStore } from "react";
 import type { DrinkType } from "./types";
 
-export type ExtraKey = "cigarettes" | "water";
+export type ExtraKey = "cigarettes" | "water" | "pegs" | "beers";
 
 export interface ExtraDef {
   key: ExtraKey;
@@ -49,6 +49,28 @@ export const EXTRAS: ExtraDef[] = [
     counter: true,
     entryDrink: "Water",
     entryType: "soft",
+  },
+  // The quick tallies below make LOGGING faster, nothing else: each tap writes an
+  // ordinary diary entry, so they feed the same mosaic/streak/balance as the log
+  // sheet. They count what happened — no spark, no perk, no score moves on a repeat
+  // (rule #6: the Palate Score and every board count DISTINCT things only).
+  {
+    key: "pegs",
+    label: "Peg counter",
+    hint: "A one-tap tally for pegs — each tap logs a peg to the day, honestly.",
+    unit: "peg",
+    counter: true,
+    entryDrink: "Peg",
+    entryType: "spirit",
+  },
+  {
+    key: "beers",
+    label: "Beer counter",
+    hint: "A one-tap tally for bottles — each tap logs a beer to the day.",
+    unit: "beer",
+    counter: true,
+    entryDrink: "Beer",
+    entryType: "beer",
   },
 ];
 
