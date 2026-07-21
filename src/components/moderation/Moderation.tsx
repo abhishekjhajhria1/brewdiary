@@ -127,7 +127,7 @@ function ReportCard({ report: r, onDone }: { report: OpenReport; onDone: () => v
         </div>
       </div>
 
-      {r.note && <p className="mt-3 rounded-ctl bg-ink/[0.03] px-3 py-2 text-sm leading-relaxed text-muted">{r.note}</p>}
+      {r.note && <p className="mt-3 rounded-ctl bg-ink/3 px-3 py-2 text-sm leading-relaxed text-muted">{r.note}</p>}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {r.subjectSanctioned ? (
