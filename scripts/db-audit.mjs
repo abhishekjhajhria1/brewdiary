@@ -62,6 +62,7 @@ try {
     "venue_guest_notes",
     "chart_proposals",
     "cups", "cup_members",
+    "recipes", "recipe_reactions",
   ];
   const have = (await all(`select tablename from pg_tables where schemaname = 'public'`)).map((r) => r.tablename);
   for (const t of wantTables) ok(`table ${t}`, have.includes(t), "— MISSING");
@@ -92,6 +93,8 @@ try {
     "has_venue_interaction", "set_guest_note", "venue_guest_card", "my_venue_books",
     "force_proposal_pending", "review_chart_proposal", "pending_chart_proposals", "charted_families",
     "cup_board", "cup_visible_to", "is_cup_member", "join_cup", "cups_add_owner",
+    "recipe_visible_to", "recipe_reaction_counts", "recipe_friend_ratio",
+    "edit_recipe", "review_recipe", "pending_recipes", "recipes_maybe_promote",
   ];
   const fns = (await all(`
     select p.proname from pg_proc p
@@ -479,6 +482,38 @@ try {
     from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='cup_board'`);
   ok("cup_board(): SECURITY DEFINER, members-only, and returns a COUNT-derived score",
     !!boardDef && boardDef.prosecdef && /count\s*\(\s*distinct/i.test(boardDef.d) && /is_cup_member/i.test(boardDef.d));
+
+  console.log("\n── community recipes (Phase D — medals for creativity, not volume) ──");
+
+  // Reactions are POSITIVE-ONLY — there is no 'dislike' kind, so a reaction can never
+  // become a downvote/harassment tool (same posture as vibe & reports).
+  const reactDef = await one(`
+    select pg_get_constraintdef(c.oid) d
+    from pg_constraint c join pg_class t on t.oid = c.conrelid
+    where t.relname = 'recipe_reactions' and c.contype = 'c' and pg_get_constraintdef(c.oid) ilike '%kind%'`);
+  ok("recipe_reactions: kind CHECK is positive-only (no dislike/downvote)",
+    !!reactDef && !/dislike|down|hate|report/i.test(reactDef.d) && /love|made|totry/i.test(reactDef.d));
+
+  // The public surface is deny-by-default: a client can only ever INSERT a 'friends'
+  // recipe (never straight to public), and there is NO client UPDATE policy at all —
+  // edits + the friends→pending→public ladder run only through the definer fns, so an
+  // author can never jump the moderation queue.
+  const rIns = await one(`select pg_get_expr(polwithcheck, polrelid) w from pg_policy
+    where polrelid='public.recipes'::regclass and polcmd='a'`);
+  ok("recipes: a client can only insert a 'friends' recipe (never public)",
+    !!rIns && /state\s*=\s*'friends'/.test(rIns.w));
+  const rUpd = await all(`select policyname from pg_policies where schemaname='public' and tablename='recipes' and cmd='UPDATE'`);
+  ok("recipes: NO client UPDATE policy (edits + state ladder via definer fns only)", rUpd.length === 0);
+
+  // review_recipe re-derives the moderator right server-side (never trusts the caller).
+  const revDef = await one(`select pg_get_functiondef('public.review_recipe(uuid,boolean)'::regprocedure) d`);
+  ok("review_recipe(): re-derives is_moderator() server-side", !!revDef && /is_moderator/i.test(revDef.d));
+
+  // reaction tallies are counts-only and gated on visibility — "who reacted" never leaks.
+  const rcDef = await one(`select pg_get_functiondef('public.recipe_reaction_counts(uuid)'::regprocedure) d, p.prosecdef
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='recipe_reaction_counts'`);
+  ok("recipe_reaction_counts(): SECURITY DEFINER, counts-only, visibility-gated",
+    !!rcDef && rcDef.prosecdef && /count\s*\(/i.test(rcDef.d) && /recipe_visible_to/i.test(rcDef.d));
 
   console.log("\n── orphans / drift ──────────────────────────────────");
   const badCurrency = await one(`

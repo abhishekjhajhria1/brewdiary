@@ -1239,6 +1239,48 @@ try {
   await as(cupGuest, `delete from public.cup_members where cup_id=$1 and user_id=$2`, [cupId, cupGuest]);
   ok("leaving the cup drops you from its board",
     (await as(cupOwner, `select * from public.cup_board($1)`, [cupId])).rows.length === 1);
+
+  console.log("\n── 19. community recipes: friends → 50% → moderated public (045) ──");
+  const rAuthor = await mkUser("Recipe Author", `vf-ra-${Date.now()}`);
+  const rMod = await mkUser("Recipe Mod", `vf-rm-${Date.now()}`);
+  await db.query(`insert into public.moderators (user_id) values ($1)`, [rMod]);
+  const rFriends = [];
+  for (let i = 0; i < 4; i++) {
+    const fid = await mkUser(`RF${i}`, `vf-rf${i}-${Date.now()}`);
+    await db.query(`insert into public.friendships (requester_id, addressee_id, status) values ($1,$2,'accepted')`, [rAuthor, fid]);
+    rFriends.push(fid);
+  }
+  const rStranger = await mkUser("Recipe Stranger", `vf-rs-${Date.now()}`);
+  const recId = randomUUID();
+  const recState = async () => (await db.query(`select state from public.recipes where id=$1`, [recId])).rows[0].state;
+
+  await as(rAuthor, `insert into public.recipes (id,author_id,name,ingredients,method) values ($1,$2,'Verify Punch','{rum,lime}','Shake it.')`, [recId, rAuthor]);
+  ok("a new recipe starts friends-only", (await recState()) === "friends");
+  ok("a stranger can't see a friends recipe",
+    (await as(rStranger, `select public.recipe_visible_to($1,$2) v`, [recId, rStranger])).rows[0].v === false);
+  ok("a stranger can't react to what they can't see",
+    await refused(() => as(rStranger, `insert into public.recipe_reactions (recipe_id,user_id,kind) values ($1,$2,'love')`, [recId, rStranger])));
+
+  await as(rFriends[0], `insert into public.recipe_reactions (recipe_id,user_id,kind) values ($1,$2,'love')`, [recId, rFriends[0]]);
+  ok("one friend (25%) does not promote it", (await recState()) === "friends");
+  await as(rFriends[1], `insert into public.recipe_reactions (recipe_id,user_id,kind) values ($1,$2,'made')`, [recId, rFriends[1]]);
+  ok("half the friends backing it flips it to 'pending'", (await recState()) === "pending");
+  ok("the same reaction twice is refused (anti-farm)",
+    await refused(() => as(rFriends[0], `insert into public.recipe_reactions (recipe_id,user_id,kind) values ($1,$2,'love')`, [recId, rFriends[0]])));
+
+  // No client UPDATE policy → the author's attempt hits 0 rows and the state is unchanged
+  // (RLS filters the row out; it does not throw). The queue can't be jumped.
+  await as(rAuthor, `update public.recipes set state='public' where id=$1`, [recId]);
+  ok("an author cannot jump the queue (update touches 0 rows, stays pending)", (await recState()) === "pending");
+
+  ok("a non-moderator's recipe queue is empty", (await as(rAuthor, `select * from public.pending_recipes()`, [])).rows.length === 0);
+  ok("the moderator sees the pending recipe", (await as(rMod, `select * from public.pending_recipes()`, [])).rows.some((r) => r.id === recId));
+  await as(rMod, `select public.review_recipe($1, true)`, [recId]);
+  ok("a moderator approving it makes it public", (await recState()) === "public");
+  ok("now a stranger sees it and can react",
+    (await as(rStranger, `insert into public.recipe_reactions (recipe_id,user_id,kind) values ($1,$2,'totry') returning kind`, [recId, rStranger])).rows[0].kind === "totry");
+  ok("reaction counts come back counts-only across three kinds",
+    (await as(rAuthor, `select * from public.recipe_reaction_counts($1)`, [recId])).rows.length === 3);
 } catch (e) {
   // Print WHAT failed, not just that something did. Postgres puts the useful part in
   // detail/hint/where and the offending SQL in the driver's `query`; without these a
