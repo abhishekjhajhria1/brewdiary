@@ -13,8 +13,12 @@ import { MONTH_NAMES, parseKey, todayKey } from "@/lib/date";
 import type { Entry } from "@/lib/types";
 import { useWishlist, addWish, removeWish, type WishItem } from "@/lib/wishlist";
 import { usePantry, addIngredient, removeIngredient } from "@/lib/pantry";
+import { makeable, commonStaples } from "@/lib/recipes";
 import { useProfile, signOut, updateHandle } from "@/lib/profile";
 import { reroll } from "@/lib/handles";
+import { Passport } from "../passport/Passport";
+import { WeeklyRecap } from "../passport/WeeklyRecap";
+import { useRecap, setRecap } from "@/lib/recap";
 import { TrustCard } from "../verify/TrustCard";
 import { useIsModerator } from "@/lib/moderation";
 import { useBlocks, unblockUser } from "@/lib/safety";
@@ -77,7 +81,8 @@ export function You() {
         )}
       </div>
 
-      {/* Balance — only ever appears once you've asked for it (You → Settings) */}
+      {/* Both only ever appear once you've asked for them (You → Settings) */}
+      <WeeklyRecap />
       <BalanceCard entries={entries} />
 
       {/* Your year — a calm look-back, all derived */}
@@ -92,6 +97,9 @@ export function You() {
           </dl>
         </section>
       )}
+
+      {/* The palate map — breadth you've built, and the doors out of it. Derived, never stored. */}
+      <Passport />
 
       <ToTry />
 
@@ -180,6 +188,7 @@ function Settings() {
   const [reminder, setReminder] = useState(false);
   const [collect, setCollect] = useState(true);
   const trainingCount = useTrainingCount();
+  const recap = useRecap();
   const profile = useProfile();
   const router = useRouter();
 
@@ -262,6 +271,16 @@ function Settings() {
           </p>
         </div>
         <Toggle on={collect} label="Help train Ninkasi" onToggle={toggleCollect} />
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-4 border-t border-line py-3">
+        <div>
+          <p className="text-sm text-ink">Weekly look-back</p>
+          <p className="text-xs text-faint">
+            A quiet card on You: the corners of your palate map you found this week, and one door out of it.
+          </p>
+        </div>
+        <Toggle on={recap.on ?? false} label="Weekly look-back" onToggle={(next) => setRecap(next)} />
       </div>
 
       {profile && <TrendsOptIn meId={profile.id} />}
@@ -1364,9 +1383,81 @@ function Pantry() {
           ))}
         </div>
       )}
+      <Tonight pantry={items} />
+    </div>
+  );
+}
+
+// What the shelf can make right now. Only ever things you already have everything for —
+// there is deliberately no "you're one ingredient away", because for alcohol a shopping
+// prompt is advertising. It suggests something to MAKE, never a second one, and nothing
+// here earns a spark, a perk or a streak: the reward is having made it.
+function Tonight({ pantry }: { pantry: string[] }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const options = makeable(pantry);
+
+  if (pantry.length === 0) {
+    return (
       <p className="mt-2.5 text-xs text-faint">
-        Ninkasi will use this to suggest what you can make at home — coming soon.
+        Add what&apos;s on your shelf — {commonStaples(4).join(", ")} — and this turns into
+        what you can make.
       </p>
+    );
+  }
+  if (options.length === 0) {
+    return (
+      <p className="mt-2.5 text-xs text-faint">
+        Nothing complete on that shelf yet. Add a little more and things will start appearing.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <p className="label mb-2 text-faint">
+        Tonight you could make · {options.length}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map(({ recipe, extras }) => {
+          const isOpen = open === recipe.name;
+          return (
+            <button
+              key={recipe.name}
+              onClick={() => setOpen(isOpen ? null : recipe.name)}
+              aria-expanded={isOpen}
+              className={clsx(
+                "min-h-11 rounded-ctl border px-3 py-2 text-sm transition-colors",
+                isOpen
+                  ? "border-transparent bg-accent/8 text-ink"
+                  : "border-line text-ink hover:border-line-strong",
+              )}
+            >
+              {recipe.name}
+              {extras.length > 0 && (
+                <span className="ml-2 text-xs text-faint">+{extras.length}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {open && (
+        <div className="animate-rise mt-3 rounded-tile bg-ink/3 p-3">
+          {(() => {
+            const picked = options.find((o) => o.recipe.name === open);
+            if (!picked) return null;
+            return (
+              <>
+                <p className="text-sm leading-relaxed text-muted">{picked.recipe.method}</p>
+                <p className="mt-2 text-xs text-faint">
+                  {picked.recipe.needs.join(" · ")}
+                  {picked.extras.length > 0 && ` — with ${picked.extras.join(", ")}`}
+                </p>
+              </>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }

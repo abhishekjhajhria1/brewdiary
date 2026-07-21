@@ -19,6 +19,7 @@ import {
   liftSanction,
   type OpenReport,
 } from "@/lib/moderation";
+import { ChartQueue } from "./ChartQueue";
 
 const REASON_LABEL: Record<string, string> = Object.fromEntries(REPORT_REASONS.map((r) => [r.id, r.label]));
 
@@ -63,6 +64,15 @@ export function Moderation() {
             <ReportCard key={r.id} report={r} onDone={refresh} />
           ))}
         </ul>
+      )}
+
+      {/* The other queue: drinks offered to the shared dictionary (042). Same gate,
+          different job — this one grows the map rather than policing people. */}
+      {isMod && (
+        <section className="mt-10">
+          <h2 className="label mb-3">Chart proposals</h2>
+          <ChartQueue />
+        </section>
       )}
     </>
   );

@@ -60,6 +60,7 @@ try {
     "vouches",
     "moderators", "user_sanctions", "moderation_actions",
     "venue_guest_notes",
+    "chart_proposals",
   ];
   const have = (await all(`select tablename from pg_tables where schemaname = 'public'`)).map((r) => r.tablename);
   for (const t of wantTables) ok(`table ${t}`, have.includes(t), "— MISSING");
@@ -88,6 +89,7 @@ try {
     "vouch_count",
     "is_moderator", "is_sanctioned", "suspend_user", "ban_user", "lift_sanction", "open_reports",
     "has_venue_interaction", "set_guest_note", "venue_guest_card", "my_venue_books",
+    "force_proposal_pending", "review_chart_proposal", "pending_chart_proposals", "charted_families",
   ];
   const fns = (await all(`
     select p.proname from pg_proc p
@@ -401,6 +403,44 @@ try {
   const sgDef = await one(`select pg_get_functiondef('public.set_guest_note(uuid,uuid,text,text[])'::regprocedure) d`);
   ok("set_guest_note(): gated on has_venue_interaction + is_venue_staff",
     sgDef && /has_venue_interaction/.test(sgDef.d) && /is_venue_staff/.test(sgDef.d));
+
+  // ── the Cartographer (042) ────────────────────────────────────────────────
+  // Charting is the app's first COMMONS: an accepted proposal changes what every
+  // other user sees. So the write path is the whole security story.
+
+  // A proposal must never be self-accepted. No UPDATE policy at all — the only path
+  // from 'pending' to 'accepted' is the moderator-gated rpc. Same rule as perks:
+  // a guest can never write their own reward, and a byline is a reward.
+  const cpUpdate = await all(
+    `select policyname from pg_policies where schemaname='public' and tablename='chart_proposals' and cmd='UPDATE'`);
+  ok("chart_proposals: NO update policy (status is moderator-only, never self-accepted)",
+    cpUpdate.length === 0, `— found ${cpUpdate.map((x) => x.policyname).join(", ")}`);
+
+  // …and the trigger that pins a new row to 'pending' regardless of what was sent.
+  const cpTrig = await one(`select count(*)::int n from pg_trigger where tgname = 'chart_proposals_force_pending'`);
+  ok("chart_proposals: the force-pending trigger exists (client can't insert 'accepted')",
+    Number(cpTrig.n) > 0);
+
+  // Deny-by-default publication: an unreviewed proposal is NOT readable by other users.
+  // The select policy must gate on authorship / accepted-status / moderator — never open.
+  const cpSel = await one(
+    `select qual::text q from pg_policies where schemaname='public' and tablename='chart_proposals' and cmd='SELECT'`);
+  ok("chart_proposals: pending rows are readable only by their author and moderators",
+    cpSel && /author\s*=\s*auth\.uid\(\)/.test(cpSel.q) && /accepted/.test(cpSel.q) && /is_moderator/.test(cpSel.q),
+    `— ${cpSel?.q ?? "no select policy"}`);
+
+  // Review is moderator-gated server-side, not merely hidden in the UI.
+  const rcpDef = await one(`select pg_get_functiondef('public.review_chart_proposal(uuid,text)'::regprocedure) d`);
+  ok("review_chart_proposal(): re-derives is_moderator() server-side",
+    rcpDef && /is_moderator/.test(rcpDef.d));
+
+  // THE tripwire (spec §2). There must be no per-author contribution tally anywhere:
+  // a visible cartographer score is what would make fabricating logs rational, and a
+  // fabricated corpus is worth less than none. charted_families() returns families and
+  // a handle per family — never a count grouped by author.
+  const cfDef = await one(`select pg_get_functiondef('public.charted_families()'::regprocedure) d`);
+  ok("charted_families(): no per-author tally (no cartographer leaderboard, by construction)",
+    cfDef && !/count\s*\(/i.test(cfDef.d) && !/group\s+by\s+.*author/i.test(cfDef.d));
 
   console.log("\n── orphans / drift ──────────────────────────────────");
   const badCurrency = await one(`
