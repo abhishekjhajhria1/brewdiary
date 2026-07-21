@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import {
   useFeed,
@@ -21,27 +21,30 @@ import { useAuth } from "@/lib/profile";
 import { useCompeteVisible, useFriendsBoard } from "@/lib/points";
 import { ScoreCard, type Score } from "../share/ScoreCard";
 import { consumePendingPartyCode, joinParty } from "@/lib/parties";
-import { useEntries } from "@/lib/store";
-import { useWishlist, addWish } from "@/lib/wishlist";
+import { useEntries, addEntry } from "@/lib/store";
+import { useWishlist, addWish, removeWish, type WishItem } from "@/lib/wishlist";
+import { DRINKS, canonicalize, normalize } from "@/lib/drinks";
 import { friendPicks } from "@/lib/derive";
-import { MONTH_NAMES, parseKey, timeOfDayLabel } from "@/lib/date";
+import { MONTH_NAMES, parseKey, timeOfDayLabel, todayKey } from "@/lib/date";
 import { RecentMosaic } from "./RecentMosaic";
 import { useVouchedByMe, vouchFor, unvouch } from "@/lib/vouch";
 import { VenueLink } from "../ui/VenueLink";
 import { Circles } from "./Circles";
 import { Parties } from "./Parties";
 import { Plans } from "./Plans";
+import { Cups } from "./Cups";
 
-// The rooms inside Together. The feed leads; circles and parties wait behind
+// The rooms inside Together. The feed leads; circles, parties and cups wait behind
 // their own segment instead of stacking into one overwhelming scroll. "Board"
 // only exists for people who switched the leaderboard on in You → Settings.
-type Room = "feed" | "plans" | "circles" | "parties" | "board";
+type Room = "feed" | "plans" | "circles" | "parties" | "cups" | "board";
 
 const BASE_ROOMS: { id: Room; label: string }[] = [
   { id: "feed", label: "Feed" },
   { id: "plans", label: "Plans" },
   { id: "circles", label: "Circles" },
   { id: "parties", label: "Parties" },
+  { id: "cups", label: "Cups" },
 ];
 
 export function Together() {
@@ -83,7 +86,10 @@ export function Together() {
       <div
         role="tablist"
         aria-label="Together rooms"
-        className={clsx("glass mt-5 grid rounded-ctl p-1", ROOMS.length === 5 ? "grid-cols-5" : "grid-cols-4")}
+        className={clsx(
+          "glass mt-5 grid rounded-ctl p-1",
+          ROOMS.length === 6 ? "grid-cols-6" : ROOMS.length === 5 ? "grid-cols-5" : "grid-cols-4",
+        )}
       >
         {ROOMS.map((r, i) => (
           <button
@@ -104,7 +110,9 @@ export function Together() {
               document.getElementById(`room-tab-${next}`)?.focus();
             }}
             className={clsx(
-              "rounded-[7px] py-3.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors",
+              "rounded-[7px] py-3.5 font-medium uppercase transition-colors",
+              // tighten the type when six tabs share the row so nothing clips
+              ROOMS.length >= 6 ? "text-[10px] tracking-[0.04em]" : "text-[11px] tracking-[0.14em]",
               room === r.id ? "bg-ink text-paper" : "text-faint hover:text-ink",
             )}
           >
@@ -119,6 +127,8 @@ export function Together() {
           <People friends={friends} onOpenFriend={setOpenFriend} />
 
           <FriendPicks feed={feed} />
+
+          <ToTry />
 
           {friends.length === 0 ? (
             <p className="mt-10 text-center text-sm text-faint">
@@ -150,15 +160,20 @@ export function Together() {
 
       {room === "parties" && <Parties />}
 
+      {room === "cups" && <Cups />}
+
       {room === "board" && <FriendsBoard me={me} />}
       </div>
 
       <Link
         href="/split"
-        className="mt-12 flex items-center justify-between border-t border-line pt-5 text-[15px] text-muted transition-colors hover:text-ink"
+        className="glass glass-press mt-12 flex items-center justify-between gap-4 rounded-tile p-4"
       >
-        <span>Split a tab or a round with friends</span>
-        <span className="shrink-0 text-sm font-medium text-accent">Split →</span>
+        <div className="min-w-0">
+          <p className="label mb-1 text-faint">Split</p>
+          <p className="text-[15px] text-ink">Split a tab or a round with friends</p>
+        </div>
+        <span className="shrink-0 text-sm font-medium text-accent">Open →</span>
       </Link>
 
       {openFriend && <FriendSheet friend={openFriend} onClose={() => setOpenFriend(null)} />}
@@ -434,6 +449,189 @@ function FriendPicks({ feed }: { feed: FeedEntry[] }) {
         })}
       </div>
     </section>
+  );
+}
+
+// ── your "to try" list ────────────────────────────────────────────────────────
+// Your wishlist of drinks to get to. It lives HERE, in Together, right under the picks
+// your friends inspire (FriendPicks) — the two feed each other: a friend pours something,
+// you save it, it lands on this list. Add by hand, take one at random, or tap one to write
+// it into the diary. Personal + local-or-remote via lib/wishlist (same API either way).
+function ToTry() {
+  const items = useWishlist();
+  const entries = useEntries();
+  const [draft, setDraft] = useState("");
+  const [logging, setLogging] = useState<WishItem | null>(null);
+
+  // Suggestions: every dictionary drink you haven't logged and haven't listed yet.
+  // A stand-in for the personalised pick Ninkasi will make once the app matures — for
+  // now a shuffle of what's known, and it never repeats something already yours, so
+  // the top tile stays useful as the list below fills up.
+  const suggestions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const e of entries) seen.add(normalize(e.drink));
+    for (const w of items) seen.add(normalize(w.drink));
+    return DRINKS.map((d) => d.canonical).filter((name) => !seen.has(normalize(name)));
+  }, [entries, items]);
+
+  const [pick, setPick] = useState<string | null>(null);
+  useEffect(() => {
+    // Keep a valid pick: choose one initially, and re-choose if the current pick just
+    // left the pool (you logged it or added it to the list).
+    if (suggestions.length === 0) {
+      setPick(null);
+      return;
+    }
+    setPick((cur) => (cur && suggestions.includes(cur) ? cur : suggestions[Math.floor(Math.random() * suggestions.length)]));
+  }, [suggestions]);
+
+  function another() {
+    if (suggestions.length === 0) return;
+    setPick((cur) => {
+      if (suggestions.length === 1) return suggestions[0];
+      let n = cur;
+      while (n === cur) n = suggestions[Math.floor(Math.random() * suggestions.length)];
+      return n;
+    });
+  }
+
+  return (
+    <section className="mt-10">
+      <p className="label mb-3 text-faint">To try, your list</p>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          addWish(draft);
+          setDraft("");
+        }}
+        className="mb-3 flex items-center gap-2"
+      >
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add a drink you're curious about…"
+          className="flex-1 border-b border-line-strong bg-transparent pb-2 text-sm outline-none placeholder:text-faint focus:border-ink"
+        />
+        <button
+          type="submit"
+          disabled={!draft.trim()}
+          className={clsx(
+            "rounded-ctl px-3 py-1.5 text-xs uppercase tracking-[0.12em] transition-colors",
+            draft.trim() ? "bg-ink text-paper hover:bg-ink/90" : "cursor-not-allowed bg-ink/10 text-faint",
+          )}
+        >
+          Add
+        </button>
+      </form>
+
+      {!pick && items.length === 0 ? (
+        <p className="py-2 text-sm text-faint">Nothing to try yet — add a drink above, or save one from a friend&apos;s pour.</p>
+      ) : (
+        // Scrolls once it grows; the suggestion sits at the very top of the list.
+        <ul className="glass max-h-80 divide-y divide-line overflow-y-auto rounded-tile px-5">
+          {pick && (
+            <li className="flex items-center justify-between gap-3 py-2.5">
+              <div className="min-w-0">
+                <p className="label text-faint">suggested</p>
+                <p className="truncate text-[15px] text-ink">{pick}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <button type="button" onClick={another} className="text-xs text-faint transition-colors hover:text-ink">
+                  Another
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addWish(pick)}
+                  className="rounded-ctl bg-ink px-3 py-1.5 text-xs uppercase tracking-[0.12em] text-paper transition-colors hover:bg-ink/90"
+                >
+                  Add
+                </button>
+              </div>
+            </li>
+          )}
+          {items.map((w) => (
+            <li key={w.id} className="flex items-center justify-between gap-3 py-2.5">
+              <button
+                onClick={() => setLogging(w)}
+                className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                aria-label={`Log ${w.drink} to your diary`}
+              >
+                <span
+                  aria-hidden
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border border-line-strong text-[10px] leading-none text-transparent"
+                >
+                  ✓
+                </span>
+                <span className="truncate text-[15px] text-ink">{w.drink}</span>
+              </button>
+              <button
+                onClick={() => removeWish(w.id)}
+                aria-label={`Remove ${w.drink}`}
+                className="shrink-0 text-sm text-faint transition-colors hover:text-ink"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {logging && <LogWishPopup item={logging} onClose={() => setLogging(null)} />}
+    </section>
+  );
+}
+
+// Tapping a "to try" drink offers to write it into the diary — the calendar is the home,
+// so trying something new belongs on a day. Pick the day (today by default); it logs the
+// entry and takes the drink OFF the list. Kind is pre-derived from the name. Styled to
+// match the log sheet so it feels like the rest of the app.
+function LogWishPopup({ item, onClose }: { item: WishItem; onClose: () => void }) {
+  const [date, setDate] = useState(todayKey());
+
+  function log() {
+    const canon = canonicalize(item.drink);
+    addEntry({ date, drink: item.drink, type: canon.type });
+    void removeWish(item.id); // logged → off the to-try list
+    onClose();
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Log ${item.drink}`}
+      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+    >
+      <button aria-label="Close" onClick={onClose} className="animate-fade absolute inset-0 bg-ink/40 backdrop-blur-sm" />
+      <div className="glass-strong animate-sheet relative w-full max-w-md rounded-t-[28px] bg-canvas/90 px-5 pb-8 pt-4 sm:rounded-tile">
+        <div aria-hidden className="mx-auto mb-4 h-1 w-9 rounded-full bg-line-strong sm:hidden" />
+        <p className="label text-faint">Log to your diary</p>
+        <p className="mt-1 font-display text-3xl leading-none text-ink">{item.drink}</p>
+        <label className="mt-5 block">
+          <span className="mb-1.5 block text-xs text-muted">Which day</span>
+          <input
+            type="date"
+            value={date}
+            max={todayKey()}
+            onChange={(e) => setDate(e.target.value)}
+            className="glass w-full rounded-ctl px-4 py-3 text-[15px] text-ink"
+          />
+        </label>
+        <button
+          onClick={log}
+          className="mt-5 flex h-12 w-full items-center justify-center rounded-ctl bg-ink text-base font-medium text-paper transition-opacity hover:opacity-90"
+        >
+          Log it
+        </button>
+        <button
+          onClick={onClose}
+          className="mt-2 flex h-11 w-full items-center justify-center rounded-ctl text-sm text-faint transition-colors hover:text-ink"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 

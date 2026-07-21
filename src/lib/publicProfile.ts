@@ -20,6 +20,12 @@ export interface PublicProfile {
   counts: Map<string, number>; // day-key → logs that day (feeds the mosaic)
   total: number;
   kinds: number;
+  // Lifetime aggregates (migration 046). Optional so the read still works before it's
+  // applied — the score/stats just fall back to what the 12-week window can show.
+  activeDays?: number; // distinct days logged, ALL-TIME
+  longestStreak?: number;
+  monthsActive?: number;
+  firstDate?: string; // YYYY-MM-DD — "since …"
 }
 
 export function usePublicProfile(handle: string): { profile: PublicProfile | null; loading: boolean } {
@@ -52,6 +58,7 @@ export function usePublicProfile(handle: string): { profile: PublicProfile | nul
       const dates = (row.dates as string[]) ?? [];
       const counts = new Map<string, number>();
       for (const d of dates) counts.set(d, (counts.get(d) ?? 0) + 1);
+      const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);
       setProfile({
         displayName: row.display_name as string,
         handle: row.handle as string,
@@ -59,6 +66,10 @@ export function usePublicProfile(handle: string): { profile: PublicProfile | nul
         counts,
         total: (row.total as number) ?? 0,
         kinds: (row.kinds as number) ?? 0,
+        activeDays: num(row.active_days),
+        longestStreak: num(row.longest_streak),
+        monthsActive: num(row.months_active),
+        firstDate: (row.first_date as string) ?? undefined,
       });
       setLoading(false);
     })();

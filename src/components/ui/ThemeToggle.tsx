@@ -32,7 +32,7 @@ export function ThemeToggle() {
       onClick={toggle}
       aria-label={`Theme: ${LABEL[shown]}. Tap to switch.`}
       title={`Theme: ${LABEL[shown]}`}
-      className="flex h-9 w-9 items-center justify-center rounded-ctl text-sm text-muted transition-colors hover:bg-ink/5 hover:text-ink"
+      className="flex h-9 w-13 items-center justify-center rounded-ctl text-sm text-muted transition-colors hover:bg-ink/5 hover:text-ink"
     >
       <span aria-hidden>{GLYPH[shown]}</span>
     </button>

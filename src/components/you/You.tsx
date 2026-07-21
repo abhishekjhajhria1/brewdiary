@@ -4,14 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import clsx from "clsx";
-import { useEntries, addEntry, reseed, resetAll, replaceAll, snapshot } from "@/lib/store";
-import { lexicon, stats, yearReview, weekBalance, type Stats } from "@/lib/derive";
-import { DRINKS, canonicalize, normalize } from "@/lib/drinks";
+import { useEntries, reseed, resetAll, replaceAll, snapshot } from "@/lib/store";
+import { countsByDate, lexicon, stats, yearReview, weekBalance, type Stats } from "@/lib/derive";
 import { useGoals, setGoal, anyGoalSet, GOAL_MAX, type GoalKey } from "@/lib/goals";
 import { MilestoneMeter } from "../ui/MilestoneMeter";
-import { MONTH_NAMES, parseKey, todayKey } from "@/lib/date";
+import { ScoreBanner } from "../ui/ScoreBanner";
+import { scoreFromEntries } from "@/lib/score";
+import { ProfileCard } from "../share/ProfileCard";
+import { MONTH_NAMES, addDays, parseKey, toKey, todayKey } from "@/lib/date";
 import type { Entry } from "@/lib/types";
-import { useWishlist, addWish, removeWish, type WishItem } from "@/lib/wishlist";
 import { usePantry, addIngredient, removeIngredient } from "@/lib/pantry";
 import { makeable, commonStaples } from "@/lib/recipes";
 import { useProfile, signOut, updateHandle } from "@/lib/profile";
@@ -65,7 +66,7 @@ export function You() {
       {/* The profile — how you'd look to someone else. Tapping it opens your public
           page (/u/handle). Everything below is YOUR stuff, then, past the divider,
           your settings — the phone-settings shape you asked for. */}
-      <ProfileHeader stats={s} />
+      <ProfileHeader stats={s} entries={entries} />
 
       {/* Both only ever appear once you've asked for them (You → Settings) */}
       <WeeklyRecap />
@@ -85,9 +86,8 @@ export function You() {
       )}
 
       {/* The palate map + its trophies and tonight's expedition now live on the Calendar's
-          Year view (a companion to the year mosaic) — the most-visible page. */}
-
-      <ToTry />
+          Year view (a companion to the year mosaic) — the most-visible page. And "To try"
+          moved to Together, where it sits with the picks your friends inspire. */}
 
       {/* Mood lexicon */}
       {lex.length > 0 && (
@@ -172,13 +172,25 @@ export function You() {
 }
 
 // The profile card — how you read to someone else. The identity row is a link to your
-// public page (/u/handle); the stats sit under it. A guest with no handle sees the same
-// card without the link (there's no public page to open yet).
-function ProfileHeader({ stats: s }: { stats: Stats }) {
+// public page (/u/handle); the stats sit under it, and a "Share as a card" button turns
+// them into a poster for social (see ProfileCard). A guest with no handle sees the same
+// card without the link or share (there's no public page to open yet).
+function ProfileHeader({ stats: s, entries }: { stats: Stats; entries: Entry[] }) {
   const profile = useProfile();
+  const [sharing, setSharing] = useState(false);
   const name = profile?.name?.trim() || "You";
   const handle = profile?.handle || "";
   const initials = name.replace(/[^\p{L}\p{N} ]/gu, "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "Y";
+
+  // The 12-week window that the shared mosaic draws — and how many of those days you logged.
+  const counts = useMemo(() => countsByDate(entries), [entries]);
+  const activeDays = useMemo(() => {
+    const cutoff = toKey(addDays(parseKey(todayKey()), -(12 * 7 - 1)));
+    let n = 0;
+    for (const k of counts.keys()) if (k >= cutoff) n++;
+    return n;
+  }, [counts]);
+  const ps = useMemo(() => scoreFromEntries(entries), [entries]);
 
   const identity = (
     <>
@@ -207,6 +219,13 @@ function ProfileHeader({ stats: s }: { stats: Stats }) {
         <div className="flex items-center gap-3">{identity}</div>
       )}
 
+      {/* The Palate Score — the same banner the public profile leads with. */}
+      {s.total > 0 && (
+        <div className="mt-4 border-t border-line pt-4">
+          <ScoreBanner ps={ps} size={88} />
+        </div>
+      )}
+
       <div className="mt-4 grid grid-cols-3 border-t border-line pt-4">
         <Metric value={s.current} label="streak" />
         <Metric value={s.total} label="logged" />
@@ -216,6 +235,33 @@ function ProfileHeader({ stats: s }: { stats: Stats }) {
         <div className="mt-4 border-t border-line pt-4">
           <MilestoneMeter total={s.total} />
         </div>
+      )}
+
+      {handle && s.total > 0 && (
+        <button
+          onClick={() => setSharing(true)}
+          className="mt-4 w-full rounded-ctl border border-line py-2.5 text-sm text-muted transition-colors hover:border-line-strong hover:text-ink"
+        >
+          Share as a card
+        </button>
+      )}
+
+      {sharing && (
+        <ProfileCard
+          profile={{
+            name,
+            handle,
+            total: s.total,
+            kinds: s.kinds,
+            activeDays,
+            counts,
+            score: ps.score,
+            title: ps.title,
+            level: ps.level,
+            longestStreak: s.longest,
+          }}
+          onClose={() => setSharing(false)}
+        />
       )}
     </div>
   );
@@ -347,39 +393,36 @@ function Settings() {
 
       {profile && <DataRights />}
 
-      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-faint">
-        <button onClick={exportJson} className="transition-colors hover:text-ink">
-          export data
-        </button>
-        <button onClick={() => fileRef.current?.click()} className="transition-colors hover:text-ink">
-          import data
-        </button>
-        <button onClick={reseed} className="transition-colors hover:text-ink">
-          reseed demo
-        </button>
-        <button onClick={resetAll} className="transition-colors hover:text-ink">
-          reset diary
-        </button>
-        {trainingCount > 0 && (
-          <button onClick={clearTraining} className="transition-colors hover:text-ink">
-            clear ninkasi data
-          </button>
-        )}
-        {profile ? (
-          <button onClick={handleSignOut} className="transition-colors hover:text-ink">
-            sign out
-          </button>
-        ) : (
-          <button onClick={() => router.push("/")} className="transition-colors hover:text-ink">
-            sign in
-          </button>
-        )}
-        <Link href="/privacy" className="transition-colors hover:text-ink">
-          privacy
-        </Link>
-        <Link href="/terms" className="transition-colors hover:text-ink">
-          terms
-        </Link>
+      {/* Data & account — real buttons, not a row of near-invisible text links, so these
+          actions are actually findable (maintainer's ask: fewer bare clickable words). */}
+      <div className="mt-5 border-t border-line pt-4">
+        <p className="label mb-3 text-faint">Data &amp; account</p>
+        <div className="flex flex-wrap gap-2">
+          <FooterButton onClick={exportJson}>Export data</FooterButton>
+          <FooterButton onClick={() => fileRef.current?.click()}>Import data</FooterButton>
+          <FooterButton onClick={reseed}>Reseed demo</FooterButton>
+          <FooterButton onClick={resetAll} danger>
+            Reset diary
+          </FooterButton>
+          {trainingCount > 0 && (
+            <FooterButton onClick={clearTraining}>Clear Ninkasi data</FooterButton>
+          )}
+          {profile ? (
+            <FooterButton onClick={handleSignOut}>Sign out</FooterButton>
+          ) : (
+            <FooterButton onClick={() => router.push("/")}>Sign in</FooterButton>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-faint">
+          <Link href="/privacy" className="underline-offset-2 transition-colors hover:text-ink hover:underline">
+            Privacy
+          </Link>
+          <Link href="/terms" className="underline-offset-2 transition-colors hover:text-ink hover:underline">
+            Terms
+          </Link>
+        </div>
+
         <input
           ref={fileRef}
           type="file"
@@ -1136,7 +1179,34 @@ function WaterMeasure() {
   );
 }
 
-/** The pill switch used across Settings. */
+/** A visible button for the data/account actions — a bordered chip with a proper touch
+ *  target, so these read as controls you can press, not as fine print. */
+function FooterButton({
+  onClick,
+  danger,
+  children,
+}: {
+  onClick: () => void;
+  danger?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        "min-h-11 rounded-ctl border px-3.5 py-2 text-sm transition-colors",
+        danger
+          ? "border-line text-muted hover:border-accent hover:text-accent"
+          : "border-line text-muted hover:border-line-strong hover:text-ink",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** The switch used across Settings. A larger, clearer control: the knob carries a check
+ *  when on and a small dot when off, so the state reads at a glance, not just by colour. */
 function Toggle({ on, label, onToggle }: { on: boolean; label: string; onToggle: (next: boolean) => void }) {
   return (
     <button
@@ -1145,199 +1215,28 @@ function Toggle({ on, label, onToggle }: { on: boolean; label: string; onToggle:
       aria-checked={on}
       aria-label={label}
       className={clsx(
-        // flex + p-0.5: the knob is exactly half the inner width, so translate-x-full
-        // lands it flush against the right padding — it can never overhang the pill.
-        "flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 ease-out",
+        "relative inline-flex h-7 w-13 shrink-0 items-center rounded-full transition-colors duration-200 ease-out",
         on
           ? "bg-accent shadow-[inset_0_1px_1px_rgba(0,0,0,0.12)]"
-          : "bg-ink/10 shadow-[inset_0_0_0_1px_var(--line-strong),inset_0_1px_2px_rgba(0,0,0,0.15)]",
+          : "bg-ink/12 shadow-[inset_0_0_0_1.5px_var(--color-line-strong)]",
       )}
     >
       <span
+        aria-hidden
         className={clsx(
-          "h-5 w-5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.35)] transition-transform duration-200 ease-out",
-          on && "translate-x-full",
+          "grid h-6 w-6 place-items-center rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.28)] transition-transform duration-200 ease-out",
+          on ? "translate-x-6.5" : "translate-x-0.5",
         )}
-      />
-    </button>
-  );
-}
-
-function ToTry() {
-  const items = useWishlist();
-  const entries = useEntries();
-  const [draft, setDraft] = useState("");
-  const [logging, setLogging] = useState<WishItem | null>(null);
-
-  // Suggestions: every dictionary drink you haven't logged and haven't listed yet.
-  // A stand-in for the personalised pick Ninkasi will make once the app matures — for
-  // now a shuffle of what's known, and it never repeats something already yours, so
-  // the top tile stays useful as the list below fills up.
-  const suggestions = useMemo(() => {
-    const seen = new Set<string>();
-    for (const e of entries) seen.add(normalize(e.drink));
-    for (const w of items) seen.add(normalize(w.drink));
-    return DRINKS.map((d) => d.canonical).filter((name) => !seen.has(normalize(name)));
-  }, [entries, items]);
-
-  const [pick, setPick] = useState<string | null>(null);
-  useEffect(() => {
-    // Keep a valid pick: choose one initially, and re-choose if the current pick just
-    // left the pool (you logged it or added it to the list).
-    if (suggestions.length === 0) {
-      setPick(null);
-      return;
-    }
-    setPick((cur) => (cur && suggestions.includes(cur) ? cur : suggestions[Math.floor(Math.random() * suggestions.length)]));
-  }, [suggestions]);
-
-  function another() {
-    if (suggestions.length === 0) return;
-    setPick((cur) => {
-      if (suggestions.length === 1) return suggestions[0];
-      let n = cur;
-      while (n === cur) n = suggestions[Math.floor(Math.random() * suggestions.length)];
-      return n;
-    });
-  }
-
-  return (
-    <section className="mt-10">
-      <h2 className="label mb-3">To try</h2>
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          addWish(draft);
-          setDraft("");
-        }}
-        className="mb-3 flex items-center gap-2"
       >
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Add a drink you're curious about…"
-          className="flex-1 border-b border-line-strong bg-transparent pb-2 text-sm outline-none placeholder:text-faint focus:border-ink"
-        />
-        <button
-          type="submit"
-          disabled={!draft.trim()}
-          className={clsx(
-            "rounded-ctl px-3 py-1.5 text-xs uppercase tracking-[0.12em] transition-colors",
-            draft.trim() ? "bg-ink text-paper hover:bg-ink/90" : "cursor-not-allowed bg-ink/10 text-faint",
-          )}
-        >
-          Add
-        </button>
-      </form>
-
-      {!pick && items.length === 0 ? (
-        <p className="py-2 text-sm text-faint">Nothing to try yet — add a drink above.</p>
-      ) : (
-        // Scrolls once it grows; the suggestion sits at the very top of the list.
-        <ul className="glass max-h-80 divide-y divide-line overflow-y-auto rounded-tile px-5">
-          {pick && (
-            <li className="flex items-center justify-between gap-3 py-2.5">
-              <div className="min-w-0">
-                <p className="label text-faint">suggested</p>
-                <p className="truncate text-[15px] text-ink">{pick}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <button type="button" onClick={another} className="text-xs text-faint transition-colors hover:text-ink">
-                  Another
-                </button>
-                <button
-                  type="button"
-                  onClick={() => addWish(pick)}
-                  className="rounded-ctl bg-ink px-3 py-1.5 text-xs uppercase tracking-[0.12em] text-paper transition-colors hover:bg-ink/90"
-                >
-                  Add
-                </button>
-              </div>
-            </li>
-          )}
-          {items.map((w) => (
-            <li key={w.id} className="flex items-center justify-between gap-3 py-2.5">
-              <button
-                onClick={() => setLogging(w)}
-                className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                aria-label={`Log ${w.drink} to your diary`}
-              >
-                <span
-                  aria-hidden
-                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border border-line-strong text-[10px] leading-none text-transparent"
-                >
-                  ✓
-                </span>
-                <span className="truncate text-[15px] text-ink">{w.drink}</span>
-              </button>
-              <button
-                onClick={() => removeWish(w.id)}
-                aria-label={`Remove ${w.drink}`}
-                className="shrink-0 text-sm text-faint transition-colors hover:text-ink"
-              >
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {logging && <LogWishPopup item={logging} onClose={() => setLogging(null)} />}
-    </section>
-  );
-}
-
-// Tapping a "to try" drink offers to write it into the diary — the calendar is the home,
-// so trying something new belongs on a day. Pick the day (today by default); it logs the
-// entry and takes the drink OFF the list. Kind is pre-derived from the name. Styled to
-// match the log sheet so it feels like the rest of the app.
-function LogWishPopup({ item, onClose }: { item: WishItem; onClose: () => void }) {
-  const [date, setDate] = useState(todayKey());
-
-  function log() {
-    const canon = canonicalize(item.drink);
-    addEntry({ date, drink: item.drink, type: canon.type });
-    void removeWish(item.id); // logged → off the to-try list
-    onClose();
-  }
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Log ${item.drink}`}
-      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
-    >
-      <button aria-label="Close" onClick={onClose} className="animate-fade absolute inset-0 bg-ink/40 backdrop-blur-sm" />
-      <div className="glass-strong animate-sheet relative w-full max-w-md rounded-t-[28px] bg-canvas/90 px-5 pb-8 pt-4 sm:rounded-tile">
-        <div aria-hidden className="mx-auto mb-4 h-1 w-9 rounded-full bg-line-strong sm:hidden" />
-        <p className="label text-faint">Log to your diary</p>
-        <p className="mt-1 font-display text-3xl leading-none text-ink">{item.drink}</p>
-        <label className="mt-5 block">
-          <span className="mb-1.5 block text-xs text-muted">Which day</span>
-          <input
-            type="date"
-            value={date}
-            max={todayKey()}
-            onChange={(e) => setDate(e.target.value)}
-            className="glass w-full rounded-ctl px-4 py-3 text-[15px] text-ink"
-          />
-        </label>
-        <button
-          onClick={log}
-          className="mt-5 flex h-12 w-full items-center justify-center rounded-ctl bg-ink text-base font-medium text-paper transition-opacity hover:opacity-90"
-        >
-          Log it
-        </button>
-        <button
-          onClick={onClose}
-          className="mt-2 flex h-11 w-full items-center justify-center rounded-ctl text-sm text-faint transition-colors hover:text-ink"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
+        {on ? (
+          <svg viewBox="0 0 12 12" className="h-3 w-3 text-accent">
+            <path d="M2.6 6.4l2.2 2.2 4.6-4.9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : (
+          <span className="h-1.5 w-1.5 rounded-full bg-line-strong" />
+        )}
+      </span>
+    </button>
   );
 }
 

@@ -262,3 +262,16 @@
 .animate-pop {
   animation: pop 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+/* A rail segment drawing itself downward — the journey's vertical map fills in as it mounts. */
+@keyframes grow-down {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+.animate-grow-down {
+  transform-origin: top;
+  animation: grow-down 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}

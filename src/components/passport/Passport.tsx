@@ -15,6 +15,9 @@ import { chartedBy, commons } from "@/lib/cartography";
 import { useChartedFamilies, useMyProposals, type ChartedFamily } from "@/lib/charts";
 import { Journey } from "./Journey";
 import { Expeditions } from "../expeditions/Expeditions";
+import { trophies } from "@/lib/expeditions";
+import { scoreFromEntries } from "@/lib/score";
+import { ScoreBanner } from "../ui/ScoreBanner";
 import { ChartThis } from "./ChartThis";
 import type { DrinkType } from "@/lib/types";
 import { MONTH_NAMES, parseKey } from "@/lib/date";
@@ -53,6 +56,14 @@ export function Passport() {
             : "your taste passport"}
         </span>
       </div>
+
+      {/* The Palate Score — the exploration metric, front and centre (breadth + consistency,
+          never volume; lib/score). The same banner the profile leads with. */}
+      {entries.length > 0 && (
+        <div className="glass mb-4 rounded-tile p-5">
+          <ScoreBanner ps={scoreFromEntries(entries)} size={84} />
+        </div>
+      )}
 
       {/* The hero: your exploration as one winding road you scroll along (see Journey.tsx).
           Shown even before your first stamp — a whole trail of landmarks lying ahead. */}
@@ -98,10 +109,10 @@ export function Passport() {
         </div>
       )}
 
-      {/* The full territory — every family the map knows, tucked behind one tap so the
-          section reads as a gallery of what you HAVE, not a checklist of what you don't. */}
-      <div className="mt-8">
-        <WholeMap worlds={p.worlds} onOpen={setStamp} />
+      {/* Achievements — the trophy shelf. Every badge is breadth or a gentle behaviour
+          (a dry day in the week), never volume or difficulty (lib/expeditions trophies). */}
+      <div className="mt-10">
+        <Trophies />
       </div>
 
       {stamp && <StampSheet stamp={stamp} charted={charted} onClose={() => setStamp(null)} />}
@@ -141,37 +152,44 @@ function Collected({ worlds, onOpen }: { worlds: World[]; onOpen: (s: Stamp) => 
   );
 }
 
-// ── The whole map — every family the dictionary knows, behind ONE tap ────────
-// The full territory (explored + not) is a reference, not the headline: collapsed by
-// default so the section is calm, opened by anyone who wants to browse where they could
-// wander. "Unexplored is an invitation, never a lack" — so a dim stamp here is a door.
-function WholeMap({ worlds, onOpen }: { worlds: World[]; onOpen: (s: Stamp) => void }) {
-  const [open, setOpen] = useState(false);
-  const total = worlds.reduce((n, w) => n + w.stamps.length, 0);
+// ── Achievements — the trophy shelf ──────────────────────────────────────────
+// A calm collection you fill by EXPLORING (breadth) or a gentle behaviour signal, never by
+// drinking more (lib/expeditions.trophies enforces that). Earned badges glow amber; the rest
+// are dim invitations that read as "here's what's out there", never a scolding checklist —
+// so no "X of N to finish" figure, only how many you've earned. Freshly-earned ones are
+// separately celebrated on the journey road (see Journey.tsx), so this stays a quiet cabinet.
+function Trophies() {
+  const entries = useEntries();
+  const all = trophies(entries);
+  const earned = all.filter((t) => t.earned).length;
   return (
     <div>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex min-h-11 w-full items-center justify-between rounded-tile border border-line px-4 text-sm text-muted transition-colors hover:border-line-strong hover:text-ink"
-      >
-        <span>See the whole map</span>
-        <span className="tnum text-xs text-faint">{total} families {open ? "▴" : "▾"}</span>
-      </button>
-      {open && (
-        <div className="animate-rise mt-5 space-y-5">
-          {worlds.map((w) => (
-            <div key={w.type}>
-              <p className="label mb-2 text-faint">{WORLD[w.type]}</p>
-              <div className="flex flex-wrap gap-1.5">
-                {w.stamps.map((s) => (
-                  <StampChip key={s.family} stamp={s} onOpen={() => onOpen(s)} />
-                ))}
-              </div>
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <p className="label text-faint">Achievements</p>
+        <span className="tnum text-xs text-faint">{earned > 0 ? `${earned} earned` : "none yet"}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {all.map((t) => (
+          <div
+            key={t.id}
+            className={clsx("rounded-tile border p-3", t.earned ? "border-transparent bg-accent/8" : "border-line")}
+          >
+            <div className="flex items-center gap-2">
+              <span
+                aria-hidden
+                className={clsx(
+                  "grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs",
+                  t.earned ? "bg-accent text-accent-contrast" : "bg-ink/5 text-faint",
+                )}
+              >
+                {t.earned ? "✦" : "○"}
+              </span>
+              <p className={clsx("text-sm leading-tight", t.earned ? "text-ink" : "text-faint")}>{t.title}</p>
             </div>
-          ))}
-        </div>
-      )}
+            <p className="mt-1.5 text-xs leading-snug text-faint">{t.note}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
