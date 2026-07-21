@@ -461,12 +461,12 @@ try {
     !!axisDef && /'drinks'/.test(axisDef.d) && !/volume|spend/i.test(axisDef.d), axisDef ? `— ${axisDef.d}` : "— MISSING");
 
   // join_policy has no 'public'/'strangers' tier (same posture as plans).
-  const jpDef = await one(`
+  const cupJpDef = await one(`
     select pg_get_constraintdef(c.oid) d
     from pg_constraint c join pg_class t on t.oid = c.conrelid
     where t.relname = 'cups' and c.contype = 'c' and pg_get_constraintdef(c.oid) ilike '%join_policy%'`);
   ok("cups.join_policy CHECK has no public/strangers tier",
-    !!jpDef && !/public|stranger/i.test(jpDef.d));
+    !!cupJpDef && !/public|stranger/i.test(cupJpDef.d));
 
   // cup_members must have NO client insert/update path — joins go through join_cup
   // (definer) only, so a member can never forge a rival's row or their own score.

@@ -1199,32 +1199,33 @@ try {
     (await as(anita, `select * from public.plan_requests($1)`, [prPlan])).rows.length === 0);
 
   console.log("\n── 18. cups: a competition that cannot reward volume (044) ──");
-  // Fresh cast — an isolated window (2020) and new users, so no other section's
-  // entries, friendships or blocks colour the scores or the join.
+  // Fresh cast — new users (so no other section's entries/friends/blocks colour this) and a
+  // window around TODAY (join_cup rightly refuses an already-ended cup, so it can't be 2020).
   const cupOwner = await mkUser("Cup Host", `vf-ch-${Date.now()}`);
   const cupGuest = await mkUser("Cup Guest", `vf-cg-${Date.now()}`);
   const cupOut = await mkUser("Cup Outsider", `vf-cx-${Date.now()}`);
+  const isoDay = (back) => new Date(Date.now() - back * 86400000).toISOString().slice(0, 10);
   const logE = (uid, date, drink, type) =>
     as(uid, `insert into public.entries (user_id,date,drink,type) values ($1,$2,$3,$4)`, [uid, date, drink, type]);
 
   const cupId = randomUUID();
   await as(cupOwner, `insert into public.cups (id,created_by,name,axis,join_policy,starts_on,ends_on)
-    values ($1,$2,'Wanderer Cup','drinks','invite','2020-01-01','2020-01-31')`, [cupId, cupOwner]);
+    values ($1,$2,'Wanderer Cup','drinks','invite', current_date - 5, current_date + 25)`, [cupId, cupOwner]);
   const cupCode = (await db.query(`select invite_code from public.cups where id=$1`, [cupId])).rows[0].invite_code;
   ok("the cup owner is auto-added to their own cup (trigger)",
     (await db.query(`select count(*)::int n from public.cup_members where cup_id=$1 and user_id=$2`, [cupId, cupOwner])).rows[0].n === 1);
 
   // BREADTH, NEVER VOLUME: two of the same drink + one distinct → score 2, not 3.
-  // A dry day is not a drink, so it doesn't lift a 'drinks' score.
-  await logE(cupOwner, "2020-01-05", "Latte", "coffee");
-  await logE(cupOwner, "2020-01-06", "Latte", "coffee");
-  await logE(cupOwner, "2020-01-07", "Negroni", "cocktail");
-  await logE(cupOwner, "2020-01-08", "dry day", "none");
+  // A dry day is not a drink, so it doesn't lift a 'drinks' score. Dates sit inside the window.
+  await logE(cupOwner, isoDay(3), "Latte", "coffee");
+  await logE(cupOwner, isoDay(2), "Latte", "coffee");
+  await logE(cupOwner, isoDay(1), "Negroni", "cocktail");
+  await logE(cupOwner, isoDay(0), "dry day", "none");
   const ownScore = (await as(cupOwner, `select score from public.cup_board($1) where user_id=$2`, [cupId, cupOwner])).rows[0]?.score;
   ok("a 'drinks' cup scores DISTINCT drinks (2), never volume (3)", ownScore === 2);
 
   ok("a guest joins the cup by code", (await as(cupGuest, `select public.join_cup($1) id`, [cupCode])).rows[0].id === cupId);
-  await logE(cupGuest, "2020-01-10", "IPA", "beer");
+  await logE(cupGuest, isoDay(1), "IPA", "beer");
   const cupBoard = (await as(cupOwner, `select * from public.cup_board($1)`, [cupId])).rows;
   ok("the board lists members with COUNTS only (no entry content)",
     cupBoard.length === 2 && cupBoard.every((r) => "score" in r && !("drink" in r)));
