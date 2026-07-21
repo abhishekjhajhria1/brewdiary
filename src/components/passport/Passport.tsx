@@ -14,9 +14,9 @@ import { intensityLevel } from "@/lib/derive";
 import { adjacentStamps, palateNeighbours, passport, type Stamp, type World } from "@/lib/passport";
 import { chartedBy, commons } from "@/lib/cartography";
 import { useChartedFamilies, useMyProposals, type ChartedFamily } from "@/lib/charts";
-import { trophies } from "@/lib/expeditions";
+import { Journey } from "./Journey";
 import { ChartThis } from "./ChartThis";
-import type { DrinkType, Entry } from "@/lib/types";
+import type { DrinkType } from "@/lib/types";
 import { MONTH_NAMES, parseKey } from "@/lib/date";
 
 // Same dramatic ramp the year mosaic uses — brighter square = more logged in that family.
@@ -46,7 +46,7 @@ export function Passport() {
       {/* Section header matches every other section in You (label-scale) — the page already
           has one h1, and the map shouldn't compete with it. */}
       <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 className="label">Palate</h2>
+        <h2 className="label">Passport</h2>
         <span className="text-xs text-faint">
           {p.exploredFamilies > 0
             ? `${p.exploredFamilies} famil${p.exploredFamilies === 1 ? "y" : "ies"} & counting`
@@ -54,12 +54,16 @@ export function Passport() {
         </span>
       </div>
 
+      {/* The hero: your exploration as one winding road you scroll along (see Journey.tsx).
+          Shown even before your first stamp — a whole trail of landmarks lying ahead. */}
+      <Journey />
+
       {p.exploredFamilies === 0 ? (
-        <p className="glass rounded-tile px-5 py-8 text-center text-sm text-faint">
-          Log a drink and its family lights up here — a quiet map of the palate you&apos;re building.
+        <p className="mt-3 text-center text-xs text-faint">
+          Log a drink and its family lights the first landmark — the road fills in as you wander.
         </p>
       ) : (
-        <div className="space-y-6">
+        <div className="mt-6 space-y-6">
           {/* The silhouette of a taste — the ownable identity. */}
           <PaletteSilhouette worlds={p.worlds} />
 
@@ -98,10 +102,6 @@ export function Passport() {
               The map holds {c.families} families · {c.charted} charted by drinkers.
             </p>
           )}
-
-          {/* The collectible's trophies live WITH the map they measure — breadth &
-              behaviour, never volume or difficulty (see lib/expeditions.trophies). */}
-          <TrophyShelf entries={entries} />
         </div>
       )}
 
@@ -190,41 +190,6 @@ function PaletteSilhouette({ worlds }: { worlds: World[] }) {
             <span aria-hidden className="h-2 w-2 rounded-full bg-accent" style={{ opacity: amber(w.exploredCount) }} />
             {WORLD[w.type]}
             <span className="tnum text-faint">{w.exploredCount}</span>
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// The trophy shelf — a calm collection you fill by EXPLORING (Untappd-style). Breadth
-// and behaviour only; no trophy counts volume or difficulty. Hidden until you've earned
-// one, so it never reads as a to-do list. Moved here from Expeditions: trophies belong
-// with the map they measure.
-function TrophyShelf({ entries }: { entries: Entry[] }) {
-  const shelf = trophies(entries);
-  if (!shelf.some((t) => t.earned)) return null;
-  return (
-    <div>
-      <p className="label mb-2 text-faint">Trophies</p>
-      <div className="flex flex-wrap gap-1.5">
-        {shelf.map((t) => (
-          <span
-            key={t.id}
-            title={t.note}
-            className={clsx(
-              "inline-flex items-center gap-1.5 rounded-ctl border px-2.5 py-1.5 text-xs",
-              t.earned ? "border-transparent bg-accent/8 text-ink" : "border-line text-faint",
-            )}
-          >
-            <span
-              aria-hidden
-              className={clsx(
-                "h-2 w-2 shrink-0 rounded-full",
-                t.earned ? "bg-accent" : "shadow-[inset_0_0_0_1px_var(--color-line-strong)]",
-              )}
-            />
-            {t.title}
           </span>
         ))}
       </div>
