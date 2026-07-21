@@ -31,12 +31,23 @@ export interface Journey {
   exploredFamilies: number;
 }
 
+/** Creative landmarks that live OUTSIDE the diary (community recipes) — passed in by the
+ *  UI because they come from the DB, not from entries. Both default to unlit, so the pure
+ *  road is unchanged for callers/tests that don't have them. */
+export interface JourneyExtras {
+  /** You wrote a recipe and shared it. */
+  sharedRecipe?: boolean;
+  /** One of your recipes earned a medal (friends reacted — creativity, never consumption). */
+  medalledRecipe?: boolean;
+}
+
 /**
  * Build the journey for a diary. The order is a gentle difficulty ramp; a couple of nodes
- * (off-map, a balanced week) are side-landmarks that may light out of order — that reads as
- * "a spot you can double back for", the same way a path game leaves optional bonus nodes.
+ * (off-map, a balanced week, the recipe pair) are side-landmarks that may light out of order —
+ * that reads as "a spot you can double back for", the same way a path game leaves optional
+ * bonus nodes.
  */
-export function journey(entries: Entry[], today?: string): Journey {
+export function journey(entries: Entry[], today?: string, extras: JourneyExtras = {}): Journey {
   const p = passport(entries);
   const fam = p.exploredFamilies;
   const worlds = p.worlds.filter((w) => w.exploredCount > 0).length;
@@ -52,8 +63,10 @@ export function journey(entries: Entry[], today?: string): Journey {
     { id: "fam8", label: "8 families", hint: "The map is filling in.", reached: fam >= 8 },
     { id: "world3", label: "Three worlds", hint: "Coffee to cocktails and beyond.", reached: worlds >= 3 },
     { id: "offmap", label: "Off the map", hint: "You found a drink the map had never seen.", reached: offMap >= 1 },
+    { id: "recipe", label: "A recipe of yours", hint: "You wrote one down and shared it.", reached: !!extras.sharedRecipe },
     { id: "fam12", label: "12 families", hint: "A wide palate, this.", reached: fam >= 12 },
     { id: "balance", label: "An easy week", hint: "A week with a night off in it.", reached: wb.dryDays >= 1 && wb.drinks >= 1 },
+    { id: "medal", label: "A loved recipe", hint: "Friends keep coming back to something you made.", reached: !!extras.medalledRecipe },
     { id: "fam18", label: "18 families", hint: "Far-wandered.", reached: fam >= 18 },
     { id: "fam25", label: "25 families", hint: "A serious map now.", reached: fam >= 25 },
     { id: "allworlds", label: "Every world", hint: "A stamp in every world there is.", reached: totalWorlds > 0 && worlds === totalWorlds },

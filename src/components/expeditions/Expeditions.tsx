@@ -10,7 +10,7 @@
 //  • Breadth, never volume — a card points at a family you HAVEN'T explored; logging it once is
 //    the whole ask, and the card then leaves (the hand self-advances). No card counts drinks.
 //  • One action only — save the drink to your to-try list. No spark, no perk: exploring is the reward.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { useEntries } from "@/lib/store";
 import { usePantry } from "@/lib/pantry";
@@ -18,6 +18,7 @@ import { addWish, useWishlist } from "@/lib/wishlist";
 import { useFeed } from "@/lib/friends";
 import { expeditionHand, type Quest, type Vibe } from "@/lib/expeditions";
 import { useVibe, setVibe } from "@/lib/expeditionPath";
+import { todayKey } from "@/lib/date";
 
 const PATHS: { vibe: Vibe; label: string }[] = [
   { vibe: "cozy", label: "Cozy" },
@@ -76,23 +77,66 @@ export function Expeditions() {
       </div>
 
       <div className="space-y-2">
-        {hand.map((q) => (
-          <QuestCard key={q.id} quest={q} />
+        {hand.map((q, i) => (
+          // The LAST card of a full hand arrives face-down — a small, honest slot-pull of
+          // curiosity (variable reward pointed at EXPLORING, never at drinking). Once looked
+          // at it stays open for the day; tomorrow's hand deals a fresh unknown.
+          <QuestCard key={q.id} quest={q} mystery={hand.length >= 2 && i === hand.length - 1} />
         ))}
       </div>
     </div>
   );
 }
 
+// Which day's mystery has been peeked, kept per-device so the card doesn't re-hide on
+// every remount within the same evening. One key, overwritten daily.
+const MYSTERY_KEY = "brewdiary.mystery.v1";
+function peekedToday(): boolean {
+  try {
+    return window.localStorage.getItem(MYSTERY_KEY) === todayKey();
+  } catch {
+    return false;
+  }
+}
+function markPeeked() {
+  try {
+    window.localStorage.setItem(MYSTERY_KEY, todayKey());
+  } catch {
+    /* private mode — the card simply re-hides next mount */
+  }
+}
+
 // One card in tonight's hand. A card with a target family gets a single action — save it to your
 // to-try list (like Wander here). An open invitation (chart something / go somewhere new / a quiet
 // night) has no family to save, so it's just a prompt — a standing door, not a task to tick.
-function QuestCard({ quest }: { quest: Quest }) {
+function QuestCard({ quest, mystery = false }: { quest: Quest; mystery?: boolean }) {
   const [saved, setSaved] = useState(false);
+  // Face-down until tapped (or until it was already peeked today). Starts revealed on the
+  // server render, then hides after mount if unpeeked — avoids a hydration mismatch.
+  const [revealed, setRevealed] = useState(true);
+  useEffect(() => {
+    if (mystery && !peekedToday()) setRevealed(false);
+  }, [mystery]);
   const where = WHERE_LABEL[quest.where];
 
+  if (!revealed) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          markPeeked();
+          setRevealed(true);
+        }}
+        className="glass glass-press w-full rounded-tile border-dashed p-4 text-left"
+      >
+        <p className="text-sm text-ink">A door you haven&apos;t opened.</p>
+        <p className="mt-1 text-xs text-faint">Tonight&apos;s wildcard — tap to look.</p>
+      </button>
+    );
+  }
+
   return (
-    <div className="glass rounded-tile p-4">
+    <div className={clsx("glass rounded-tile p-4", mystery && "animate-pop")}>
       <p className="text-sm text-ink">{quest.title}</p>
       {quest.hint && <p className="mt-1 text-xs text-faint">{quest.hint}</p>}
       <div className="mt-2.5 flex items-center gap-2 text-xs text-faint">

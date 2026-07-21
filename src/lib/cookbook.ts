@@ -61,6 +61,9 @@ const TIERS: { tier: MedalTier; at: number }[] = [
   { tier: "gold", at: 25 },
 ];
 
+/** Reactions of one kind needed for the first (bronze) medal. */
+export const FIRST_MEDAL_AT = TIERS[0].at;
+
 const MEDAL_TITLE: Record<ReactionKind, Record<MedalTier, string>> = {
   made: { bronze: "Poured by friends", silver: "House pour", gold: "A classic now" },
   love: { bronze: "Warmly received", silver: "Crowd favourite", gold: "Beloved" },
@@ -168,6 +171,44 @@ export function useReactionCounts(recipeId: string): { counts: ReactionCounts; l
   }, [recipeId, v]);
 
   return { counts, loading };
+}
+
+/** Did I share a recipe, and did any of mine earn a medal? Feeds the Journey's two
+ *  creative side-landmarks (lib/journey JourneyExtras). One recipes query, then the
+ *  counts RPC per own recipe — reactions are self-read-only under RLS, so the RPC is
+ *  the only honest counts path; authors rarely have more than a handful of recipes. */
+export function useMyRecipeGlory(): { shared: boolean; medalled: boolean } {
+  const me = useAuth().profile?.id;
+  const v = useVersion();
+  const [glory, setGlory] = useState({ shared: false, medalled: false });
+
+  useEffect(() => {
+    if (!supabase || !me) {
+      setGlory({ shared: false, medalled: false });
+      return;
+    }
+    let active = true;
+    (async () => {
+      const { data } = await supabase!.from("recipes").select("id").eq("author_id", me);
+      const ids = ((data ?? []) as { id: string }[]).map((r) => r.id);
+      if (!active) return;
+      if (ids.length === 0) {
+        setGlory({ shared: false, medalled: false });
+        return;
+      }
+      const tallies = await Promise.all(ids.map((rid) => supabase!.rpc("recipe_reaction_counts", { rid })));
+      if (!active) return;
+      const medalled = tallies.some(({ data: rows }) =>
+        ((rows ?? []) as { n: number }[]).some((row) => row.n >= FIRST_MEDAL_AT),
+      );
+      setGlory({ shared: true, medalled });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [me, v]);
+
+  return glory;
 }
 
 /** MY reactions across all recipes (the read policy only ever returns my own rows). */

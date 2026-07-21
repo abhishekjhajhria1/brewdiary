@@ -73,11 +73,12 @@ export function CalendarHome() {
         </button>
       )}
 
-      {/* Month view: the per-day quick-trackers (cigarettes, water…) for TODAY.
+      {/* Month view: the all-day quick-trackers (cigarettes, water) for TODAY —
+          the drink tallies (pegs, beers) live in Together, where the night out is.
           Year view: a collectible tracker made no sense there, so it becomes the
           rotating achievement tile instead (item 8). */}
       {view === "month" ? (
-        <DayCounters dateKey={todayKey()} className="mt-4" />
+        <DayCounters dateKey={todayKey()} only={["cigarettes", "water"]} className="mt-4" />
       ) : (
         <AchievementTile className="mt-4" />
       )}

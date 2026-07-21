@@ -2,17 +2,14 @@
 
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { getStoredTheme, setTheme, type Theme } from "@/lib/theme";
+import { getStoredTheme, setTheme, THEMES, type Theme } from "@/lib/theme";
 
-// The theme control — a two-option SEGMENTED switch (Light | Dark) rather than a lone
-// glyph button, so both states are visible and the current one is plainly selected.
-// It lives in You › Settings ONLY (the maintainer's call): one obvious home beats a
-// mystery icon on every page. Typographic glyphs, no icon lib (on-brand).
-const OPTIONS: { value: Theme; glyph: string; label: string }[] = [
-  { value: "light", glyph: "○", label: "Light" },
-  { value: "dark", glyph: "●", label: "Dark" },
-];
-
+// The theme picker — a 2×2 grid of named looks (Light / Dark / Sketchbook /
+// Espresso) rather than a lone glyph button, so every state is visible and the
+// current one is plainly selected. It lives in You › Settings ONLY (the
+// maintainer's call): one obvious home beats a mystery icon on every page.
+// Typographic glyphs, no icon lib (on-brand). Selecting applies instantly —
+// the whole app is the preview.
 export function ThemeToggle() {
   const [theme, setLocal] = useState<Theme>("dark");
   const [mounted, setMounted] = useState(false);
@@ -31,8 +28,8 @@ export function ThemeToggle() {
   const shown = mounted ? theme : "dark";
 
   return (
-    <div role="radiogroup" aria-label="Theme" className="glass inline-flex rounded-ctl p-1">
-      {OPTIONS.map((o) => {
+    <div role="radiogroup" aria-label="Theme" className="grid w-full max-w-xs grid-cols-2 gap-2">
+      {THEMES.map((o) => {
         const active = shown === o.value;
         return (
           <button
@@ -42,12 +39,20 @@ export function ThemeToggle() {
             aria-checked={active}
             onClick={() => pick(o.value)}
             className={clsx(
-              "flex min-h-9 items-center gap-1.5 rounded-[7px] px-3 text-xs font-medium uppercase tracking-widest transition-colors",
-              active ? "bg-ink text-paper" : "text-faint hover:text-ink",
+              "glass glass-press flex min-h-11 items-center gap-2 rounded-ctl px-3 py-2 text-left text-xs font-medium uppercase tracking-widest transition-colors",
+              active ? "border-accent text-ink" : "text-faint hover:text-ink",
             )}
+            style={active ? { borderColor: "var(--accent)" } : undefined}
           >
-            <span aria-hidden>{o.glyph}</span>
+            <span aria-hidden className={clsx("text-sm", active ? "text-accent" : "text-faint")}>
+              {o.glyph}
+            </span>
             {o.label}
+            {active && (
+              <span aria-hidden className="ml-auto text-accent">
+                ✓
+              </span>
+            )}
           </button>
         );
       })}

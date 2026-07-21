@@ -95,7 +95,7 @@ function Header({ profile }: { profile?: Profile | null }) {
     <header className="mb-8 flex items-center justify-between border-b border-line pb-4">
       <span className="flex items-baseline gap-2">
         <span className="font-display text-lg italic text-muted">brewdiary</span>
-        <span className="label text-accent">for bars</span>
+        <span className="label text-accent">for the trade</span>
       </span>
       <span className="flex items-center gap-3">
         {profile && (
@@ -135,14 +135,14 @@ export function VenueApp() {
 function VenueLanding() {
   return (
     <>
-      <p className="label mb-2 text-faint">brewdiary for bars</p>
+      <p className="label mb-2 text-faint">brewdiary for bars · bottle shops · restaurants</p>
       <h1 className="font-display text-4xl leading-tight tracking-tight text-ink sm:text-5xl">
         Give your regulars a reason to be regulars.
       </h1>
       <p className="mt-3 max-w-prose text-[15px] leading-relaxed text-muted">
-        brewdiary is a drink diary its people already carry. This is the side you run: a room for tonight, a
-        reward that brings them back, and a way for your staff to thank the good ones. Free, and nothing to
-        install.
+        brewdiary is a drink diary its people already carry. This is the side you run: a room for tonight
+        (or a punch-card at the till, if you&apos;re a shop), a reward that brings them back, staff thanks for
+        the good ones, and Ninkasi reading your numbers. Free, and nothing to install.
       </p>
 
       <VenueAuth />
@@ -810,6 +810,11 @@ function Insights({ venue }: { venue: Venue }) {
         </p>
       )}
 
+      {/* Ninkasi's read sits right under the numbers it's grounded in — the same
+          aggregates, never an individual — high on the page: for most owners the
+          "what should I do next" line IS the product, the tiles are the evidence. */}
+      <VenueAdvisor venue={venue} insights={data} days={days} />
+
       {/* Busiest / deadest night — the read that feeds the quiet-night lever. */}
       <WeekdayVisits visits={data.visitsByDow} quietNights={venue.quietNights ?? []} />
 
@@ -826,10 +831,6 @@ function Insights({ venue }: { venue: Venue }) {
           at somebody. With five or more guests they&apos;ll appear.
         </p>
       )}
-
-      {/* The AI reads the SAME aggregates above — never an individual — and says what
-          to do next. Lives here, under the numbers it's grounded in. */}
-      <VenueAdvisor venue={venue} insights={data} days={days} />
 
       <p className="mt-4 border-t border-line pt-3 text-xs leading-relaxed text-faint">
         These are counts, for this venue only. Your <span className="text-ink">guest book</span> keeps notes on

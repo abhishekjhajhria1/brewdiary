@@ -71,6 +71,84 @@
     var(--base);
 }
 
+/* ── Sketchbook — warm paper, pencil ink, graph-paper ground. Glass becomes a
+   drawn tile: near-solid paper, a firm ink border with a hand-drawn wobble
+   (uneven radii), and an offset "hatch" shadow instead of blur. Type switches
+   to the handwritten voice (see the body/display overrides below). */
+[data-theme="sketch"] {
+  --base: #f7f3e9;
+  --paper: var(--base);
+  --ink: #2a2620;
+  --muted: #6b645a;
+  --faint: #9a9186;
+  --line: rgba(42, 38, 32, 0.14);
+  --line-strong: rgba(42, 38, 32, 0.28);
+  --accent: #a8641c;
+  --accent-contrast: #fffdf6;
+  --mosaic: var(--accent);
+
+  --glass: rgba(255, 253, 246, 0.82);
+  --glass-strong: rgba(255, 253, 246, 0.96);
+  --glass-border: rgba(42, 38, 32, 0.75);
+  --glass-shadow: 3px 3px 0 rgba(42, 38, 32, 0.1);
+  --glass-highlight: inset 0 0 0 transparent;
+  --shadow: 5px 5px 0 rgba(42, 38, 32, 0.12);
+
+  /* graph-paper: two faint rulings over warm paper — no blobs here */
+  --ambient:
+    repeating-linear-gradient(0deg, transparent 0 27px, rgba(42, 38, 32, 0.05) 27px 28px),
+    repeating-linear-gradient(90deg, transparent 0 27px, rgba(42, 38, 32, 0.05) 27px 28px),
+    var(--base);
+}
+
+/* ── Espresso — the dark glass material re-lit in caramel and crema. */
+[data-theme="espresso"] {
+  --base: #150f0a;
+  --paper: var(--base);
+  --ink: #f3e9da;
+  --muted: #a8988a;
+  --faint: #71645a;
+  --line: rgba(243, 233, 218, 0.12);
+  --line-strong: rgba(243, 233, 218, 0.22);
+  --accent: #d99a4e;
+  --accent-contrast: #171009;
+  --mosaic: var(--accent);
+
+  --glass: rgba(255, 236, 210, 0.07);
+  --glass-strong: rgba(255, 236, 210, 0.12);
+  --glass-border: rgba(255, 236, 210, 0.16);
+  --glass-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  --glass-highlight: inset 0 1px 0 rgba(255, 236, 210, 0.18);
+  --shadow: 0 10px 50px rgba(0, 0, 0, 0.6);
+
+  --ambient:
+    radial-gradient(60% 50% at 12% 8%, rgba(217, 154, 78, 0.36), transparent 65%),
+    radial-gradient(55% 45% at 92% 14%, rgba(158, 82, 36, 0.32), transparent 65%),
+    radial-gradient(60% 55% at 78% 92%, rgba(236, 205, 156, 0.16), transparent 65%),
+    radial-gradient(55% 50% at 18% 88%, rgba(101, 52, 24, 0.38), transparent 65%),
+    var(--base);
+}
+
+/* Sketchbook material + type: solid drawn tiles (no blur), wobbly radii, handwritten voice. */
+[data-theme="sketch"] body {
+  font-family: var(--font-sketch), "Segoe Print", "Comic Sans MS", cursive;
+}
+[data-theme="sketch"] .display,
+[data-theme="sketch"] .font-display {
+  font-family: var(--font-sketch), "Segoe Print", cursive;
+  letter-spacing: 0;
+}
+[data-theme="sketch"] .glass,
+[data-theme="sketch"] .glass-strong {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-width: 1.5px;
+  border-radius: 18px 7px 16px 9px / 9px 16px 7px 18px;
+}
+[data-theme="sketch"] .label {
+  letter-spacing: 0.1em;
+}
+
 @theme inline {
   --color-paper: var(--paper);
   /* named `canvas`, NOT `base` — a `base` color would shadow the `text-base` font-size utility */

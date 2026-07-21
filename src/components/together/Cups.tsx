@@ -9,7 +9,7 @@
 //
 // UX note (maintainer's ask): every action here is a real, visible BUTTON — create, join,
 // open, share, leave — never a bare clickable line, so the feature is easy to discover.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { useAuth } from "@/lib/profile";
 import {
@@ -126,11 +126,19 @@ function fmtDay(key: string): string {
   return `${MONTH_NAMES[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
 }
 
-function cupStatus(cup: Cup): { label: string; live: boolean; ended: boolean } {
+// The last week turns into a countdown ("3 days left") — the spec's grey-hat urgency,
+// aimed at CHARTING/exploring before the window shuts, never at drinking (the axis
+// palette upstream already makes a consumption race impossible).
+function cupStatus(cup: Cup): { label: string; live: boolean; ended: boolean; closing: boolean } {
   const today = todayKey();
-  if (today < cup.startsOn) return { label: `starts ${fmtDay(cup.startsOn)}`, live: false, ended: false };
-  if (today > cup.endsOn) return { label: "ended", live: false, ended: true };
-  return { label: `until ${fmtDay(cup.endsOn)}`, live: true, ended: false };
+  if (today < cup.startsOn)
+    return { label: `starts ${fmtDay(cup.startsOn)}`, live: false, ended: false, closing: false };
+  if (today > cup.endsOn) return { label: "ended", live: false, ended: true, closing: false };
+  const daysLeft = Math.round((parseKey(cup.endsOn).getTime() - parseKey(today).getTime()) / 86_400_000);
+  if (daysLeft <= 0) return { label: "last day", live: true, ended: false, closing: true };
+  if (daysLeft <= 7)
+    return { label: `${daysLeft} day${daysLeft === 1 ? "" : "s"} left`, live: true, ended: false, closing: true };
+  return { label: `until ${fmtDay(cup.endsOn)}`, live: true, ended: false, closing: false };
 }
 
 export function Cups() {
@@ -265,7 +273,9 @@ function CupCard({ cup, onOpen }: { cup: Cup; onOpen: () => void }) {
             </>
           )}
           <span>·</span>
-          <span className={clsx(status.live && "text-accent")}>{status.label}</span>
+          <span className={clsx(status.live && "text-accent", status.closing && "font-medium")}>
+            {status.label}
+          </span>
           <span>·</span>
           <span className="tnum">
             {standings.length} {standings.length === 1 ? "player" : "players"}
@@ -551,11 +561,57 @@ function JoinForm({ onJoined }: { onJoined: () => void }) {
   );
 }
 
+// Last-seen rank per cup, on this device — the substrate for the "just passed you"
+// notice (the spec's grey-hat urgency: a social nudge pointed at EXPLORING more,
+// which is the only thing a cup can score). Reads/writes one small JSON map.
+const RANK_SEEN_KEY = "brewdiary.cup.rank.v1";
+function readRanks(): Record<string, number> {
+  try {
+    return JSON.parse(window.localStorage.getItem(RANK_SEEN_KEY) ?? "{}") as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+function writeRank(cupId: string, rank: number) {
+  try {
+    const map = readRanks();
+    map[cupId] = rank;
+    window.localStorage.setItem(RANK_SEEN_KEY, JSON.stringify(map));
+  } catch {
+    /* private mode — the notice simply never fires */
+  }
+}
+
+// "Since you last looked, X passed you" — computed once per open, from the snapshot
+// taken the LAST time this board was open. Null when nothing changed (or first view).
+function usePassedYou(
+  cupId: string,
+  live: boolean,
+  loading: boolean,
+  standings: { userId: string; name: string }[],
+  meId: string,
+): string | null {
+  const [passedBy, setPassedBy] = useState<string | null>(null);
+  useEffect(() => {
+    if (loading) return;
+    const myIndex = standings.findIndex((s) => s.userId === meId);
+    if (myIndex < 0) return;
+    const myRank = myIndex + 1;
+    const last = readRanks()[cupId];
+    if (live && last !== undefined && myRank > last) setPassedBy(standings[myIndex - 1]?.name ?? null);
+    writeRank(cupId, myRank);
+    // one comparison per sheet-open is the point — not a live ticker
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+  return passedBy;
+}
+
 // The cup sheet — the full standings board (plus the two-sided tug-of-war in a team
 // battle), the invite code to share, and leave/delete.
 function CupSheet({ cup, meId, onClose }: { cup: Cup; meId: string; onClose: () => void }) {
   const { standings, loading } = useCupBoard(cup.id);
   const status = cupStatus(cup);
+  const passedBy = usePassedYou(cup.id, status.live, loading, standings, meId);
   const isOwner = cup.createdBy === meId;
   const top = standings[0]?.score ?? 0;
 
@@ -595,6 +651,16 @@ function CupSheet({ cup, meId, onClose }: { cup: Cup; meId: string; onClose: () 
 
         {/* the two sides — only in a team battle */}
         {cup.teamMode && <TeamPanel cup={cup} ended={status.ended} />}
+
+        {/* since you last looked — the friendly shove, aimed at exploring */}
+        {passedBy && (
+          <div className="glass animate-pop mt-5 rounded-tile p-3.5">
+            <p className="text-sm text-ink">
+              <span className="text-accent">{passedBy}</span> passed you since you last looked.
+            </p>
+            <p className="mt-0.5 text-xs text-faint">Something new tonight would do it.</p>
+          </div>
+        )}
 
         {/* the board */}
         <p className="label mt-6 mb-2 text-faint">Standings</p>

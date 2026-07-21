@@ -22,6 +22,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import clsx from "clsx";
 import { useEntries } from "@/lib/store";
 import { journey, type JourneyNode } from "@/lib/journey";
+import { useMyRecipeGlory } from "@/lib/cookbook";
 
 // ── road geometry ────────────────────────────────────────────────────────────
 const PAD = 84; // lead-in / lead-out before the first & after the last landmark
@@ -84,7 +85,10 @@ function useFreshlyEarned(reachedIds: string[]): Set<string> {
 
 export function Journey() {
   const entries = useEntries();
-  const j = journey(entries);
+  // The two creative side-landmarks (a shared recipe, a medalled one) come from the DB,
+  // not the diary — so they ride in as extras; the road itself stays pure and derived.
+  const glory = useMyRecipeGlory();
+  const j = journey(entries, undefined, { sharedRecipe: glory.shared, medalledRecipe: glory.medalled });
   const [mode, setMode] = useState<"road" | "list">("road");
 
   const reachedIds = useMemo(() => j.nodes.filter((n) => n.reached).map((n) => n.id), [j.nodes]);

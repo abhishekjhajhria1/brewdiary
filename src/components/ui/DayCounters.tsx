@@ -9,14 +9,26 @@
 // The count is simply how many of those rows exist for the day; −1 removes the latest.
 import { useMemo } from "react";
 import clsx from "clsx";
-import { useExtras, enabledCounters, type ExtraDef } from "@/lib/features";
+import { useExtras, enabledCounters, type ExtraDef, type ExtraKey } from "@/lib/features";
 import { useWaterMl, formatVolume } from "@/lib/waterPref";
 import { useEntries, addEntry, deleteEntry } from "@/lib/store";
 import { normalize } from "@/lib/drinks";
 
-export function DayCounters({ dateKey, className }: { dateKey: string; className?: string }) {
+// `only` scopes the row to a subset of trackers — the calendar home shows the
+// all-day tallies (cigarettes, water) while the drink tallies (pegs, beers)
+// live in Together, where a night out actually happens. Omit it for all.
+export function DayCounters({
+  dateKey,
+  className,
+  only,
+}: {
+  dateKey: string;
+  className?: string;
+  only?: ExtraKey[];
+}) {
   const extras = useExtras();
-  const counters = enabledCounters(extras);
+  let counters = enabledCounters(extras);
+  if (only) counters = counters.filter((c) => only.includes(c.key));
   if (counters.length === 0) return null;
   return (
     <div className={clsx("flex flex-wrap gap-2", className)}>

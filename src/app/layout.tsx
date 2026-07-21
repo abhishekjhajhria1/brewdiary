@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Hanken_Grotesk, Newsreader } from "next/font/google";
+import { Hanken_Grotesk, Newsreader, Shantell_Sans } from "next/font/google";
 import "./globals.css";
 import { TabBar } from "@/components/ui/TabBar";
 import { TopBar } from "@/components/ui/TopBar";
@@ -20,6 +20,14 @@ const serif = Newsreader({
   subsets: ["latin"],
   variable: "--font-serif",
   style: ["normal", "italic"],
+  display: "swap",
+});
+
+// The Sketchbook theme's handwritten voice — only ever used when
+// data-theme="sketch" (see globals.css); loaded here so it's ready when picked.
+const sketch = Shantell_Sans({
+  subsets: ["latin"],
+  variable: "--font-sketch",
   display: "swap",
 });
 
@@ -73,7 +81,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${grotesque.variable} ${serif.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${grotesque.variable} ${serif.variable} ${sketch.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: AGE_FLAG_SCRIPT }} />

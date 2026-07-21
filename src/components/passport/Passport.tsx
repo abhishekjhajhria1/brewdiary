@@ -5,7 +5,7 @@
 // (see lib/passport.ts): a family is a binary stamp, so logging the same drink again never
 // advances it — the map rewards breadth, never volume, and coffee/tea fill it like spirits.
 // It reuses the year mosaic's amber-by-count language so it reads as the same collectible.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { useEntries } from "@/lib/store";
 import { addWish } from "@/lib/wishlist";
@@ -115,8 +115,102 @@ export function Passport() {
         <Trophies />
       </div>
 
+      <LongRecord />
+
       {stamp && <StampSheet stamp={stamp} charted={charted} onClose={() => setStamp(null)} />}
     </section>
+  );
+}
+
+// ── The Long Record — the epic-meaning frame (CD1) ──────────────────────────
+// The quiet closing thought: this diary is a LIFETIME record, and your charted
+// families are permanent marks on a map every future drinker walks on. Meaning,
+// not metrics — one soft-spoken block, no numbers race, nothing to optimise.
+// Crossing day 100 / 365 / 1000 earns a ONE-TIME anniversary line (seen-set in
+// localStorage, same pattern as the Journey's celebrations) — an anniversary of
+// KEEPING the record, which a dry year would earn all the same.
+const RECORD_DAYS = [100, 365, 1000] as const;
+const RECORD_SEEN_KEY = "brewdiary.record.seen.v1";
+const RECORD_LINE: Record<(typeof RECORD_DAYS)[number], string> = {
+  100: "A hundred days of showing up for your own story.",
+  365: "One full year — the record now knows a whole trip round the sun.",
+  1000: "A thousand days. Few notebooks anywhere last this long.",
+};
+
+function LongRecord() {
+  const entries = useEntries();
+  const mine = useMyProposals();
+  const [anniversary, setAnniversary] = useState<(typeof RECORD_DAYS)[number] | null>(null);
+
+  const firstDate = entries.length
+    ? entries.reduce((a, b) => (a.date <= b.date ? a : b)).date
+    : null;
+  const dayN = firstDate
+    ? Math.floor((Date.now() - parseKey(firstDate).getTime()) / 86_400_000) + 1
+    : 0;
+
+  // After mount only (localStorage): surface the biggest crossed-but-unseen milestone.
+  useEffect(() => {
+    if (!dayN) return;
+    try {
+      const seen = new Set<number>(JSON.parse(window.localStorage.getItem(RECORD_SEEN_KEY) ?? "[]"));
+      const due = [...RECORD_DAYS].reverse().find((m) => dayN >= m && !seen.has(m));
+      if (due) setAnniversary(due);
+    } catch {
+      /* private mode — no anniversaries, no harm */
+    }
+  }, [dayN]);
+
+  function dismissAnniversary() {
+    try {
+      const seen = new Set<number>(JSON.parse(window.localStorage.getItem(RECORD_SEEN_KEY) ?? "[]"));
+      // Everything at or below the shown milestone is spent — day 400 shouldn't
+      // later celebrate day 100.
+      for (const m of RECORD_DAYS) if (anniversary && m <= anniversary) seen.add(m);
+      window.localStorage.setItem(RECORD_SEEN_KEY, JSON.stringify([...seen]));
+    } catch {
+      /* keep it dismissed for this session regardless */
+    }
+    setAnniversary(null);
+  }
+
+  if (entries.length === 0 || !firstDate) return null;
+  const began = parseKey(firstDate);
+  const accepted = mine.filter((p) => p.status === "accepted").length;
+
+  return (
+    <div className="mt-10 border-t border-line pt-5">
+      <p className="label mb-2 text-faint">The long record</p>
+
+      {anniversary && (
+        <div className="glass animate-pop mb-3 flex items-start justify-between gap-3 rounded-tile p-4">
+          <p className="text-sm leading-relaxed text-ink">
+            <span className="label mb-1 block text-accent">day {anniversary}</span>
+            {RECORD_LINE[anniversary]}
+          </p>
+          <button
+            type="button"
+            onClick={dismissAnniversary}
+            aria-label="Dismiss anniversary"
+            className="min-h-11 shrink-0 px-2 text-sm text-faint transition-colors hover:text-ink"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      <p className="max-w-prose text-sm leading-relaxed text-muted">
+        Day <span className="tnum text-ink">{dayN}</span> of a record you started in{" "}
+        {MONTH_NAMES[began.getMonth()]} {began.getFullYear()}.
+        {accepted > 0 && (
+          <>
+            {" "}
+            <span className="tnum text-ink">{accepted}</span> famil{accepted === 1 ? "y" : "ies"} you
+            charted now live on everyone&apos;s map.
+          </>
+        )}{" "}
+        Ten years from now this page reads back a taste no one else has — keep wandering.
+      </p>
+    </div>
   );
 }
 

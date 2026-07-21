@@ -100,6 +100,8 @@ export function Landing() {
         </p>
       </section>
 
+      <PassportTeaser />
+
       <Ledger />
 
       <ClosingCTA
@@ -170,6 +172,76 @@ function YearPreview() {
   );
 }
 
+// The Passport teaser — a static, decorative version of the real Journey road
+// (a winding path of landmarks you travel by trying NEW things, never by volume).
+// Deterministic SVG so SSR and client render identically; travelled part gold,
+// the road ahead dim and dashed, "you are here" glowing at the frontier.
+function PassportTeaser() {
+  const W = 640;
+  const H = 120;
+  const roadY = (x: number) => H / 2 + Math.sin((x / W) * Math.PI * 2.2) * 34;
+  const pts = Array.from({ length: 81 }, (_, i) => {
+    const x = (i / 80) * W;
+    return `${x.toFixed(1)},${roadY(x).toFixed(1)}`;
+  });
+  const path = `M ${pts.join(" L ")}`;
+  // 7 landmarks along the road; the first 3 are "reached" in the preview.
+  const marks = [0.06, 0.2, 0.36, 0.52, 0.67, 0.82, 0.95].map((t, i) => ({
+    x: t * W,
+    y: roadY(t * W),
+    reached: i < 3,
+  }));
+  const frontier = marks[2];
+
+  return (
+    <section className="mt-20">
+      <p className="label mb-4 text-faint">The Passport</p>
+      <h2 className="display text-[2.5rem] leading-[1.05] sm:text-5xl">
+        Every new pour
+        <br />
+        is a landmark.
+      </h2>
+      <p className="mt-6 max-w-md text-[15px] leading-relaxed text-muted">
+        Your diary quietly draws a map of your taste. Try a drink you&apos;ve never had — a
+        world opens. A dry day counts too. Nothing here rewards drinking more, only
+        wandering wider.
+      </p>
+
+      <div aria-hidden className="glass mt-8 select-none overflow-hidden rounded-tile px-2 py-4">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="presentation">
+          {/* the road ahead — dim, dashed */}
+          <path d={path} fill="none" stroke="var(--line-strong)" strokeWidth="2" strokeDasharray="6 7" />
+          {/* travelled — gold, up to the frontier */}
+          <path
+            d={path}
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            pathLength={100}
+            strokeDasharray="52 100"
+          />
+          {marks.map((m, i) => (
+            <circle
+              key={i}
+              cx={m.x}
+              cy={m.y}
+              r={m.reached ? 6 : 4.5}
+              fill={m.reached ? "var(--accent)" : "var(--glass-strong)"}
+              stroke={m.reached ? "var(--accent)" : "var(--line-strong)"}
+              strokeWidth="1.5"
+            />
+          ))}
+          {/* you are here */}
+          <circle cx={frontier.x} cy={frontier.y} r="11" fill="var(--accent)" opacity="0.22" />
+          <circle cx={frontier.x} cy={frontier.y} r="6" fill="var(--accent)" />
+        </svg>
+        <p className="label mt-2 text-center text-faint">you are here — the road only asks for something new</p>
+      </div>
+    </section>
+  );
+}
+
 // What the diary actually gives you back. A ledger, not a grid of feature cards —
 // every line here is a screen that already exists behind the sign-up.
 const LEDGER: { title: string; body: string }[] = [
@@ -196,6 +268,10 @@ const LEDGER: { title: string; body: string }[] = [
   {
     title: "Private until you say otherwise",
     body: "Every entry starts private on your device. Sharing is a separate tap, always after the fact.",
+  },
+  {
+    title: "Four looks, one diary",
+    body: "Light, Dark, a hand-drawn Sketchbook, and a warm Espresso. Pick the one that feels like your notebook — it's in Settings, one tap.",
   },
 ];
 
@@ -245,6 +321,9 @@ function ClosingCTA({ loggedCount, onStart }: { loggedCount: number; onStart: ()
       >
         Create a diary
       </button>
+      <p className="mt-4 text-xs text-faint">
+        Free · no card · private by default · works offline as an app
+      </p>
     </section>
   );
 }

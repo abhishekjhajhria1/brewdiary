@@ -43,4 +43,17 @@ describe("journey — the exploration path", () => {
     const j = journey([entry({ drink: "Grandma's secret punch" })]);
     expect(j.nodes.find((n) => n.id === "offmap")!.reached).toBe(true);
   });
+
+  it("recipe side-landmarks stay dim without extras, light with them, and never move the frontier past taste landmarks", () => {
+    const plain = journey([entry({ drink: "Latte" })]);
+    expect(plain.nodes.find((n) => n.id === "recipe")!.reached).toBe(false);
+    expect(plain.nodes.find((n) => n.id === "medal")!.reached).toBe(false);
+
+    const glorious = journey([entry({ drink: "Latte" })], undefined, { sharedRecipe: true, medalledRecipe: true });
+    expect(glorious.nodes.find((n) => n.id === "recipe")!.reached).toBe(true);
+    expect(glorious.nodes.find((n) => n.id === "medal")!.reached).toBe(true);
+    // frontier = furthest reached node, so a lit side-landmark can pull it forward — but
+    // exploredFamilies (the breadth headline) must not move: recipes are creativity, not taste.
+    expect(glorious.exploredFamilies).toBe(1);
+  });
 });
