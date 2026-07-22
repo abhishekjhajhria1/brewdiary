@@ -257,6 +257,29 @@
     border: 1px solid var(--glass-border);
     box-shadow: var(--shadow), var(--glass-highlight);
   }
+  /* The Passport "data page" — a distinct OFFICIAL-DOCUMENT surface so the map
+     reads as its own object, not another frosted tile. Layered over .glass: a
+     hairline amber inner frame set into the padding gutter (the passport /
+     certificate double-rule). Purely typographic-editorial, one accent. */
+  .passport-page {
+    position: relative;
+  }
+  .passport-page::before {
+    content: "";
+    position: absolute;
+    inset: 9px;
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    border-radius: 13px;
+    pointer-events: none;
+  }
+  /* Faint graph-paper texture — the technical, calm ground the route is drawn on.
+     Dots (not lines) so it never fights the road. Works in every theme. */
+  .map-grid {
+    background-image: radial-gradient(color-mix(in srgb, var(--ink) 9%, transparent) 1px, transparent 1.5px);
+    background-size: 22px 22px;
+    background-position: center;
+  }
+
   /* Subtle interactive lift for tappable tiles. */
   .glass-press {
     transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease;
@@ -340,6 +363,85 @@
 .animate-pop {
   animation: pop 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+/* Passport holographic sheen — a slow amber gloss passing across the page, like light
+   catching a collectible card. The reduced-motion global rule above parks it off-screen. */
+@keyframes passport-sheen {
+  0%, 100% {
+    transform: translateX(-140%) skewX(-16deg);
+    opacity: 0;
+  }
+  6% {
+    opacity: 0.65;
+  }
+  18% {
+    opacity: 0;
+  }
+  55% {
+    transform: translateX(360%) skewX(-16deg);
+    opacity: 0;
+  }
+}
+.passport-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.passport-sheen::after {
+  content: "";
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 32%;
+  background: linear-gradient(100deg, transparent, color-mix(in srgb, var(--accent) 16%, transparent) 50%, transparent);
+  animation: passport-sheen 7s ease-in-out 1.1s infinite;
+}
+
+/* A travelling highlight along a progress bar's filled portion — the "XP" sheen. */
+@keyframes bar-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+.bar-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.bar-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 38%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  /* a "just-loaded" flourish, not perpetual motion — three passes then rest
+     (this bar rides the You header + public profile too, so it must settle) */
+  animation: bar-shimmer 2.6s ease-in-out 0.8s 3;
+}
+
+/* A one-shot amber flare — the level-up burst behind the score dial. */
+@keyframes flare {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+.animate-flare {
+  animation: flare 1.1s ease-out forwards;
+}
+
 /* A rail segment drawing itself downward — the journey's vertical map fills in as it mounts. */
 @keyframes grow-down {
   from {

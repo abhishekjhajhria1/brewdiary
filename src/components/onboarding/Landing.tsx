@@ -48,42 +48,81 @@ export function Landing() {
     });
   }
 
+  // The single conversion action, shared by every CTA on the page. Taking any CTA
+  // counts as the ask, so the post-log auto-pop doesn't fire on top of it.
+  const openSignup = () => {
+    autoOpened.current = true;
+    setAuthMode("signup");
+  };
+
   return (
     <>
-      <header className="mb-10 flex items-center justify-between">
+      {/* Sticky header — registration is ALWAYS one tap away (the first conversion lever:
+          a visible, persistent CTA that follows the reader down the page). */}
+      <header className="sticky top-0 z-30 -mx-5 mb-9 flex items-center justify-between gap-3 border-b border-line/60 bg-canvas/75 px-5 py-3 backdrop-blur-xl">
         <span className="font-display text-lg italic text-muted">brewdiary</span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => setAuthMode("signin")}
-            className="rounded-ctl px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] text-muted transition-colors hover:bg-ink/5 hover:text-ink"
+            className="rounded-ctl px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] text-muted transition-colors hover:text-ink"
           >
             Sign in
+          </button>
+          <button
+            type="button"
+            onClick={openSignup}
+            className="rounded-ctl bg-ink px-4 py-2 text-xs font-medium uppercase tracking-[0.12em] text-paper transition-transform duration-150 ease-out hover:opacity-90 active:scale-[0.98]"
+          >
+            Create diary
           </button>
         </div>
       </header>
 
-      <section className="mb-12">
-        <p className="label mb-4 text-faint">A drink diary</p>
+      {/* HERO — one clear value prop and a visible CTA above the fold. */}
+      <section className="mb-10">
+        <p className="label mb-4 text-faint">The all-inclusive drink diary</p>
         <h1 className="display leading-[0.95]">
           Every night
           <br />
           gets a square.
         </h1>
         <p className="mt-6 max-w-md text-[15px] leading-relaxed text-muted">
-          Coffee, wine, a midnight kombucha — whatever you poured. Tap a day, log it in
-          a breath, and watch the year quietly fill in.
+          Coffee, wine, a midnight kombucha — whatever you poured. Tap a day, log it in a breath,
+          and watch a year of habits fill into a quiet mosaic you&apos;ll want to keep.
         </p>
-        <p className="mt-4 max-w-md text-[15px] leading-relaxed text-muted">
-          The squares darken the more you drink, so a month of habits is one glance, not a
-          spreadsheet. Keep it private, or pour with friends.
-        </p>
+        <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <button
+            type="button"
+            onClick={openSignup}
+            className="rounded-ctl bg-accent px-8 py-3.5 text-center text-sm font-medium uppercase tracking-[0.12em] text-accent-contrast shadow-[0_8px_28px_-8px_var(--accent),inset_0_1px_0_rgba(255,255,255,0.28)] transition-transform duration-150 ease-out hover:-translate-y-px active:translate-y-0"
+          >
+            Start your diary — free
+          </button>
+          <p className="text-xs leading-relaxed text-faint">Free · no card · 30 seconds · private by default</p>
+        </div>
       </section>
 
       <YearPreview />
 
-      <section className="mt-12">
-        <p className="label mb-5 text-faint">Try it — tap a day</p>
+      {/* The reason people STAY, up front — the gamified Passport (map of your taste). */}
+      <PassportTeaser />
+
+      {/* Benefits, not features. */}
+      <Ledger />
+
+      {/* Secondary: taste it before committing. The CTAs above lead; this reassures. */}
+      <section className="mt-20">
+        <p className="label mb-3 text-faint">Or try it first — no account needed</p>
+        <h2 className="display text-[2.5rem] leading-[1.05] sm:text-5xl">
+          Tap a day.
+          <br />
+          Feel it fill.
+        </h2>
+        <p className="mb-7 mt-5 max-w-md text-[15px] leading-relaxed text-muted">
+          Log one right here and your first square darkens. When you like it, make a diary and it comes
+          with you — phone, laptop, next year.
+        </p>
         <MonthCalendar
           year={cursor.y}
           month={cursor.m}
@@ -100,17 +139,7 @@ export function Landing() {
         </p>
       </section>
 
-      <PassportTeaser />
-
-      <Ledger />
-
-      <ClosingCTA
-        loggedCount={entries.length}
-        onStart={() => {
-          autoOpened.current = true; // taking the CTA counts as the ask; don't auto-pop later
-          setAuthMode("signup");
-        }}
-      />
+      <ClosingCTA loggedCount={entries.length} onStart={openSignup} />
 
       {selected && (
         <LogSheet

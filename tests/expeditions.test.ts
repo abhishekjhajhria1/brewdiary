@@ -5,6 +5,7 @@ import {
   expeditionHand,
   isQuestDone,
   trophies,
+  currentDryChallenge,
   type Quest as ExpeditionQuest,
 } from "@/lib/expeditions";
 
@@ -131,5 +132,56 @@ describe("expeditions — trophies are collection (breadth), never volume or dif
   it("an off-map find earns the Cartographer trophy", () => {
     const off = trophies([entry({ drink: "Grandma's secret punch" })]).find((t) => t.id === "cartographer")!;
     expect(off.earned).toBe(true);
+  });
+});
+
+describe("expeditions — sobriety challenges reward NOT drinking (rule #6 from the other side)", () => {
+  // 10 active days in January, all soft — a real Dry January.
+  const dryJan = Array.from({ length: 10 }, (_, i) =>
+    entry({ date: `2026-01-${String(i + 1).padStart(2, "0")}`, drink: "Cold Brew", type: "coffee" }),
+  );
+
+  it("a month lived actively with zero alcohol earns the dry-month trophy", () => {
+    expect(trophies(dryJan).find((t) => t.id === "dry-january")!.earned).toBe(true);
+  });
+
+  it("one alcoholic entry breaks the dry month — it rewards abstaining, not volume", () => {
+    const slipped = [...dryJan, entry({ date: "2026-01-15", drink: "IPA", type: "beer" })];
+    expect(trophies(slipped).find((t) => t.id === "dry-january")!.earned).toBe(false);
+  });
+
+  it("too few active days does not earn it (a keepsake for actually living the month)", () => {
+    const thin = [entry({ date: "2026-10-02", drink: "Chai", type: "tea" })];
+    expect(trophies(thin).find((t) => t.id === "sober-october")!.earned).toBe(false);
+  });
+});
+
+describe("expeditions — the live dry-month challenge (timely, always positive)", () => {
+  it("is null outside a named sobriety month", () => {
+    // August has no challenge.
+    expect(currentDryChallenge([entry({ date: "2026-08-10" })], "2026-08-15")).toBeNull();
+  });
+
+  it("during July it reports the live Dry July standing, alcohol-free so far", () => {
+    const dry = [
+      entry({ date: "2026-07-01", drink: "Chai", type: "tea" }),
+      entry({ date: "2026-07-02", drink: "Cold Brew", type: "coffee" }),
+    ];
+    const c = currentDryChallenge(dry, "2026-07-22")!;
+    expect(c.id).toBe("dry-july");
+    expect(c.dayOfMonth).toBe(22);
+    expect(c.activeDays).toBe(2);
+    expect(c.dryDays).toBe(2);
+    expect(c.alcoholFree).toBe(true);
+  });
+
+  it("a drink flips alcoholFree off but still counts the dry days (never framed as failure)", () => {
+    const mixed = [
+      entry({ date: "2026-07-01", drink: "Chai", type: "tea" }),
+      entry({ date: "2026-07-05", drink: "IPA", type: "beer" }),
+    ];
+    const c = currentDryChallenge(mixed, "2026-07-22")!;
+    expect(c.alcoholFree).toBe(false);
+    expect(c.dryDays).toBe(1);
   });
 });

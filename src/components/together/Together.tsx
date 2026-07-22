@@ -36,18 +36,36 @@ import { Plans } from "./Plans";
 import { Cups } from "./Cups";
 import { Recipes } from "./Recipes";
 
-// The rooms inside Together. The feed leads; the rest wait behind their own segment
-// instead of stacking into one overwhelming scroll. "Board" only exists for people
-// who switched the leaderboard on in You → Settings.
+// The rooms inside Together. Seven flat, sideways-scrolling tabs was an overload
+// (mobile-nav research: keep top-level to ≤5, CLUSTER the rest into meaningful
+// groups, most-used first). So the rooms now live under FOUR sections; two of them
+// cluster related rooms behind a small secondary chip row.
+//   Feed     — the social glance (leads).
+//   Events   — going out: Plans + Parties.
+//   Play     — the game layer: Cups + Recipes (+ Board, if opted in).
+//   Circles  — private groups.
 type Room = "feed" | "plans" | "circles" | "parties" | "cups" | "recipes" | "board";
+type Group = "feed" | "events" | "play" | "circles";
 
-const BASE_ROOMS: { id: Room; label: string }[] = [
-  { id: "feed", label: "Feed" },
-  { id: "plans", label: "Plans" },
-  { id: "circles", label: "Circles" },
-  { id: "parties", label: "Parties" },
-  { id: "cups", label: "Cups" },
-  { id: "recipes", label: "Recipes" },
+const GROUPS: { id: Group; label: string; rooms: { id: Room; label: string }[] }[] = [
+  { id: "feed", label: "Feed", rooms: [{ id: "feed", label: "Feed" }] },
+  {
+    id: "events",
+    label: "Events",
+    rooms: [
+      { id: "plans", label: "Plans" },
+      { id: "parties", label: "Parties" },
+    ],
+  },
+  {
+    id: "play",
+    label: "Play",
+    rooms: [
+      { id: "cups", label: "Cups" },
+      { id: "recipes", label: "Recipes" },
+    ],
+  },
+  { id: "circles", label: "Circles", rooms: [{ id: "circles", label: "Circles" }] },
 ];
 
 export function Together() {
@@ -55,15 +73,29 @@ export function Together() {
   const { friends } = useFriends();
   const { feed, loading } = useFeed();
   const { competeVisible } = useCompeteVisible();
-  const [room, setRoom] = useState<Room>("feed");
+  const [group, setGroup] = useState<Group>("feed");
+  // Remember the last room chosen inside each clustered section, so returning to
+  // "Play" lands where you left it rather than always resetting to the first chip.
+  const [subByGroup, setSubByGroup] = useState<Partial<Record<Group, Room>>>({});
   const [openFriend, setOpenFriend] = useState<SocialProfile | null>(null);
 
-  const ROOMS = competeVisible ? [...BASE_ROOMS, { id: "board" as Room, label: "Board" }] : BASE_ROOMS;
+  // The leaderboard is an opt-in extra room inside Play — folded in only when the
+  // user switched it on (You → Settings). Turning it off makes the derived `room`
+  // below fall back to the first chip automatically — no stranding, no effect needed.
+  const groups = useMemo(
+    () =>
+      competeVisible
+        ? GROUPS.map((g) =>
+            g.id === "play" ? { ...g, rooms: [...g.rooms, { id: "board" as Room, label: "Board" }] } : g,
+          )
+        : GROUPS,
+    [competeVisible],
+  );
 
-  // If they switch the leaderboard back off while standing on it, don't strand them.
-  useEffect(() => {
-    if (room === "board" && !competeVisible) setRoom("feed");
-  }, [room, competeVisible]);
+  const activeGroup = groups.find((g) => g.id === group) ?? groups[0];
+  const wanted = subByGroup[group];
+  const room: Room = wanted && activeGroup.rooms.some((r) => r.id === wanted) ? wanted : activeGroup.rooms[0].id;
+  const pickRoom = (r: Room) => setSubByGroup((s) => ({ ...s, [group]: r }));
 
   // A party link opened before signing in — honor it here, on Together itself:
   // the Parties component only mounts on its own tab, so it can't be trusted to run.
@@ -86,43 +118,57 @@ export function Together() {
         Your calendar stays yours and quiet. This is the other room — what friends are pouring.
       </p>
 
-      {/* The room rail. Grown past what one grid row can hold, so it scrolls sideways —
-          every tab keeps a readable size and a full touch target instead of shrinking. */}
-      <div
-        role="tablist"
-        aria-label="Together rooms"
-        className="scrollbar-none glass mt-5 flex gap-1 overflow-x-auto rounded-ctl p-1"
-      >
-        {ROOMS.map((r, i) => (
+      {/* Primary sections — four, fixed, no sideways scroll (they all fit a phone row). */}
+      <div role="tablist" aria-label="Together sections" className="glass mt-5 grid grid-cols-4 gap-1 rounded-ctl p-1">
+        {groups.map((g, i) => (
           <button
-            key={r.id}
-            id={`room-tab-${r.id}`}
+            key={g.id}
+            id={`group-tab-${g.id}`}
             role="tab"
-            aria-selected={room === r.id}
+            aria-selected={group === g.id}
             aria-controls="room-panel"
-            tabIndex={room === r.id ? 0 : -1}
-            onClick={() => setRoom(r.id)}
+            tabIndex={group === g.id ? 0 : -1}
+            onClick={() => setGroup(g.id)}
             onKeyDown={(e) => {
-              // the ARIA tabs pattern: arrow keys move + focus the neighbor tab
               if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
               e.preventDefault();
               const delta = e.key === "ArrowRight" ? 1 : -1;
-              const next = ROOMS[(i + delta + ROOMS.length) % ROOMS.length].id;
-              setRoom(next);
-              document.getElementById(`room-tab-${next}`)?.scrollIntoView({ inline: "nearest", block: "nearest" });
-              document.getElementById(`room-tab-${next}`)?.focus();
+              const next = groups[(i + delta + groups.length) % groups.length].id;
+              setGroup(next);
+              document.getElementById(`group-tab-${next}`)?.focus();
             }}
             className={clsx(
-              "shrink-0 rounded-[7px] px-4 py-3.5 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors",
-              room === r.id ? "bg-ink text-paper" : "text-faint hover:text-ink",
+              "min-h-11 rounded-[7px] px-1 py-2.5 text-center text-[11px] font-medium uppercase tracking-[0.08em] transition-colors",
+              group === g.id ? "bg-ink text-paper" : "text-faint hover:text-ink",
             )}
           >
-            {r.label}
+            {g.label}
           </button>
         ))}
       </div>
 
-      <div role="tabpanel" id="room-panel" aria-labelledby={`room-tab-${room}`}>
+      {/* Secondary rooms — only for a section that clusters more than one. */}
+      {activeGroup.rooms.length > 1 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {activeGroup.rooms.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => pickRoom(r.id)}
+              aria-pressed={room === r.id}
+              className={clsx(
+                "min-h-9 rounded-ctl border px-4 py-1.5 text-xs font-medium transition-colors",
+                room === r.id
+                  ? "border-transparent bg-accent/10 text-ink"
+                  : "border-line text-muted hover:border-line-strong hover:text-ink",
+              )}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div role="tabpanel" id="room-panel" aria-labelledby={`group-tab-${group}`} className="mt-4">
       {room === "feed" && (
         <>
           {/* Tonight's drink tallies (pegs, beers — enabled in You › Extras) live HERE,

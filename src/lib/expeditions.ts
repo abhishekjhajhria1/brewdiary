@@ -33,8 +33,8 @@
 import type { DrinkType, Entry } from "./types";
 import { DRINK_TYPES } from "./types";
 import { canonicalize } from "./drinks";
-import { weekBalance } from "./derive";
-import { todayKey } from "./date";
+import { weekBalance, isAlcoholic } from "./derive";
+import { todayKey, parseKey } from "./date";
 import { passport, palateNeighbours } from "./passport";
 import { makeable } from "./recipes";
 
@@ -320,10 +320,85 @@ export interface Trophy {
   earned: boolean;
 }
 
+// The real-world "challenges that have alcohol in them" — Dry January, Sober October, Dry
+// July (Alcohol Change UK / the mindful-drinking movement; ~9M do Dry January a year). They
+// belong in THIS app precisely because they reward the OTHER side of rule #6 — NOT drinking.
+// A month is "kept dry" when it was lived actively (≥ MIN days logged) with zero alcohol in
+// it. Derived, lifetime keepsakes; the binge-style "challenges" (century club, power hour,
+// neknominate) are deliberately absent — they reward volume, and some have killed people.
+const DRY_MONTHS: { month: number; id: string; title: string; note: string }[] = [
+  { month: 0, id: "dry-january", title: "Dry January", note: "A whole January kept alcohol-free." },
+  { month: 6, id: "dry-july", title: "Dry July", note: "A July with nothing stronger than a soft one." },
+  { month: 9, id: "sober-october", title: "Sober October", note: "October, sober and tracked." },
+];
+const DRY_MONTH_MIN_DAYS = 8;
+
+/** Was the given calendar month (any year) lived actively with zero alcohol? */
+function keptMonthDry(entries: Entry[], month: number): boolean {
+  const byYear = new Map<number, { days: Set<string>; alcohol: boolean }>();
+  for (const e of entries) {
+    const d = parseKey(e.date);
+    if (d.getMonth() !== month) continue;
+    const y = d.getFullYear();
+    let rec = byYear.get(y);
+    if (!rec) {
+      rec = { days: new Set(), alcohol: false };
+      byYear.set(y, rec);
+    }
+    rec.days.add(e.date);
+    if (isAlcoholic(e)) rec.alcohol = true;
+  }
+  for (const rec of byYear.values()) {
+    if (!rec.alcohol && rec.days.size >= DRY_MONTH_MIN_DAYS) return true;
+  }
+  return false;
+}
+
+export interface DryChallenge {
+  id: string;
+  title: string;
+  dayOfMonth: number;
+  /** Distinct days logged this month. */
+  activeDays: number;
+  /** Distinct logged days with no alcohol — always positive to surface. */
+  dryDays: number;
+  /** No alcohol at all this month so far (and at least one day logged). */
+  alcoholFree: boolean;
+}
+
 /**
- * The trophy shelf — a calm collection you fill by EXPLORING, not by drinking more or by beating
- * a hard level. Every trophy is derived from the Passport's breadth or a gentle behaviour signal;
- * none of them count volume, spend or difficulty (invariant #1). No tiers-as-a-race, no "X to go".
+ * If TODAY falls in a named sobriety month (Dry January / Dry July / Sober October), the LIVE
+ * challenge plus your standing so far — so it reads as something you can be DOING now, not just a
+ * trophy that appears afterward. Always framed positively: dry days count, and a slip is never
+ * surfaced as failure. Null outside those months.
+ */
+export function currentDryChallenge(entries: Entry[], today = todayKey()): DryChallenge | null {
+  const t = parseKey(today);
+  const def = DRY_MONTHS.find((m) => m.month === t.getMonth());
+  if (!def) return null;
+  const year = t.getFullYear();
+  const byDay = new Map<string, boolean>(); // date -> had any alcohol that day
+  for (const e of entries) {
+    const d = parseKey(e.date);
+    if (d.getFullYear() !== year || d.getMonth() !== t.getMonth()) continue;
+    byDay.set(e.date, (byDay.get(e.date) ?? false) || isAlcoholic(e));
+  }
+  const vals = [...byDay.values()];
+  return {
+    id: def.id,
+    title: def.title,
+    dayOfMonth: t.getDate(),
+    activeDays: byDay.size,
+    dryDays: vals.filter((had) => !had).length,
+    alcoholFree: byDay.size > 0 && !vals.some((had) => had),
+  };
+}
+
+/**
+ * The trophy shelf — a calm collection you fill by EXPLORING (or by keeping a dry month),
+ * never by drinking more or by beating a hard level. Every trophy is derived from the
+ * Passport's breadth or a gentle behaviour signal; none count volume, spend or difficulty
+ * (invariant #1). No tiers-as-a-race, no "X to go".
  */
 export function trophies(entries: Entry[], today = todayKey()): Trophy[] {
   const p = passport(entries);
@@ -374,5 +449,13 @@ export function trophies(entries: Entry[], today = todayKey()): Trophy[] {
       note: "A week with room to breathe — a dry day in it.",
       earned: wb.dryDays >= 1 && wb.drinks >= 1,
     },
+    // The named-month sobriety challenges (Dry January & co.) — earned from the OTHER
+    // side of the volume line, and only real once you've done one.
+    ...DRY_MONTHS.map((m) => ({
+      id: m.id,
+      title: m.title,
+      note: m.note,
+      earned: keptMonthDry(entries, m.month),
+    })),
   ];
 }

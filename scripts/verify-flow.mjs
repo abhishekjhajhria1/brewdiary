@@ -558,10 +558,12 @@ try {
   ok("…and the same for regulars", row.returning_guests === null);
   ok("…and for perks waiting", row.perks_earned === null);
 
-  ok(
-    "a BARTENDER cannot see insights (managers only)",
-    await refused(() => as(barman, `select * from public.venue_insights($1, 30)`, [vid])),
-  );
+  // 049 changed the contract: EVERY staff rung reads insights (that's how the whole
+  // team gets Ninkasi), but MONEY is nulled below manager rank — pattern, not the till.
+  const barmanView = (await as(barman, `select * from public.venue_insights($1, 30)`, [vid])).rows[0];
+  ok("a BARTENDER can read insights (049 — Ninkasi for the whole team)", !!barmanView);
+  ok("…but the money comes back NULL below manager rank", barmanView.takings === null && barmanView.prev_takings === null);
+  ok("…while a MANAGER still sees takings", row.takings !== null);
   ok(
     "a STRANGER cannot see another venue's insights",
     await refused(() => as(stranger, `select * from public.venue_insights($1, 30)`, [vid])),

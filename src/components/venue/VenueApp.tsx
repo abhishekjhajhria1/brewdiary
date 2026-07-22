@@ -23,7 +23,10 @@ import {
   withdrawVerification,
   slugify,
   isValidSlug,
+  ROLE_LABEL,
+  ASSIGNABLE_ROLES,
   type Venue,
+  type StaffRole,
 } from "@/lib/venues";
 import { searchUsers, type SocialProfile } from "@/lib/friends";
 import { useVenueRooms, createParty } from "@/lib/parties";
@@ -480,14 +483,20 @@ type Section = "tonight" | "perks" | "team" | "insights" | "guests" | "setup";
 function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; canManage: boolean }) {
   const { staff } = useVenueStaff(venue.id);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [section, setSection] = useState<Section>("tonight");
+  // Kitchen's first (and only) door is Insights; everyone else opens on service.
+  const [section, setSection] = useState<Section>(
+    venue.myRole === "kitchen" ? "insights" : "tonight",
+  );
 
   // A shop's first tab is the TILL, not the room — it has no rooms at all (the DB
   // refuses to attach one), because a bottle shop isn't a place you sit and drink.
   const store = venue.kind === "store";
 
-  // A bartender only ever needs Tonight — the rest is a manager's job, so we don't
-  // show them doors they can't open.
+  // Doors follow the ladder (049): managers get everything; front-of-house service
+  // (bartender, waiter) gets Tonight + Insights (Ninkasi included — money nulled by
+  // the DB below manager rank); kitchen is read-focused, so Insights only. Nobody
+  // is shown a door they can't open.
+  const service = venue.myRole === "bartender" || venue.myRole === "waiter";
   const sections: { id: Section; label: string }[] = canManage
     ? [
         { id: "tonight", label: store ? "Till" : "Tonight" },
@@ -497,7 +506,12 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
         { id: "team", label: "Team" },
         { id: "setup", label: "Setup" },
       ]
-    : [{ id: "tonight", label: store ? "Till" : "Tonight" }];
+    : service
+      ? [
+          { id: "tonight", label: store ? "Till" : "Tonight" },
+          { id: "insights", label: "Insights" },
+        ]
+      : [{ id: "insights", label: "Insights" }];
 
   return (
     <div className="mt-4 border-t border-line pt-4">
@@ -508,7 +522,7 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
       )}
 
       {sections.length > 1 && (
-        <div className="glass mb-4 grid grid-cols-3 gap-1 rounded-ctl p-1">
+        <div className={clsx("glass mb-4 grid gap-1 rounded-ctl p-1", sections.length === 2 ? "grid-cols-2" : "grid-cols-3")}>
           {sections.map((s) => (
             <button
               key={s.id}
@@ -541,7 +555,9 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
         </>
       )}
 
-      {section === "insights" && canManage && <Insights venue={venue} />}
+      {/* Insights (with Ninkasi's read) is for EVERY rung now — the DB nulls the
+          money below manager rank, so a waiter sees pattern, never the till. */}
+      {section === "insights" && <Insights venue={venue} />}
 
       {section === "guests" && canManage && <GuestBook venue={venue} />}
 
@@ -551,8 +567,9 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
 
           <p className="label mb-1.5 text-faint">The team</p>
           <p className="mb-3 text-xs leading-relaxed text-faint">
-            Bartenders can open a room, record a tab and hand out vibe. Managers can also set the perk and
-            add staff.
+            Bartenders and waiters run service — open a room, record a tab, hand out vibe. Kitchen sees
+            Insights and Ninkasi&apos;s read (no money). Managers also set the perk, add staff, and see
+            takings. Everyone gets Ninkasi.
           </p>
           <ul className="mb-3 divide-y divide-line border-y border-line">
             {staff.map((s) => (
@@ -791,22 +808,25 @@ function Insights({ venue }: { venue: Venue }) {
         <Stat label="perks waiting" value={data.perksEarned === null ? "—" : String(data.perksEarned)} accent />
         <Stat label="perks given" value={String(data.perksClaimed)} />
         <Stat label="tabs" value={String(data.tabs)} />
-        <Stat label="takings" value={money(data.takings)} />
+        {/* money is manager-only (049) — below that rung the DB hands back null */}
+        <Stat label="takings" value={data.takings === null ? "—" : money(data.takings)} />
         <Stat
           label="came back"
           value={data.returningGuests === null ? "—" : `${Math.round((data.returningGuests / data.guests) * 100)}%`}
         />
         {/* Average tab is HIDDEN below k tabs — over 1–4 it would be one guest's spend. */}
-        <Stat label="avg tab" value={data.tabs >= 5 ? money(data.takings / data.tabs) : "—"} />
+        <Stat label="avg tab" value={data.takings !== null && data.tabs >= 5 ? money(data.takings / data.tabs) : "—"} />
         <Stat label="team thanked" value={String(data.kudos)} />
       </div>
 
       {/* Growth vs the previous equal-length window — the "are we up?" glance. */}
-      {(data.prevGuests > 0 || data.prevTakings > 0) && (
+      {(data.prevGuests > 0 || (data.prevTakings ?? 0) > 0) && (
         <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-faint">
           <span>vs the previous {days} days:</span>
           <TrendChip label="guests" cur={data.guests} prev={data.prevGuests} />
-          <TrendChip label="takings" cur={data.takings} prev={data.prevTakings} />
+          {data.takings !== null && data.prevTakings !== null && (
+            <TrendChip label="takings" cur={data.takings} prev={data.prevTakings} />
+          )}
         </p>
       )}
 
@@ -1660,6 +1680,7 @@ function AddStaff({ venueId, meId }: { venueId: string; meId: string }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SocialProfile[]>([]);
   const [added, setAdded] = useState<Set<string>>(new Set());
+  const [role, setRole] = useState<StaffRole>("bartender");
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -1672,13 +1693,30 @@ function AddStaff({ venueId, meId }: { venueId: string; meId: string }) {
 
   async function add(id: string) {
     setAdded((s) => new Set(s).add(id));
-    const err = await addStaff(venueId, id, "bartender");
+    const err = await addStaff(venueId, id, role);
     if (err) setAdded((s) => { const n = new Set(s); n.delete(id); return n; });
   }
 
   return (
     <div className="mb-4">
       <label htmlFor={`add-staff-${venueId}`} className="label mb-2 block text-faint">Add to the team</label>
+      {/* the rung they join at — service by default; a cook gets the read-only view */}
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {ASSIGNABLE_ROLES.map((r) => (
+          <button
+            key={r}
+            type="button"
+            onClick={() => setRole(r)}
+            aria-pressed={role === r}
+            className={clsx(
+              "rounded-ctl border px-3 py-1.5 text-xs transition-colors",
+              role === r ? "border-transparent bg-accent/10 font-medium text-ink" : "border-line text-muted hover:text-ink",
+            )}
+          >
+            {ROLE_LABEL[r]}
+          </button>
+        ))}
+      </div>
       <input
         id={`add-staff-${venueId}`}
         value={query}

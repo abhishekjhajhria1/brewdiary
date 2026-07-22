@@ -16,7 +16,20 @@ import { supabase } from "./supabase";
 import { useAuth } from "./profile";
 import type { VenueKind } from "./perks";
 
-export type StaffRole = "owner" | "manager" | "bartender";
+// The real hospitality ladder (049): owner → manager → FOH service (bartender,
+// waiter) → kitchen. Manage rights stay owner/manager; service actions (rooms,
+// tabs, vibe) are any-staff in the DB; kitchen is read-focused in the UI.
+export type StaffRole = "owner" | "manager" | "bartender" | "waiter" | "kitchen";
+
+export const ROLE_LABEL: Record<StaffRole, string> = {
+  owner: "owner",
+  manager: "manager",
+  bartender: "bartender",
+  waiter: "waiter",
+  kitchen: "kitchen",
+};
+/** Roles a manager can hand out (ownership transfers are not a dropdown). */
+export const ASSIGNABLE_ROLES: StaffRole[] = ["manager", "bartender", "waiter", "kitchen"];
 
 export interface Venue {
   id: string;
@@ -163,7 +176,7 @@ export function useVenueStaff(venueId: string | null): { staff: VenueStaff[]; lo
         .select("role, member:profiles(id, handle, display_name)")
         .eq("venue_id", venueId);
       if (!active) return;
-      const ROLE_RANK: Record<StaffRole, number> = { owner: 0, manager: 1, bartender: 2 };
+      const ROLE_RANK: Record<StaffRole, number> = { owner: 0, manager: 1, bartender: 2, waiter: 3, kitchen: 4 };
       setStaff(
         (data ?? [])
           .map((r: Record<string, unknown>) => {
@@ -378,13 +391,14 @@ export interface VenueInsights {
   perksEarned: number | null;
   perksClaimed: number;
   tabs: number;
-  takings: number;
+  /** Money is MANAGER-ONLY (049): below that rung the DB hands back null. */
+  takings: number | null;
   kudos: number;
   // v2 — visits by weekday (index 0 = Sunday … 6 = Saturday), and the previous
   // equal-length window, for busiest/deadest-night and growth-trend reads.
   visitsByDow: number[];
   prevGuests: number;
-  prevTakings: number;
+  prevTakings: number | null;
 }
 
 export function useVenueInsights(venueId: string | null, days = 30): { data: VenueInsights | null; loading: boolean } {
@@ -418,14 +432,14 @@ export function useVenueInsights(venueId: string | null, days = 30): { data: Ven
           perksEarned: num(r.perks_earned),
           perksClaimed: Number(r.perks_claimed ?? 0),
           tabs: Number(r.tabs ?? 0),
-          takings: Number(r.takings ?? 0),
+          takings: r.takings == null ? null : Number(r.takings),
           kudos: Number(r.kudos ?? 0),
           // Postgres int[] comes back as a JS array; default to 7 zeroes if absent.
           visitsByDow: Array.isArray(r.visits_by_dow)
             ? (r.visits_by_dow as unknown[]).map((x) => Number(x ?? 0))
             : [0, 0, 0, 0, 0, 0, 0],
           prevGuests: Number(r.prev_guests ?? 0),
-          prevTakings: Number(r.prev_takings ?? 0),
+          prevTakings: r.prev_takings == null ? null : Number(r.prev_takings),
         },
         loading: false,
       });

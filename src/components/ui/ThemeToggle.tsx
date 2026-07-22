@@ -10,7 +10,7 @@ import { getStoredTheme, setTheme, THEMES, type Theme } from "@/lib/theme";
 // maintainer's call): one obvious home beats a mystery icon on every page.
 // Typographic glyphs, no icon lib (on-brand). Selecting applies instantly —
 // the whole app is the preview.
-export function ThemeToggle() {
+export function ThemeToggle({ className }: { className?: string }) {
   const [theme, setLocal] = useState<Theme>("dark");
   const [mounted, setMounted] = useState(false);
 
@@ -28,7 +28,7 @@ export function ThemeToggle() {
   const shown = mounted ? theme : "dark";
 
   return (
-    <div role="radiogroup" aria-label="Theme" className="grid w-full max-w-xs grid-cols-2 gap-2">
+    <div role="radiogroup" aria-label="Theme" className={clsx("grid w-full grid-cols-2 gap-2", className)}>
       {THEMES.map((o) => {
         const active = shown === o.value;
         return (
@@ -39,17 +39,17 @@ export function ThemeToggle() {
             aria-checked={active}
             onClick={() => pick(o.value)}
             className={clsx(
-              "glass glass-press flex min-h-11 items-center gap-2 rounded-ctl px-3 py-2 text-left text-xs font-medium uppercase tracking-widest transition-colors",
-              active ? "border-accent text-ink" : "text-faint hover:text-ink",
+              "glass glass-press flex min-h-11 items-center gap-1.5 overflow-hidden rounded-ctl px-2.5 py-2 text-left text-[11px] font-medium uppercase tracking-wide whitespace-nowrap transition-colors",
+              active ? "text-ink" : "text-faint hover:text-ink",
             )}
             style={active ? { borderColor: "var(--accent)" } : undefined}
           >
-            <span aria-hidden className={clsx("text-sm", active ? "text-accent" : "text-faint")}>
+            <span aria-hidden className={clsx("shrink-0 text-sm", active ? "text-accent" : "text-faint")}>
               {o.glyph}
             </span>
-            {o.label}
+            <span className="truncate">{o.label}</span>
             {active && (
-              <span aria-hidden className="ml-auto text-accent">
+              <span aria-hidden className="ml-auto shrink-0 text-accent">
                 ✓
               </span>
             )}

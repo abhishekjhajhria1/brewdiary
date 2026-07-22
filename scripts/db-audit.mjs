@@ -549,6 +549,25 @@ try {
     console.log("  ~ palate_neighbours (048) not applied — skipping");
   }
 
+  // 049 (roles + staff insights). When applied: the ladder holds waiter/kitchen, and
+  // venue_insights opens to all staff but suppresses MONEY below manager rank.
+  const roleCheck = await one(`
+    select pg_get_constraintdef(c.oid) d from pg_constraint c
+    join pg_class t on t.oid = c.conrelid
+    where t.relname = 'venue_staff' and c.conname = 'venue_staff_role_check'`);
+  if (roleCheck && /waiter/.test(roleCheck.d)) {
+    ok("venue_staff: ladder includes waiter + kitchen (049)",
+      /kitchen/.test(roleCheck.d) && /owner/.test(roleCheck.d));
+    const vi049 = await one(`
+      select pg_get_functiondef(p.oid) d from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname='public' and p.proname='venue_insights'`);
+    ok("venue_insights(): any-staff gate, money case-nulled below manager (049)",
+      !!vi049 && /is_venue_staff/.test(vi049.d) && /is_mgr/.test(vi049.d));
+  } else {
+    console.log("  ~ roles + staff insights (049) not applied — skipping");
+  }
+
   console.log("\n── orphans / drift ──────────────────────────────────");
   const badCurrency = await one(`
     select count(*)::int n from public.venues v

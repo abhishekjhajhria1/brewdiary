@@ -332,12 +332,10 @@ function Settings() {
           Signed in as <span className="text-ink">{profile.name}</span>
         </p>
       )}
-      <div className="flex items-center justify-between gap-4 py-1">
-        <div>
-          <p className="text-sm text-ink">Appearance</p>
-          <p className="text-xs text-faint">Switch between the light and dark themes.</p>
-        </div>
-        <ThemeToggle />
+      <div className="py-1">
+        <p className="text-sm text-ink">Appearance</p>
+        <p className="text-xs text-faint">Four looks — pick the one that feels like your notebook.</p>
+        <ThemeToggle className="mt-3" />
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-4 border-t border-line py-3">

@@ -19,6 +19,28 @@ export function ScoreDial({ ps, size = 132, className }: { ps: PaletteScore; siz
     return () => cancelAnimationFrame(t);
   }, [ps.intoLevel]);
 
+  // The big number counts UP from zero on mount (game-juice), eased, ~900ms —
+  // unless the viewer asked for reduced motion, in which case it just shows.
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    const target = ps.score;
+    const reduce =
+      typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || target === 0) {
+      setShown(target);
+      return;
+    }
+    const dur = 900;
+    const start = performance.now();
+    let raf = requestAnimationFrame(function tick(now) {
+      const t = Math.min(1, (now - start) / dur);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic — fast then settles
+      setShown(Math.round(target * eased));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [ps.score]);
+
   return (
     <div className={clsx("relative shrink-0", className)} style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90" aria-hidden>
@@ -38,7 +60,7 @@ export function ScoreDial({ ps, size = 132, className }: { ps: PaletteScore; siz
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="tnum font-display leading-none text-ink" style={{ fontSize: size * 0.3 }}>
-          {ps.score}
+          {shown}
         </span>
         <span className="label mt-1 text-faint">score</span>
       </div>

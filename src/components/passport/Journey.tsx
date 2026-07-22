@@ -103,9 +103,9 @@ export function Journey() {
   }, [j.nodes, freshly]);
 
   return (
-    <div className="glass rounded-tile p-5">
+    <div className="relative">
       <div className="mb-1 flex items-center justify-between gap-3">
-        <p className="label text-faint">Your journey</p>
+        <p className="label text-faint">The route</p>
         <div className="flex items-center gap-3">
           <span className="text-xs text-faint">
             {j.exploredFamilies > 0 ? `${j.exploredFamilies} explored` : "not begun"}
@@ -215,7 +215,7 @@ function RoadView({
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="scrollbar-none -mx-5 overflow-x-auto px-5"
+        className="map-grid scrollbar-none -mx-5 overflow-x-auto px-5"
         style={{
           maskImage: "linear-gradient(to right, transparent, #000 8%, #000 92%, transparent)",
           WebkitMaskImage: "linear-gradient(to right, transparent, #000 8%, #000 92%, transparent)",
@@ -310,10 +310,60 @@ function ListView({ nodes, frontier, freshly }: { nodes: JourneyNode[]; frontier
   const reachedCount = nodes.filter((n) => n.reached).length;
   const pct = Math.round((reachedCount / nodes.length) * 100);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const targetIndex = nextIndex >= 0 ? nextIndex : Math.max(0, frontier);
+  // The landmark currently under the centre "playhead" — mirrors the road's gliding
+  // dot, brought to the vertical view so scrolling feels like a scanner running the
+  // route: whichever landmark sits on the centre line lights up, with a haptic tick.
+  const [centerIndex, setCenterIndex] = useState(targetIndex);
+  const raf = useRef<number | null>(null);
+  const lastBuzz = useRef(targetIndex);
+
+  const recenter = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const mid = el.scrollTop + el.clientHeight / 2;
+    let best = 0;
+    let bestDist = Infinity;
+    el.querySelectorAll("li").forEach((li, i) => {
+      const c = (li as HTMLElement).offsetTop + (li as HTMLElement).offsetHeight / 2;
+      const dist = Math.abs(c - mid);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i;
+      }
+    });
+    setCenterIndex(best);
+    if (best !== lastBuzz.current) {
+      lastBuzz.current = best;
+      buzz(nodes[best]?.reached ? 12 : 5); // a firmer tick for a landmark you've earned
+    }
+  }, [nodes]);
+
+  const onScroll = useCallback(() => {
+    if (raf.current != null) return;
+    raf.current = requestAnimationFrame(() => {
+      raf.current = null;
+      recenter();
+    });
+  }, [recenter]);
+
+  // On open: bring the live part of the route to the centre line (next door, else
+  // frontier), then sync the playhead to whatever landed there.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const li = el.querySelectorAll("li")[targetIndex] as HTMLElement | undefined;
+    if (li) el.scrollTop = Math.max(0, li.offsetTop - el.clientHeight / 2);
+    recenter();
+  }, [targetIndex, recenter]);
+
+  useEffect(() => () => void (raf.current != null && cancelAnimationFrame(raf.current)), []);
+
   return (
     <div className="mt-3">
       {/* progress track — fills to your frontier on mount */}
-      <div className="mb-5 flex items-center gap-3">
+      <div className="mb-4 flex items-center gap-3">
         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink/8">
           <div
             className="h-full rounded-full bg-accent transition-[width] duration-700 ease-out motion-reduce:transition-none"
@@ -325,13 +375,34 @@ function ListView({ nodes, frontier, freshly }: { nodes: JourneyNode[]; frontier
         </span>
       </div>
 
-      <ol>
+      {/* The route as a CONTAINED, vertically-scrolling itinerary — the whole map in a
+          fixed window that scrolls in place (top/bottom fade masks), rather than pushing
+          the rest of the page down. A centre "playhead" line lights whichever landmark
+          scrolls onto it, so the scroll itself is the interaction. */}
+      <div className="relative">
+        {/* the playhead — a fixed amber scan-line at the viewport centre. Strong over the
+            marker rail, faded before the text so it never strikes through a label. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-1/2 z-10 h-px w-1/2 -translate-y-1/2 bg-linear-to-r from-accent/60 via-accent/20 to-transparent"
+        />
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="scrollbar-none map-grid relative max-h-84 overflow-y-auto rounded-ctl"
+          style={{
+            maskImage: "linear-gradient(to bottom, transparent, #000 7%, #000 90%, transparent)",
+            WebkitMaskImage: "linear-gradient(to bottom, transparent, #000 7%, #000 90%, transparent)",
+          }}
+        >
+      <ol className="py-1">
         {nodes.map((node, i) => {
           const isFresh = node.reached && freshly.has(node.id);
           const isNext = i === nextIndex;
           const passed = !node.reached && i < frontier; // an optional side-stop you've gone past
           const selected = sel === node.id;
           const last = i === nodes.length - 1;
+          const isCentered = i === centerIndex; // sitting on the scroll playhead
           return (
             <li key={node.id} className="motion-safe:animate-rise" style={{ animationDelay: `${i * 55}ms` }}>
               <button
@@ -346,9 +417,18 @@ function ListView({ nodes, frontier, freshly }: { nodes: JourneyNode[]; frontier
                 <span className="relative flex w-5 shrink-0 flex-col items-center">
                   <span className="relative mt-1.5 grid place-items-center">
                     {isNext && <span aria-hidden className="absolute h-5 w-5 rounded-full bg-accent/25 motion-safe:animate-ping" />}
+                    {/* focus halo — a ring that scales in around whichever landmark is on the playhead */}
+                    <span
+                      aria-hidden
+                      className={clsx(
+                        "absolute rounded-full border border-accent/45 transition-all duration-300 ease-out",
+                        isCentered ? "h-6 w-6 opacity-100" : "h-3.5 w-3.5 opacity-0",
+                      )}
+                    />
                     <span
                       className={clsx(
                         "relative h-3.5 w-3.5 rounded-full border-2 transition-transform duration-300 group-hover:scale-125",
+                        isCentered && "scale-125",
                         node.reached
                           ? "border-accent bg-accent motion-safe:animate-pop"
                           : isNext
@@ -376,8 +456,9 @@ function ListView({ nodes, frontier, freshly }: { nodes: JourneyNode[]; frontier
                   <span className="flex items-center gap-2">
                     <span
                       className={clsx(
-                        "text-[15px] leading-tight transition-colors group-hover:text-ink",
+                        "text-[15px] leading-tight transition-all duration-300 group-hover:text-ink",
                         node.reached ? "text-ink" : "text-muted",
+                        isCentered && "translate-x-0.5 font-medium text-ink",
                       )}
                     >
                       {node.label}
@@ -425,6 +506,8 @@ function ListView({ nodes, frontier, freshly }: { nodes: JourneyNode[]; frontier
           );
         })}
       </ol>
+        </div>
+      </div>
     </div>
   );
 }

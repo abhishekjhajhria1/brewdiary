@@ -17,7 +17,7 @@ import { usePalateNeighbours } from "@/lib/neighbours";
 import { useChartedFamilies, useMyProposals, type ChartedFamily } from "@/lib/charts";
 import { Journey } from "./Journey";
 import { Expeditions } from "../expeditions/Expeditions";
-import { trophies } from "@/lib/expeditions";
+import { trophies, currentDryChallenge } from "@/lib/expeditions";
 import { scoreFromEntries } from "@/lib/score";
 import { ScoreBanner } from "../ui/ScoreBanner";
 import { ChartThis } from "./ChartThis";
@@ -39,39 +39,92 @@ const WORLD: Record<DrinkType, string> = {
   none: "—",
 };
 
+// Celebrate crossing into a new title — a BREADTH milestone, never a volume reward.
+// One-time, seen-set in localStorage; the first ever view seeds silently so a long-time
+// user isn't shown a fake level-up.
+function useLevelUp(level: number): { celebrate: boolean; dismiss: () => void } {
+  const [celebrate, setCelebrate] = useState(false);
+  useEffect(() => {
+    if (level <= 0) return;
+    try {
+      const KEY = "brewdiary.score.level.v1";
+      const raw = window.localStorage.getItem(KEY);
+      const prev = raw == null ? null : parseInt(raw, 10);
+      window.localStorage.setItem(KEY, String(level));
+      if (prev != null && level > prev) setCelebrate(true);
+    } catch {
+      /* private mode — no celebration, no harm */
+    }
+  }, [level]);
+  return { celebrate, dismiss: () => setCelebrate(false) };
+}
+
 export function Passport() {
   const entries = useEntries();
   const charted = useChartedFamilies();
   const p = passport(entries);
   const [stamp, setStamp] = useState<Stamp | null>(null);
   const c = commons(charted);
+  const ps = entries.length > 0 ? scoreFromEntries(entries) : null;
+  const levelUp = useLevelUp(ps?.level ?? 0);
 
   return (
     <section className="mt-10">
-      {/* Section header matches every other section in You (label-scale) — the page already
-          has one h1, and the map shouldn't compete with it. */}
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 className="label">Passport</h2>
-        <span className="text-xs text-faint">
-          {p.exploredFamilies > 0
-            ? `${p.exploredFamilies} famil${p.exploredFamilies === 1 ? "y" : "ies"} & counting`
-            : "your taste passport"}
-        </span>
+      {/* THE PASSPORT PAGE — the score seal + the route, bound into ONE framed
+          "official document" so the app's signature feature stops reading as just
+          another glass tile. The .passport-page hairline frame + serial + map-grid
+          give it an identity nothing else in the app shares. */}
+      <div className="glass passport-page relative overflow-hidden rounded-tile p-5">
+        {/* a slow amber gloss passing across the page — light on a collectible card */}
+        <div aria-hidden className="passport-sheen" />
+        <header className="relative mb-4 flex items-baseline justify-between gap-3">
+          <span className="flex items-baseline gap-2">
+            <span aria-hidden className="text-accent">✦</span>
+            <h2 className="label text-accent/90">Taste Passport</h2>
+          </span>
+          {/* a decorative "serial" — the family count as an issue number. Monospace
+              tabular so it reads as an official stamp, not a stat. */}
+          <span className="tnum text-[11px] uppercase tracking-[0.22em] text-faint">
+            {p.exploredFamilies > 0 ? `№ ${String(p.exploredFamilies).padStart(4, "0")}` : "unissued"}
+          </span>
+        </header>
+
+        {/* The Palate Score as the page's SEAL — breadth + consistency, never volume
+            (lib/score). The same figure the profile leads with. */}
+        {ps && (
+          <div className="relative">
+            {/* level-up flare — a one-shot amber burst behind the dial */}
+            {levelUp.celebrate && (
+              <span aria-hidden className="animate-flare pointer-events-none absolute -left-2 top-1 h-24 w-24 rounded-full bg-accent" />
+            )}
+            <ScoreBanner ps={ps} size={84} />
+            {levelUp.celebrate && (
+              <button
+                onClick={levelUp.dismiss}
+                className="glass-strong animate-pop mt-3 flex w-full items-center gap-2 rounded-ctl px-3 py-2 text-left"
+              >
+                <span aria-hidden className="text-accent">✦</span>
+                <span className="text-sm text-ink">
+                  Levelled up to <span className="font-medium text-accent">{ps.title}</span>
+                </span>
+                <span className="ml-auto text-xs text-faint">nice</span>
+              </button>
+            )}
+            <div aria-hidden className="relative my-4 h-px bg-line" />
+          </div>
+        )}
+
+        {/* The hero: your exploration as one winding road (see Journey.tsx). Now
+            embedded in the page — it carries no card of its own. */}
+        <Journey />
       </div>
 
-      {/* The Palate Score — the exploration metric, front and centre (breadth + consistency,
-          never volume; lib/score). The same banner the profile leads with. */}
-      {entries.length > 0 && (
-        <div className="glass mb-4 rounded-tile p-5">
-          <ScoreBanner ps={scoreFromEntries(entries)} size={84} />
-        </div>
-      )}
+      {/* A live real-world sobriety challenge, if today falls in one (Dry January / Dry
+          July / Sober October). Timely + always positive — it turns the trophy into
+          something you can be DOING now, and a slip is never shown as failure. */}
+      {ps && <DryChallengeCard />}
 
-      {/* The hero: your exploration as one winding road you scroll along (see Journey.tsx).
-          Shown even before your first stamp — a whole trail of landmarks lying ahead. */}
-      <Journey />
-
-      {/* Tonight — the one actionable thing, right under the road (a new user has quests too). */}
+      {/* Tonight — the one actionable thing, right under the page (a new user has quests too). */}
       <div className="mt-8">
         <Expeditions />
       </div>
@@ -173,6 +226,31 @@ function NeighbourDoors({ p }: { p: ReturnType<typeof passport> }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── The live sobriety challenge (Dry July & co.) ────────────────────────────
+// Shown only during a named dry-month. Rewards NOT drinking (rule #6 from the other
+// side); celebrates dry days always, and never frames a drink as a failure.
+function DryChallengeCard() {
+  const entries = useEntries();
+  const dry = currentDryChallenge(entries);
+  if (!dry) return null;
+
+  return (
+    <div className="glass mt-4 rounded-tile p-4">
+      <p className="label mb-1 flex items-center gap-2 text-accent">
+        <span aria-hidden className="inline-flex h-1.5 w-1.5 rounded-full bg-accent motion-safe:animate-pulse" />
+        {dry.title} · on now
+      </p>
+      <p className="text-[15px] leading-relaxed text-ink">
+        {dry.activeDays === 0
+          ? `It's ${dry.title}. Log a dry day to join — a whole month alcohol-free earns its stamp.`
+          : dry.alcoholFree
+            ? `Day ${dry.dayOfMonth}, alcohol-free so far. Keep it up — the full month earns the stamp.`
+            : `${dry.dryDays} dry ${dry.dryDays === 1 ? "day" : "days"} this month. Every one counts.`}
+      </p>
     </div>
   );
 }

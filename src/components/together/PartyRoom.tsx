@@ -27,6 +27,8 @@ import {
   setRoomConsent,
 } from "@/lib/points";
 import { usePerkTiers, useQuietNights } from "@/lib/perks";
+import { useExtras, setExtra } from "@/lib/features";
+import { DayCounters } from "../ui/DayCounters";
 import { useRoomStaff, thankStaff, KUDOS_REASONS } from "@/lib/kudos";
 import { formatMoney } from "@/lib/money";
 import { ScoreCard, type Score } from "../share/ScoreCard";
@@ -216,6 +218,11 @@ export function PartyRoom({ partyId }: { partyId: string }) {
             <PartyLog entries={entries} me={me} />
           )}
 
+          {/* Tonight's tally — appears once the table is a group (2+ here) and it's
+              actually tonight. A private per-person round counter (pegs/beers), the
+              honest-logging half of "count while friends are together". */}
+          {party.date === todayKey() && approved.length >= 2 && <PartyTally dateKey={party.date} />}
+
           {/* Tonight's points — the opt-in loud corner. The pours above stay
               unranked; this is the game, and no one is ranked by what they spent. */}
           <PointsBoard partyId={party.id} partyName={party.name} members={approved} me={me} />
@@ -267,6 +274,41 @@ export function PartyRoom({ partyId }: { partyId: string }) {
         )}
       </div>
     </>
+  );
+}
+
+// ── tonight's tally: the shared-round counter, when friends are together ─────
+// The "peg/beer counter, visible when 2+ friends are together" ask — built the ONLY
+// way that survives rule #6: it is EACH PERSON'S OWN private tally on their OWN device,
+// not a table leaderboard. Every tap writes a real diary entry (features.ts), so the
+// round lands on your calendar AS YOU GO — there is nothing to "close out", and there
+// is deliberately no "who drank most": a drink-volume race is the one mechanic this
+// whole product refuses (it rewards drinking more, and it's how these nights turn ugly).
+function PartyTally({ dateKey }: { dateKey: string }) {
+  const extras = useExtras();
+  const on = extras.pegs || extras.beers;
+
+  return (
+    <section className="mb-7">
+      <p className="label mb-1.5 text-faint">Tonight&apos;s tally · your own</p>
+      <p className="mb-3 max-w-prose text-xs leading-relaxed text-faint">
+        A quiet counter for the round while you&apos;re together. Each tap lands on your own diary as you go —
+        nothing to close out, and no one is ranked by it.
+      </p>
+      {on ? (
+        <DayCounters dateKey={dateKey} only={["pegs", "beers"]} />
+      ) : (
+        <button
+          onClick={() => {
+            setExtra("pegs", true);
+            setExtra("beers", true);
+          }}
+          className="glass glass-press rounded-ctl px-4 py-2.5 text-sm text-ink transition-colors hover:text-accent"
+        >
+          Keep count tonight
+        </button>
+      )}
+    </section>
   );
 }
 

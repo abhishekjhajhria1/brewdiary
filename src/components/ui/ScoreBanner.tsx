@@ -12,12 +12,12 @@ export function ScoreBanner({ ps, size = 96 }: { ps: PaletteScore; size?: number
       <ScoreDial ps={ps} size={size} />
       <div className="min-w-0 flex-1">
         <p className="label text-faint">Level {ps.level}</p>
-        <p className="mt-0.5 font-display text-2xl leading-tight text-ink">{ps.title}</p>
+        <p className="mt-0.5 font-display text-2xl leading-tight text-ink motion-safe:animate-rise">{ps.title}</p>
         {ps.nextTitle ? (
           <>
             <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-ink/8">
               <div
-                className="h-full rounded-full bg-accent transition-[width] duration-700 ease-out motion-reduce:transition-none"
+                className="bar-shimmer h-full rounded-full bg-accent transition-[width] duration-700 ease-out motion-reduce:transition-none"
                 style={{ width: `${Math.round(ps.intoLevel * 100)}%` }}
               />
             </div>

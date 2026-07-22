@@ -28,11 +28,12 @@ export interface AdvisorInsights {
   perksEarned: number | null;
   perksClaimed: number;
   tabs: number;
-  takings: number;
+  /** Null below manager rank (049) — the brief then simply omits money lines. */
+  takings: number | null;
   kudos: number;
   visitsByDow: number[]; // index 0 = Sunday … 6 = Saturday (visit volume)
   prevGuests: number; // guests in the previous equal-length window
-  prevTakings: number; // takings in the previous equal-length window
+  prevTakings: number | null; // takings in the previous equal-length window
 }
 
 // The brief the client assembles from data it already holds. Everything here is the
@@ -149,7 +150,10 @@ export function summarizeInsights(brief: InsightBrief): string {
 
   // Growth trend vs the previous equal-length window.
   const gPct = pctChange(i.guests, brief.insights.prevGuests);
-  const tPct = pctChange(i.takings, brief.insights.prevTakings);
+  const tPct =
+    i.takings !== null && brief.insights.prevTakings !== null
+      ? pctChange(i.takings, brief.insights.prevTakings)
+      : null;
   const trend: string[] = [];
   if (gPct !== null) trend.push(`guests ${gPct >= 0 ? "up" : "down"} ${Math.abs(gPct)}% (${brief.insights.prevGuests} before)`);
   if (tPct !== null) trend.push(`takings ${tPct >= 0 ? "up" : "down"} ${Math.abs(tPct)}%`);
@@ -164,8 +168,13 @@ export function summarizeInsights(brief: InsightBrief): string {
   lines.push(`Perks earned and waiting to be claimed: ${n(i.perksEarned)}. Perks given: ${i.perksClaimed}.`);
 
   // Average tab only when there are enough tabs that it can't point at one person.
-  const avgTab = i.tabs >= K_ANON ? `; average tab about ${money(i.takings / i.tabs, currency)}` : "";
-  lines.push(`Tabs recorded: ${i.tabs}. Takings over the window (rough total): ${money(i.takings, currency)}${avgTab}.`);
+  // Money lines only exist for manager-rank callers (takings is null below that).
+  if (i.takings !== null) {
+    const avgTab = i.tabs >= K_ANON ? `; average tab about ${money(i.takings / i.tabs, currency)}` : "";
+    lines.push(`Tabs recorded: ${i.tabs}. Takings over the window (rough total): ${money(i.takings, currency)}${avgTab}.`);
+  } else {
+    lines.push(`Tabs recorded: ${i.tabs}. (Revenue figures are only shown to managers — advise on service and pattern, not money.)`);
+  }
   lines.push(`Times the team was thanked by guests: ${i.kudos}.`);
 
   // The area layer — anonymous neighbourhood taste (≥5 people behind each item).
