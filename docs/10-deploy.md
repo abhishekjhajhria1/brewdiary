@@ -63,6 +63,9 @@ Project → Settings → **Environment Variables**, for **Production**. Copy the
 | `AI_SUPABASE_URL` | The **AI** Supabase project URL | **SECRET** |
 | `AI_SUPABASE_SERVICE_KEY` | AI project service_role key | **SECRET** |
 | `AI_DB_SALT` | Your salt (never change it once live) | **SECRET** |
+| `EMBED_API_URL` | Optional — embeddings endpoint for the AI-DB corpus. Omit and embedding features simply stay off. | secret |
+| `EMBED_API_KEY` | Optional — bearer key for that endpoint | secret |
+| `EMBED_MODEL` | Optional — embedding model name | secret |
 
 > ⚠️ **`SUPABASE_SERVICE_ROLE_KEY` is new and it is not optional.** Deleting an account has to destroy an
 > auth user, which the anon key cannot do. Without this variable, "Delete my account" returns a 500 — and
