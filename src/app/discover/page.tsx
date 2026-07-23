@@ -14,6 +14,7 @@ import { Trends } from "@/components/discover/Trends";
 import { NearbyTrends } from "@/components/discover/NearbyTrends";
 import { DiscoverLive } from "@/components/discover/DiscoverLive";
 import { VenuesNearby } from "@/components/discover/VenuesNearby";
+import { PartnerOffers } from "@/components/discover/PartnerOffers";
 
 import type { Metadata } from "next";
 
@@ -47,8 +48,12 @@ export default function Page() {
       {/* Functional, key-free: a real compass + geolocation "near me" (opens the maps app). */}
       <DiscoverLive />
 
-      {/* Real, verified bars on brewdiary — the bar, never its offer. */}
+      {/* Real, verified bars on brewdiary — the bar, never its ALCOHOL offer. */}
       <VenuesNearby />
+
+      {/* Dineout-style: the bar's DINING offer (a table deal, never a drink deal),
+          bookable. The one place an offer is shown — see PartnerOffers / 050. */}
+      <PartnerOffers />
 
       {/* live, key-free data: anonymous taste trends — your area first, then everywhere */}
       <NearbyTrends />

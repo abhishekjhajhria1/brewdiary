@@ -36,6 +36,8 @@ import {
 } from "@/lib/plans";
 import { blockUser, reportUser, REPORT_REASONS, type ReportReason } from "@/lib/safety";
 import { useMySanction } from "@/lib/moderation";
+import { useVenueDirectory, useVenueName, type DirectoryVenue } from "@/lib/reservations";
+import { BookTable } from "../discover/PartnerOffers";
 
 // The visibility tiers, most-private first. 'private' keeps a night to yourself;
 // 'invite' opens it only to specific friends you name; then the graph tiers.
@@ -125,6 +127,76 @@ function UserSearch({ onPick, exclude }: { onPick: (u: PickedUser) => void; excl
               >
                 <span className="truncate">{u.name}</span>
                 <span className="shrink-0 text-xs text-faint">@{u.handle}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Attach a real, verified brewdiary venue to a plan. Debounced search over the
+// public venue directory; picking one sets it, and it can be cleared. Optional —
+// a plan is still just as valid with only a free-text city.
+function VenueSearch({ picked, onPick }: { picked: DirectoryVenue | null; onPick: (v: DirectoryVenue | null) => void }) {
+  const [q, setQ] = useState("");
+  const [debounced, setDebounced] = useState<string | null>(null);
+  const { venues } = useVenueDirectory(debounced);
+
+  useEffect(() => {
+    if (picked || q.trim().length < 2) {
+      setDebounced(null);
+      return;
+    }
+    const t = setTimeout(() => setDebounced(q), 250);
+    return () => clearTimeout(t);
+  }, [q, picked]);
+
+  if (picked) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          onPick(null);
+          setQ("");
+        }}
+        aria-label={`Remove ${picked.name}`}
+        className="inline-flex items-center gap-1.5 rounded-ctl bg-accent/10 px-3 py-2 text-sm text-ink transition-colors hover:bg-accent/15"
+      >
+        {picked.name}
+        {picked.city && <span className="text-xs text-faint">{picked.city}</span>}
+        <span aria-hidden className="text-muted">
+          ×
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search a bar on brewdiary (optional)"
+        aria-label="Find a venue"
+        className={inputClass}
+      />
+      {venues.length > 0 && (
+        <ul className="glass mt-1 rounded-ctl p-1">
+          {venues.map((v) => (
+            <li key={v.id}>
+              <button
+                type="button"
+                onClick={() => {
+                  onPick(v);
+                  setQ("");
+                  setDebounced(null);
+                }}
+                className="flex w-full items-center justify-between gap-2 rounded-[7px] px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-ink/5 hover:text-ink"
+              >
+                <span className="truncate">{v.name}</span>
+                {v.city && <span className="shrink-0 text-xs text-faint">{v.city}</span>}
               </button>
             </li>
           ))}
@@ -231,6 +303,8 @@ function DiscoverCard({ plan }: { plan: Plan }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
+  const [booking, setBooking] = useState(false);
+  const venueName = useVenueName(plan.venueId);
   const signals = usePlanSignals(plan.id);
 
   const full = plan.capacity != null && plan.going >= plan.capacity;
@@ -294,6 +368,18 @@ function DiscoverCard({ plan }: { plan: Plan }) {
               {t}
             </span>
           ))}
+        </div>
+      )}
+
+      {plan.venueId && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-ctl border border-line px-3 py-2">
+          <span className="min-w-0 truncate text-sm text-ink">{venueName ?? "At a venue on brewdiary"}</span>
+          <button
+            onClick={() => setBooking(true)}
+            className="shrink-0 text-xs uppercase tracking-[0.12em] text-accent transition-opacity hover:opacity-80"
+          >
+            Book a table
+          </button>
         </div>
       )}
 
@@ -370,6 +456,12 @@ function DiscoverCard({ plan }: { plan: Plan }) {
         )}
       </div>
       {err && <p className="mt-2 text-xs text-accent">{err}</p>}
+      {booking && plan.venueId && (
+        <BookTable
+          group={{ venueId: plan.venueId, name: venueName ?? "the venue", offers: [] }}
+          onClose={() => setBooking(false)}
+        />
+      )}
     </li>
   );
 }
@@ -439,6 +531,8 @@ function Mine() {
 function MyPlanCard({ plan }: { plan: MyPlan }) {
   const [openReqs, setOpenReqs] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [booking, setBooking] = useState(false);
+  const venueName = useVenueName(plan.venueId);
   const cancelled = plan.status === "cancelled";
   const isPrivate = plan.joinPolicy === "private";
   const isInvite = plan.joinPolicy === "invite";
@@ -466,6 +560,18 @@ function MyPlanCard({ plan }: { plan: MyPlan }) {
       </div>
 
       {plan.note && <p className="mt-3 text-[15px] leading-relaxed text-muted">{plan.note}</p>}
+
+      {plan.venueId && !cancelled && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-ctl border border-line px-3 py-2">
+          <span className="min-w-0 truncate text-sm text-ink">{venueName ?? "At a venue on brewdiary"}</span>
+          <button
+            onClick={() => setBooking(true)}
+            className="shrink-0 text-xs uppercase tracking-[0.12em] text-accent transition-opacity hover:opacity-80"
+          >
+            Book a table
+          </button>
+        </div>
+      )}
 
       {isPrivate && !cancelled && (
         <p className="mt-3 text-sm text-faint">Only you can see this — a quiet note on your calendar.</p>
@@ -515,6 +621,12 @@ function MyPlanCard({ plan }: { plan: MyPlan }) {
           </button>
         )}
       </div>
+      {booking && plan.venueId && (
+        <BookTable
+          group={{ venueId: plan.venueId, name: venueName ?? "the venue", offers: [] }}
+          onClose={() => setBooking(false)}
+        />
+      )}
     </li>
   );
 }
@@ -697,6 +809,7 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [city, setCity] = useState("");
+  const [venue, setVenue] = useState<DirectoryVenue | null>(null);
   const [note, setNote] = useState("");
   const [drinks, setDrinks] = useState("");
   const [policy, setPolicy] = useState<JoinPolicy>("friends");
@@ -735,6 +848,7 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
       drinks: drinks.split(",").map((s) => s.trim()).filter(Boolean),
       joinPolicy: policy,
       capacity: isPrivate || !cap ? undefined : Number(cap),
+      venueId: venue?.id,
     });
     if ("error" in res) {
       setBusy(false);
@@ -772,6 +886,10 @@ function CreatePlan({ onDone }: { onDone: () => void }) {
           />
         </div>
         <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City or area (optional)" className={inputClass} aria-label="City" />
+        <div>
+          <p className="mb-1.5 text-xs text-faint">At a venue? Pick a bar on brewdiary — friends can book a table there.</p>
+          <VenueSearch picked={venue} onPick={setVenue} />
+        </div>
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}

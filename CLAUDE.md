@@ -122,6 +122,16 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
   add a row, cite the source (`internal/legal-and-compliance.md`). **An off-licence is NOT a quieter bar** —
   at a shop a visit *is* a purchase, so it needs its own permission (`allow_offtrade_perks`), counts visits
   only, and its reward is never alcohol, anywhere.
+- **A DINING offer may be advertised; an ALCOHOL offer never.** This refines the older "never show a
+  venue's offer" line (which is still absolute for perks — `discover_venues()` never joins `venue_perks`).
+  A partner bar's **dining** deal — a bill discount, a set menu, an experience — is shown publicly in
+  Discover and is bookable (the Zomato Dineout model; lawful because it advertises the *table*, not the
+  drink). It lives in `dining_offers` (migration 050) with a DB guard: **verified bars only, never a
+  bottle shop** (a shop's bill discount is an alcohol discount), only where `allow_perks`, and there is
+  **no alcohol-reward field** by construction. A free/discounted **drink** stays the private `venue_perks`
+  loyalty card — earned in place, staff-recorded, never advertised. Table **reservations** (`reservations`)
+  are request→confirm: a guest may only ever create their own `'requested'` row; only staff move it
+  forward (same "a guest can never write their own reward" discipline as spend/perks).
 - **House style = liquid glass, two themes, dark-default.** Layered frosted surfaces (`.glass`/`.glass-strong`),
   one amber accent, mosaic glows amber-by-count, high-contrast text, **no** AI-slop purple/neon, no emoji as
   UI chrome. This supersedes any older "flat monochrome / no-glass" note in the north-star file.

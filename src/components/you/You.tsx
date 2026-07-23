@@ -25,6 +25,7 @@ import { useBlocks, unblockUser } from "@/lib/safety";
 import { isCollecting, setCollecting, clearTraining, useTrainingCount } from "@/lib/training";
 import { useShareTrends, setShareTrends, useTrendsGeo, requestLocationGeohash, setTrendsGeo } from "@/lib/trends";
 import { useMyVenueBooks, forgetVenueBook } from "@/lib/guestbook";
+import { useMyReservations, cancelReservation, type ReservationStatus } from "@/lib/reservations";
 import { useCompeteVisible, setCompeteVisible } from "@/lib/points";
 import { useProfilePrivacy, setProfileVisibility, setSocialHandle, type ProfileVisibility } from "@/lib/publicProfile";
 import { useExtras, setExtra, EXTRAS, type ExtraKey } from "@/lib/features";
@@ -71,6 +72,9 @@ export function You() {
       {/* Both only ever appear once you've asked for them (You → Settings) */}
       <WeeklyRecap />
       <BalanceCard entries={entries} />
+
+      {/* Table bookings you've made at partner bars (only shows if you have any). */}
+      <MyTables />
 
       {/* Your year — a calm look-back, all derived */}
       {yr.total > 0 && (
@@ -514,6 +518,63 @@ function DataRights() {
 
       {error && <p className="mt-2 text-sm text-accent">{error}</p>}
     </div>
+  );
+}
+
+// Your table bookings at partner bars (the Dineout loop's guest side). Only shows
+// if you've made one; a booking is confirmed by the venue, never self-confirmed.
+const MY_RES_LABEL: Record<ReservationStatus, string> = {
+  requested: "Waiting for the venue to confirm",
+  confirmed: "Confirmed",
+  declined: "The venue couldn't take it",
+  cancelled: "Cancelled",
+  seated: "Seated",
+  no_show: "Marked no-show",
+};
+
+function MyTables() {
+  const { reservations, loading } = useMyReservations();
+  if (loading || reservations.length === 0) return null;
+
+  const prettyDate = (key: string) => {
+    const d = new Date(`${key}T00:00:00`);
+    return Number.isNaN(d.getTime())
+      ? key
+      : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  };
+
+  return (
+    <section className="mt-10">
+      <h2 className="label mb-3">Your tables</h2>
+      <ul className="space-y-2">
+        {reservations.map((r) => {
+          const cancellable = r.status === "requested" || r.status === "confirmed";
+          const active = r.status === "requested" || r.status === "confirmed" || r.status === "seated";
+          return (
+            <li key={r.id} className="glass rounded-tile p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[15px] text-ink">{r.venueName}</p>
+                  <p className="mt-0.5 text-xs text-faint">
+                    {prettyDate(r.date)}
+                    {r.time && <> · {r.time.slice(0, 5)}</>} · party of {r.partySize}
+                  </p>
+                  <p className={clsx("mt-1 text-xs", active ? "text-accent" : "text-faint")}>{MY_RES_LABEL[r.status]}</p>
+                </div>
+                {cancellable && (
+                  <button
+                    onClick={() => cancelReservation(r.id)}
+                    className="shrink-0 text-xs text-faint transition-colors hover:text-accent"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

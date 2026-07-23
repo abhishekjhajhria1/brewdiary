@@ -63,6 +63,7 @@ try {
     "chart_proposals",
     "cups", "cup_members",
     "recipes", "recipe_reactions",
+    "dining_offers", "reservations",
   ];
   const have = (await all(`select tablename from pg_tables where schemaname = 'public'`)).map((r) => r.tablename);
   for (const t of wantTables) ok(`table ${t}`, have.includes(t), "— MISSING");
@@ -95,6 +96,7 @@ try {
     "cup_board", "cup_visible_to", "is_cup_member", "join_cup", "cups_add_owner",
     "recipe_visible_to", "recipe_reaction_counts", "recipe_friend_ratio",
     "edit_recipe", "review_recipe", "pending_recipes", "recipes_maybe_promote",
+    "discover_offers", "venue_directory", "set_reservation_status",
   ];
   const fns = (await all(`
     select p.proname from pg_proc p
@@ -566,6 +568,53 @@ try {
       !!vi049 && /is_venue_staff/.test(vi049.d) && /is_mgr/.test(vi049.d));
   } else {
     console.log("  ~ roles + staff insights (049) not applied — skipping");
+  }
+
+  console.log("\n── Dineout (050): a dining offer is public, an alcohol offer never ──");
+  if (have.includes("dining_offers") && have.includes("reservations")) {
+    // THE load-bearing line. discover_offers() is the one place a bar's offer is
+    // shown — lawful ONLY because it carries a DINING deal, never alcohol. If it ever
+    // joins venue_perks (the private alcohol loyalty), it becomes surrogate alcohol
+    // advertising: illegal in India. And it must only ever surface bars, never shops.
+    const doDef = await one(`select pg_get_functiondef('public.discover_offers(text,int)'::regprocedure) d`);
+    ok("discover_offers(): never joins venue_perks (a dining offer, never an alcohol one)",
+      doDef && !/venue_perks/.test(doDef.d));
+    ok("discover_offers(): only surfaces verified BARS (kind='bar'), never a bottle shop",
+      doDef && /kind\s*=\s*'bar'/.test(doDef.d) && /verified/.test(doDef.d) && /allow_perks/.test(doDef.d));
+
+    // The guard is the legal wall: a store or unverified venue can hold no dining offer.
+    const doGuard = await one(`select count(*)::int n from pg_trigger where tgname='dining_offer_policy'`);
+    ok("dining_offers: the guard trigger exists (no offer at a shop / unverified venue)", Number(doGuard.n) > 0);
+    const doGuardDef = await one(`select pg_get_functiondef('public.dining_offer_guard()'::regprocedure) d`);
+    ok("dining_offer_guard(): refuses kind='store' and unverified venues, gates on allow_perks",
+      doGuardDef && /store/.test(doGuardDef.d) && /verified/.test(doGuardDef.d) && /allow_perks/.test(doGuardDef.d));
+
+    // Guests never read dining_offers directly — only through discover_offers(), the
+    // one lawful gate. Direct table read is manager-only (the dashboard editor).
+    const doSel = await one(`select qual::text q from pg_policies where schemaname='public' and tablename='dining_offers' and cmd='SELECT'`);
+    ok("dining_offers: direct read is staff-only (guests see offers via discover_offers)",
+      doSel && /is_venue_staff/.test(doSel.q));
+    // …but only a MANAGER may write one (an offer is a management decision).
+    const doWrite = await all(`select with_check::text w from pg_policies where schemaname='public' and tablename='dining_offers' and cmd='INSERT'`);
+    ok("dining_offers: only a manager may create one (write is manager-gated)",
+      doWrite.length === 1 && /is_venue_manager/.test(doWrite[0].w));
+
+    // A guest can only ever REQUEST a table, for themselves. No self-confirm — the
+    // same discipline as spend/perks. Every status move goes through the definer rpc.
+    const resIns = await one(`select with_check::text w from pg_policies where schemaname='public' and tablename='reservations' and cmd='INSERT'`);
+    ok("reservations: a guest can only insert their OWN 'requested' booking (no self-confirm)",
+      resIns && /user_id\s*=\s*auth\.uid\(\)/.test(resIns.w) && /status\s*=\s*'requested'/.test(resIns.w),
+      `— ${resIns?.w ?? "no insert policy"}`);
+    const resWrite = await all(`select policyname, cmd from pg_policies where schemaname='public' and tablename='reservations' and cmd in ('UPDATE','DELETE')`);
+    ok("reservations: NO client UPDATE/DELETE policy (status moves via set_reservation_status only)",
+      resWrite.length === 0, `— found ${resWrite.map((x) => `${x.policyname}/${x.cmd}`).join(", ")}`);
+    const ssDef = await one(`select pg_get_functiondef('public.set_reservation_status(uuid,text)'::regprocedure) d`);
+    ok("set_reservation_status(): only staff may confirm/decline/seat; a guest may only cancel their own",
+      ssDef && /is_venue_staff/.test(ssDef.d));
+    const resGuard = await one(`select count(*)::int n from pg_trigger where tgname='reservations_check'`);
+    ok("reservations: the guard trigger exists (verified bars only, no past dates)", Number(resGuard.n) > 0);
+  } else {
+    console.log("  ~ dining offers + reservations (050) not applied — skipping");
   }
 
   console.log("\n── orphans / drift ──────────────────────────────────");

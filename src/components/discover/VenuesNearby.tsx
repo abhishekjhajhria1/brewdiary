@@ -10,10 +10,15 @@
 // Türkiye and Poland too.
 //
 // So this shows a name, a city, and whether a room is running. It does NOT show
-// the perk, the reward, a price, a drink, or a discount — and the database backs
-// that up: discover_venues() never joins venue_perks. If you're ever tempted to
-// add "and here's what they're offering tonight", that is the line, and crossing
-// it turns a diary into an advertising platform.
+// the PERK, the reward, a price, a drink, or a drink DISCOUNT — and the database
+// backs that up: discover_venues() never joins venue_perks.
+//
+// ── THE ONE SCOPED EXCEPTION ─────────────────────────────────────────────────
+// A venue's DINING offer (a bill discount, a set menu, an experience) IS shown —
+// but not here. It lives in PartnerOffers.tsx, fed by discover_offers() (050),
+// because a dining deal is lawful to advertise for the same reason Zomato Dineout
+// is: it's not the alcohol. An ALCOHOL offer ("free pour tonight!") is still the
+// line, and it never appears anywhere — not here, not there.
 //
 // A venue only appears where the bar layer is lawful at all (Class A/B).
 import { useEffect, useState } from "react";

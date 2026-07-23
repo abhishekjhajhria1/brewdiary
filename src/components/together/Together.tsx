@@ -27,7 +27,6 @@ import { DRINKS, canonicalize, normalize } from "@/lib/drinks";
 import { friendPicks } from "@/lib/derive";
 import { MONTH_NAMES, parseKey, timeOfDayLabel, todayKey } from "@/lib/date";
 import { RecentMosaic } from "./RecentMosaic";
-import { DayCounters } from "../ui/DayCounters";
 import { useVouchedByMe, vouchFor, unvouch } from "@/lib/vouch";
 import { VenueLink } from "../ui/VenueLink";
 import { Circles } from "./Circles";
@@ -171,11 +170,9 @@ export function Together() {
       <div role="tabpanel" id="room-panel" aria-labelledby={`group-tab-${group}`} className="mt-4">
       {room === "feed" && (
         <>
-          {/* Tonight's drink tallies (pegs, beers — enabled in You › Extras) live HERE,
-              where a night out happens, not on the quiet calendar home. Each tap still
-              writes a real diary entry; repeats never move a score or a board. */}
-          <DayCounters dateKey={todayKey()} only={["pegs", "beers"]} className="mt-6" />
-
+          {/* The pegs/beers tally deliberately does NOT live on this open feed. It is a
+              round counter for when you're actually together — so it appears only inside a
+              party room (see PartyRoom's PartyTally), never on the solo Together landing. */}
           <People friends={friends} onOpenFriend={setOpenFriend} />
 
           <FriendPicks feed={feed} />

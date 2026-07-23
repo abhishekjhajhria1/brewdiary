@@ -10,9 +10,16 @@
 --
 -- So this function returns a bar's NAME, CITY, and whether a room is open tonight.
 -- It does NOT return — and must never return — the perk, the reward, a price, a
--- drink, or a discount. That is rule #6 in docs/11, and THIS is the feature most
--- likely to erode it, so the separation lives in the query rather than in our good
--- intentions: `venue_perks` is not joined here, and it never should be.
+-- drink, or a drink discount. That is rule #6 in docs/11, and THIS is the feature
+-- most likely to erode it, so the separation lives in the query rather than in our
+-- good intentions: `venue_perks` is not joined here, and it never should be.
+--
+-- ── ONE SCOPED EXCEPTION (050) ──────────────────────────────────────────────
+-- A venue's DINING offer (a bill discount, a set menu, an experience) IS shown to
+-- guests — but by discover_offers() in 050, NOT here. A dining deal is lawful to
+-- advertise for the same reason Zomato Dineout is: it is not the alcohol. This
+-- function stays name+city only; discover_offers() is the one place an offer shows,
+-- and it too never touches venue_perks (the private ALCOHOL loyalty card).
 --
 -- Jurisdiction: a venue only appears where the bar layer is lawful at all (Class
 -- A/B — allow_perks). Deny by default, like everything else: an unresearched

@@ -333,9 +333,14 @@ status are the things a user cannot write.** That's the whole security design in
    thing we most need not to build — and it is very easy to rebuild by accident.
 5. **The streak counts days you LOGGED, not days you drank.** A dry day keeps it. Never make a drink
    the only way to hold a streak — that is loss aversion pointed straight at consumption.
-6. **A perk is never promoted publicly.** It stays private between one guest and one bar. A public feed
-   of drink offers turns the app from a diary into an alcohol advertising channel, which is
-   *specifically* illegal in some of our target markets (see `internal/legal-and-compliance.md`).
+6. **A perk (an ALCOHOL offer) is never promoted publicly.** It stays private between one guest and one
+   bar. A public feed of *drink* offers turns the app from a diary into an alcohol advertising channel,
+   which is *specifically* illegal in some of our target markets (see `internal/legal-and-compliance.md`).
+   **Scoped exception (050):** a partner bar's **dining** offer — a bill discount, a set menu, an
+   experience — *is* shown publicly in Discover and is bookable (the Zomato Dineout model). That is lawful
+   because it advertises the table, not the drink: `dining_offers` has a DB guard (verified bars only,
+   never a bottle shop, only where `allow_perks`) and no alcohol-reward field. A free/discounted *drink*
+   is never a dining offer, and never advertised.
 7. **Never give the client an insert policy on `spend_events` or on sparks.** They are server-written
    for a reason — see the table in §9.
 8. **Consents default OFF, stay independent, and the screen consent expires.** Don't collapse switches
@@ -360,8 +365,10 @@ countries.**
   the liability**: a bad perk of ours could cost a partner bar its licence.
 - **Massachusetts and Utah** still restrict drink deals.
 - **India** (home) permits the perk — but restricts alcohol *advertising* severely, which is why a perk
-  is always **private between one guest and one bar** and there is no public "offers" feed. Building one
-  would turn a diary into an alcohol advertising channel.
+  is always **private between one guest and one bar** and there is no public feed of *drink* offers.
+  Advertising one would turn a diary into an alcohol advertising channel. A **dining** offer (a bill
+  discount, a set menu) is a different object — Zomato Dineout advertises exactly these, lawfully, because
+  the deal is on the table, not the drink — so those *are* public and bookable (`dining_offers`, 050).
 
 **The insight that saves the feature:** *a loyalty scheme whose prize is not alcohol is not an alcohol
 loyalty scheme.* So the reward defaults to **non-alcoholic** (a coffee, a dessert, priority entry), and

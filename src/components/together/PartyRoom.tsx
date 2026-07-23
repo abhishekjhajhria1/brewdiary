@@ -28,12 +28,13 @@ import {
 } from "@/lib/points";
 import { usePerkTiers, useQuietNights } from "@/lib/perks";
 import { useExtras, setExtra } from "@/lib/features";
+import { usePartyCatchUp } from "@/lib/autolog";
 import { DayCounters } from "../ui/DayCounters";
 import { useRoomStaff, thankStaff, KUDOS_REASONS } from "@/lib/kudos";
 import { formatMoney } from "@/lib/money";
 import { ScoreCard, type Score } from "../share/ScoreCard";
 import { useAuth } from "@/lib/profile";
-import { MONTH_NAMES, parseKey, timeOfDayLabel, todayKey } from "@/lib/date";
+import { MONTH_NAMES, addDays, parseKey, timeOfDayLabel, toKey, todayKey } from "@/lib/date";
 
 const RSVP_LABEL: Record<Rsvp, string> = { going: "Going", maybe: "Maybe", no: "Can't" };
 
@@ -223,6 +224,19 @@ export function PartyRoom({ partyId }: { partyId: string }) {
               honest-logging half of "count while friends are together". */}
           {party.date === todayKey() && approved.length >= 2 && <PartyTally dateKey={party.date} />}
 
+          {/* The catch-up log — if the tally went quiet for 2h after you'd been
+              counting, one more of what you were drinking is added so the day isn't
+              blank. Armed for tonight OR last night (you'll open the app the morning
+              after), only for a real group, and always removable. */}
+          <PartyCatchUp
+            partyId={party.id}
+            dateKey={party.date}
+            enabled={
+              approved.length >= 2 &&
+              (party.date === todayKey() || party.date === toKey(addDays(parseKey(todayKey()), -1)))
+            }
+          />
+
           {/* Tonight's points — the opt-in loud corner. The pours above stay
               unranked; this is the game, and no one is ranked by what they spent. */}
           <PointsBoard partyId={party.id} partyName={party.name} members={approved} me={me} />
@@ -308,6 +322,37 @@ function PartyTally({ dateKey }: { dateKey: string }) {
           Keep count tonight
         </button>
       )}
+    </section>
+  );
+}
+
+// ── the catch-up notice: one auto-added drink after the night went quiet ─────
+// See lib/autolog.ts for the honest limits. This is just its face: it appears only
+// when something was actually added, and it's always one tap to undo.
+function PartyCatchUp({ partyId, dateKey, enabled }: { partyId: string; dateKey: string; enabled: boolean }) {
+  const { pending, keep, remove } = usePartyCatchUp(partyId, dateKey, enabled);
+  if (!pending) return null;
+
+  return (
+    <section className="animate-fade mb-7">
+      <div className="glass flex items-start justify-between gap-3 rounded-tile p-4">
+        <div className="min-w-0">
+          <p className="text-[15px] text-ink">
+            Added a <span className="text-accent">{pending.drink}</span> for you.
+          </p>
+          <p className="mt-0.5 text-xs leading-relaxed text-faint">
+            Your tally went quiet — so the night isn&apos;t left blank. If that&apos;s not right, remove it.
+          </p>
+        </div>
+        <span className="flex shrink-0 items-center gap-3 text-sm">
+          <button onClick={remove} className="text-faint transition-colors hover:text-accent">
+            Remove
+          </button>
+          <button onClick={keep} className="font-medium text-accent transition-opacity hover:opacity-80">
+            Keep
+          </button>
+        </span>
+      </div>
     </section>
   );
 }

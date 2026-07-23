@@ -45,6 +45,17 @@ import {
   type PerkKind,
   type VenueKind,
 } from "@/lib/perks";
+import {
+  useVenueOffers,
+  useVenueReservations,
+  addDiningOffer,
+  toggleDiningOffer,
+  removeDiningOffer,
+  setReservationStatus,
+  MAX_OFFERS,
+  type OfferKind,
+  type ReservationStatus,
+} from "@/lib/reservations";
 import { KNOWN_COUNTRIES } from "@/lib/jurisdiction";
 import { currencyForCountry, currencySymbol, formatMoney } from "@/lib/money";
 import { useRoomGuests, staffAwardVibe, recordSpend, STAFF_VIBE_REASONS } from "@/lib/points";
@@ -478,7 +489,7 @@ function VenueCard({ venue, meId, open, onToggle }: { venue: Venue; meId: string
 // and vibe controls — and everything administrative (perks, team, setup) is a tab
 // away rather than a scroll away. A bartender should never have to walk past the
 // "delete venue" button to record someone's tab.
-type Section = "tonight" | "perks" | "team" | "insights" | "guests" | "setup";
+type Section = "tonight" | "perks" | "offers" | "bookings" | "team" | "insights" | "guests" | "setup";
 
 function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; canManage: boolean }) {
   const { staff } = useVenueStaff(venue.id);
@@ -501,6 +512,9 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
     ? [
         { id: "tonight", label: store ? "Till" : "Tonight" },
         { id: "perks", label: store ? "Card" : "Perks" },
+        // Dining offers + table bookings are a sit-down-venue thing — a bottle shop
+        // has neither (the DB refuses both), so a store never sees these doors.
+        ...(store ? [] : ([{ id: "offers", label: "Offers" }, { id: "bookings", label: "Tables" }] as { id: Section; label: string }[])),
         { id: "insights", label: "Insights" },
         { id: "guests", label: "Guests" },
         { id: "team", label: "Team" },
@@ -509,6 +523,8 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
     : service
       ? [
           { id: "tonight", label: store ? "Till" : "Tonight" },
+          // Front-of-house handles the floor, so service staff see incoming bookings.
+          ...(store ? [] : ([{ id: "bookings", label: "Tables" }] as { id: Section; label: string }[])),
           { id: "insights", label: "Insights" },
         ]
       : [{ id: "insights", label: "Insights" }];
@@ -554,6 +570,15 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
           <VenuePerkEditor venue={venue} />
         </>
       )}
+
+      {section === "offers" && canManage && (
+        <>
+          {!venue.verified && <VerificationPanel venue={venue} meId={meId} />}
+          <VenueOfferEditor venue={venue} meId={meId} />
+        </>
+      )}
+
+      {section === "bookings" && <VenueBookings venue={venue} />}
 
       {/* Insights (with Ninkasi's read) is for EVERY rung now — the DB nulls the
           money below manager rank, so a waiter sees pattern, never the till. */}
@@ -1628,6 +1653,295 @@ function VenuePerkEditor({ venue }: { venue: Venue }) {
         </>
       )}
     </div>
+  );
+}
+
+// ── dining offers: a PUBLIC, advertisable deal — a table deal, never a drink deal ──
+// The Dineout surface's venue side. Only a verified bar can run one, only where the
+// bar layer is lawful, and there is deliberately no "free drink" option — an alcohol
+// reward lives in Perks (private), never here (public). The DB enforces all of it (050).
+const OFFER_KINDS: { id: OfferKind; label: string; placeholder: string; hint: string }[] = [
+  { id: "percent_off", label: "% off the bill", placeholder: "e.g. Flat 20% off the total bill", hint: "A percentage off the whole table's bill." },
+  { id: "flat_deal", label: "A deal", placeholder: "e.g. A free starter with two mains", hint: "A fixed table deal — a starter, a dessert, an add-on." },
+  { id: "set_menu", label: "Set menu", placeholder: "e.g. Chef's 5-course tasting menu", hint: "A fixed menu at a fixed price." },
+  { id: "experience", label: "Experience", placeholder: "e.g. A guided coffee cupping", hint: "Something to come for — a tasting, a class, live music." },
+];
+
+function VenueOfferEditor({ venue, meId }: { venue: Venue; meId: string }) {
+  const { offers, loading } = useVenueOffers(venue.id);
+  const [kind, setKind] = useState<OfferKind>("percent_off");
+  const [title, setTitle] = useState("");
+  const [detail, setDetail] = useState("");
+  const [percent, setPercent] = useState(20);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // A dining offer follows the SAME jurisdiction gate as a bar perk (allow_perks) —
+  // it's only shown where the bar layer is lawful at all. Judged as a bar, never a shop.
+  const policy = perkPolicy(venue.country, venue.region, "bar");
+  const note = perkPolicyNote(venue.country, venue.region, "bar");
+
+  async function add() {
+    setBusy(true);
+    setError(null);
+    const err = await addDiningOffer(venue.id, meId, {
+      title,
+      detail: detail || undefined,
+      kind,
+      percentOff: kind === "percent_off" ? percent : undefined,
+    });
+    setBusy(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setTitle("");
+    setDetail("");
+  }
+
+  if (!venue.verified) {
+    return (
+      <div className="mb-5">
+        <p className="label mb-2 text-faint">Dining offers</p>
+        <p className="text-sm text-faint">Get verified to publish a dining offer — a table deal guests can find and book.</p>
+      </div>
+    );
+  }
+
+  if (!policy.allowPerks) {
+    return (
+      <div className="mb-5">
+        <p className="label mb-2 text-faint">Dining offers</p>
+        <p className="max-w-prose text-sm leading-relaxed text-faint">
+          {note ?? "Dining offers aren't available for a venue here."}
+        </p>
+      </div>
+    );
+  }
+
+  const full = offers.length >= MAX_OFFERS;
+
+  return (
+    <div className="mb-5">
+      <p className="label mb-2 text-faint">Dining offers</p>
+      <p className="mb-3 max-w-prose text-xs leading-relaxed text-faint">
+        A <span className="text-ink">dining</span> deal shown to guests in Discover — a bill discount, a set
+        menu, an experience. Never a drink offer: a free or discounted drink is a loyalty perk (private),
+        not an advert. Guests can book a table against it.
+      </p>
+
+      {loading ? (
+        <div className="glass h-14 animate-pulse rounded-ctl" />
+      ) : (
+        <>
+          {offers.length > 0 && (
+            <ul className="mb-4 divide-y divide-line border-y border-line">
+              {offers.map((o) => (
+                <li key={o.id} className="flex items-center justify-between gap-3 py-2.5">
+                  <span className="min-w-0">
+                    <span className="block truncate text-[15px] text-ink">{o.title}</span>
+                    {o.detail && <span className="block truncate text-xs text-faint">{o.detail}</span>}
+                    {!o.active && <span className="text-xs text-faint">paused</span>}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3 text-sm">
+                    <button
+                      onClick={() => toggleDiningOffer(o.id, !o.active)}
+                      className="text-faint transition-colors hover:text-ink"
+                    >
+                      {o.active ? "Pause" : "Show"}
+                    </button>
+                    <button onClick={() => removeDiningOffer(o.id)} className="text-faint transition-colors hover:text-ink">
+                      Remove
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {full ? (
+            <p className="text-xs leading-relaxed text-faint">
+              Four offers is plenty — a short, legible menu is one a guest can actually read.
+            </p>
+          ) : (
+            <>
+              <p className="label mb-2 text-faint">{offers.length === 0 ? "Add an offer" : "Add another"}</p>
+
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {OFFER_KINDS.map((k) => (
+                  <button
+                    key={k.id}
+                    onClick={() => setKind(k.id)}
+                    aria-pressed={kind === k.id}
+                    className={clsx(
+                      "rounded-ctl px-3.5 py-1.5 text-sm transition-colors",
+                      kind === k.id ? "bg-ink font-medium text-paper" : "glass glass-press text-muted hover:text-ink",
+                    )}
+                  >
+                    {k.label}
+                  </button>
+                ))}
+              </div>
+
+              <p className="mb-2 text-xs leading-relaxed text-faint">{OFFER_KINDS.find((k) => k.id === kind)?.hint}</p>
+
+              <div className="space-y-2">
+                {kind === "percent_off" && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={percent}
+                      onChange={(e) => setPercent(Number(e.target.value))}
+                      aria-label="Percent off"
+                      className="tnum glass w-20 rounded-ctl px-3 py-2.5 text-[15px] text-ink"
+                    />
+                    <span className="text-sm text-faint">% off the bill</span>
+                  </div>
+                )}
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder={OFFER_KINDS.find((k) => k.id === kind)?.placeholder}
+                  aria-label="Offer title"
+                  className="glass w-full rounded-ctl px-4 py-2.5 text-[15px] text-ink placeholder:text-faint"
+                />
+                <input
+                  value={detail}
+                  onChange={(e) => setDetail(e.target.value)}
+                  placeholder="Fine print — e.g. Mon–Thu, dine-in, table of 2+ (optional)"
+                  aria-label="Offer detail"
+                  className="glass w-full rounded-ctl px-4 py-2.5 text-[15px] text-ink placeholder:text-faint"
+                />
+              </div>
+
+              {error && <p className="mt-2 text-sm text-accent">{error}</p>}
+
+              <button
+                onClick={add}
+                disabled={!title.trim() || busy}
+                className="mt-3 rounded-ctl bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {busy ? "Saving…" : offers.length === 0 ? "Add offer" : "Add another"}
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── table bookings: the venue's incoming reservations, confirmed by staff ────
+const RES_STATUS_LABEL: Record<ReservationStatus, string> = {
+  requested: "asked",
+  confirmed: "confirmed",
+  declined: "declined",
+  cancelled: "cancelled",
+  seated: "seated",
+  no_show: "no-show",
+};
+
+function prettyResDate(key: string): string {
+  const d = new Date(`${key}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return key;
+  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+}
+
+function VenueBookings({ venue }: { venue: Venue }) {
+  const { reservations, loading } = useVenueReservations(venue.id);
+  const today = todayKey();
+  // The floor cares about what's still coming — past/closed bookings drop to the bottom.
+  const live = reservations.filter((r) => r.date >= today && (r.status === "requested" || r.status === "confirmed"));
+  const rest = reservations.filter((r) => !(r.date >= today && (r.status === "requested" || r.status === "confirmed")));
+
+  if (loading) return <div className="glass h-24 animate-pulse rounded-tile" />;
+
+  if (reservations.length === 0) {
+    return (
+      <div>
+        <p className="label mb-2 text-faint">Table bookings</p>
+        <p className="text-sm leading-relaxed text-faint">
+          No bookings yet. When a guest books a table against one of your dining offers, it lands here for you
+          to confirm.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="label mb-2 text-faint">Table bookings</p>
+      {live.length > 0 && (
+        <ul className="mb-4 space-y-2">
+          {live.map((r) => (
+            <BookingRow key={r.id} r={r} />
+          ))}
+        </ul>
+      )}
+      {rest.length > 0 && (
+        <>
+          <p className="label mb-2 mt-4 text-faint">Earlier</p>
+          <ul className="space-y-2 opacity-70">
+            {rest.map((r) => (
+              <BookingRow key={r.id} r={r} />
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+function BookingRow({ r }: { r: import("@/lib/reservations").VenueReservation }) {
+  const requested = r.status === "requested";
+  const confirmed = r.status === "confirmed";
+  return (
+    <li className="glass rounded-tile p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[15px] text-ink">
+            {r.guestName} {r.guestHandle && <span className="text-xs text-faint">@{r.guestHandle}</span>}
+          </p>
+          <p className="mt-0.5 text-xs text-faint">
+            {prettyResDate(r.date)}
+            {r.time && <> · {r.time.slice(0, 5)}</>} · party of {r.partySize}
+            {" · "}
+            <span className={clsx(requested ? "text-accent" : confirmed ? "text-ink" : "text-faint")}>
+              {RES_STATUS_LABEL[r.status]}
+            </span>
+          </p>
+          {r.offerTitle && <p className="mt-1 text-xs text-muted">on: {r.offerTitle}</p>}
+          {r.note && <p className="mt-1 text-sm text-muted">“{r.note}”</p>}
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3 text-sm">
+        {requested && (
+          <>
+            <button onClick={() => setReservationStatus(r.id, "confirmed")} className="font-medium text-accent transition-opacity hover:opacity-80">
+              Confirm
+            </button>
+            <button onClick={() => setReservationStatus(r.id, "declined")} className="text-faint transition-colors hover:text-ink">
+              Decline
+            </button>
+          </>
+        )}
+        {confirmed && (
+          <>
+            <button onClick={() => setReservationStatus(r.id, "seated")} className="font-medium text-accent transition-opacity hover:opacity-80">
+              Seated
+            </button>
+            <button onClick={() => setReservationStatus(r.id, "no_show")} className="text-faint transition-colors hover:text-ink">
+              No-show
+            </button>
+            <button onClick={() => setReservationStatus(r.id, "cancelled")} className="text-faint transition-colors hover:text-ink">
+              Cancel
+            </button>
+          </>
+        )}
+      </div>
+    </li>
   );
 }
 
