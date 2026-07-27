@@ -24,11 +24,24 @@ export function TabBar() {
   // Wait for the session to resolve so the bar doesn't flash between layouts.
   // The venue dashboard and the kiosk wall carry no consumer chrome.
   //
+  // On "/" a signed-out visitor sees the LANDING, which is a marketing page with one
+  // action (sign up) and deliberately shows none of the app's screens — a nav bar
+  // offering Calendar/Ninkasi/You under it would advertise exactly what the page is
+  // built not to show. Guests keep the nav on every other route.
+  //
   // NOTE: the venue check is by HOST, not path. On bar.bwdy.site the middleware
   // rewrites to /venue internally but the browser's path is still "/", so a
   // `pathname.startsWith("/venue")` test silently fails there — which is how this
   // nav ended up on the bar dashboard in production.
-  if (!mounted || auth.status === "loading" || isVenue || pathname.startsWith("/kiosk")) return null;
+  if (
+    !mounted ||
+    auth.status === "loading" ||
+    isVenue ||
+    pathname.startsWith("/kiosk") ||
+    (!auth.profile && pathname === "/")
+  ) {
+    return null;
+  }
 
   // Guests still get the local diary — only the social tab needs an account.
   const tabs = TABS.filter((t) => !t.authed || auth.profile);
