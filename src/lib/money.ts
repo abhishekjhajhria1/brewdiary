@@ -49,6 +49,36 @@ export function currencyForCountry(country?: string | null): string {
 /** Currencies that have no minor unit — a "50.00" yen doesn't exist. */
 const ZERO_DECIMAL = new Set(["JPY", "KRW"]);
 
+// ── minor units (the till's money) ───────────────────────────────────────────
+// A bill is stored as an INTEGER count of the smallest unit — paise, cents — and
+// never as a float, because a float that can hold 0.1 is a float that can lose a
+// paise in a three-way split. Everything in orders.ts works in minor units and
+// converts only at the edge, here, for display.
+//
+// The catch these helpers exist to absorb: the conversion factor is NOT always
+// 100. ¥1000 is 1000 minor units, not 100000 — dividing yen by 100 would quietly
+// bill a Tokyo bar's guests a hundredth of what they owe.
+
+/** How many minor units make one major unit of this currency (100, or 1 for JPY/KRW). */
+export function minorPerMajor(currency: string = DEFAULT_CURRENCY): number {
+  return ZERO_DECIMAL.has((currency || DEFAULT_CURRENCY).toUpperCase()) ? 1 : 100;
+}
+
+/** Minor units → major, as a number. Lossy by nature: only for display/Intl. */
+export function fromMinor(minor: number, currency: string = DEFAULT_CURRENCY): number {
+  return (Number.isFinite(minor) ? minor : 0) / minorPerMajor(currency);
+}
+
+/** Major units → whole minor units. Rounds, so a typed "12.005" can't smuggle in a fraction. */
+export function toMinor(major: number, currency: string = DEFAULT_CURRENCY): number {
+  return Math.round((Number.isFinite(major) ? major : 0) * minorPerMajor(currency));
+}
+
+/** Format an integer minor-unit amount in its own currency's conventions. */
+export function formatMinor(minor: number, currency: string = DEFAULT_CURRENCY): string {
+  return formatMoney(fromMinor(minor, currency), currency);
+}
+
 /**
  * Format an amount in a currency, correctly for that currency's own conventions.
  * Falls back to a bare number rather than throwing if a currency code is unknown.

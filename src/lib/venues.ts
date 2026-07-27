@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { useAuth } from "./profile";
+import { currencyForCountry } from "./money";
 import type { VenueKind } from "./perks";
 
 // The real hospitality ladder (049): owner → manager → FOH service (bartender,
@@ -45,6 +46,10 @@ export interface Venue {
   country: string;
   /** Sub-national code where it matters (US states 'MA'/'UT'; 'NIR'/'SCT' in GB). */
   region?: string;
+  /** ISO-4217, SERVER-SET from the country (022). Read it rather than deriving it
+   *  from `country` here: the DB is the authority on what a venue's money is, and
+   *  a till that disagrees with the perk it sits next to is a bug you find late. */
+  currency: string;
   /** Weekdays this bar calls quiet (0 = Sun … 6 = Sat). A visit on one counts
    *  double toward the house perk — never a drink discount. */
   quietNights: number[];
@@ -121,7 +126,9 @@ export function useMyVenues(): { venues: Venue[]; loading: boolean } {
     (async () => {
       const { data } = await supabase!
         .from("venue_staff")
-        .select("role, venue:venues(id, name, slug, created_by, city, kind, country, region, quiet_nights, geohash, verified)")
+        .select(
+          "role, venue:venues(id, name, slug, created_by, city, kind, country, region, currency, quiet_nights, geohash, verified)",
+        )
         .eq("user_id", me);
       if (!active) return;
       setVenues(
@@ -138,6 +145,8 @@ export function useMyVenues(): { venues: Venue[]; loading: boolean } {
               kind: ((vv.kind as string) ?? "bar") as VenueKind,
               country: (vv.country as string) ?? "IN",
               region: (vv.region as string) ?? undefined,
+              // fall back to the country map only if the column is somehow absent
+              currency: (vv.currency as string) || currencyForCountry((vv.country as string) ?? "IN"),
               quietNights: (vv.quiet_nights as number[]) ?? [],
               geohash: (vv.geohash as string) ?? undefined,
               verified: Boolean(vv.verified),

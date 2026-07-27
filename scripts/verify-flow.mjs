@@ -1336,6 +1336,86 @@ try {
   } else {
     console.log("  ~ palate_neighbours (048) not applied — skipping");
   }
+  console.log("\n── 21. Dineout: a dining offer is public, a booking is staff-confirmed (050) ──");
+  const hasDineout = (
+    await db.query(`select to_regprocedure('public.discover_offers(text,int)') is not null as ok`)
+  ).rows[0].ok;
+  if (hasDineout) {
+    // vid has been dragged through many jurisdictions by earlier sections — pin it back
+    // to a verified Indian BAR, the state a real partner venue is in.
+    await db.query(`update public.venues set country='IN', region=null, kind='bar', verified=true where id=$1`, [vid]);
+    const diner = await mkUser("Diner", `vf-diner-${Date.now()}`);
+    const diner2 = await mkUser("Diner Two", `vf-diner2-${Date.now()}`);
+
+    // ── offers: a manager publishes a DINING deal; nobody else can ──
+    const offerId = randomUUID();
+    await as(
+      owner,
+      `insert into public.dining_offers (id, venue_id, title, kind, percent_off, created_by)
+       values ($1,$2,'Flat 20% off the total bill','percent_off',20,$3)`,
+      [offerId, vid, owner],
+    );
+    ok("a manager publishes a dining offer at a verified bar",
+      (await db.query(`select count(*)::int n from public.dining_offers where id=$1`, [offerId])).rows[0].n === 1);
+    ok("a non-manager CANNOT publish an offer (write is manager-gated)",
+      await refused(() => as(diner, `insert into public.dining_offers (venue_id,title,kind,created_by)
+        values ($1,'Sneaky deal','flat_deal',$2)`, [vid, diner])));
+
+    // THE legal line at runtime: a shop's "bill discount" is an alcohol discount — refused.
+    ok("a bottle shop CANNOT hold a dining offer (a bill discount there is alcohol)",
+      await refused(() => as(owner, `insert into public.dining_offers (venue_id,title,kind,created_by)
+        values ($1,'Shop deal','flat_deal',$2)`, [sid, owner])));
+
+    // discover_offers is the ONE public window — and it never carries a perk/alcohol field.
+    const disc = await anon(`select * from public.discover_offers('IN', 40)`);
+    const mineOffer = disc.rows.find((r) => r.offer_id === offerId);
+    ok("discover_offers() shows the dining offer to a signed-out visitor", Boolean(mineOffer));
+    ok("…and its shape carries no perk / reward / alcohol field",
+      disc.rows.length > 0 && !Object.keys(disc.rows[0]).some((c) => /perk|reward|alcohol/i.test(c)));
+
+    // ── reservations: a guest may only REQUEST, for themselves; staff move it on ──
+    const resId = randomUUID();
+    await as(diner, `insert into public.reservations (id, venue_id, user_id, offer_id, res_date, party_size)
+      values ($1,$2,$3,$4,current_date,2)`, [resId, vid, diner, offerId]);
+    ok("a guest requests a table for themselves",
+      (await as(diner, `select count(*)::int n from public.reservations where id=$1`, [resId])).rows[0].n === 1);
+
+    ok("a guest CANNOT create an already-confirmed booking (no self-confirm)",
+      await refused(() => as(diner, `insert into public.reservations (venue_id,user_id,res_date,party_size,status)
+        values ($1,$2,current_date,2,'confirmed')`, [vid, diner])));
+    ok("a guest cannot book in someone else's name",
+      await refused(() => as(diner, `insert into public.reservations (venue_id,user_id,res_date,party_size)
+        values ($1,$2,current_date,2)`, [vid, diner2])));
+    ok("you cannot book a table at a bottle shop (no tables to hold)",
+      await refused(() => as(diner, `insert into public.reservations (venue_id,user_id,res_date,party_size)
+        values ($1,$2,current_date,2)`, [sid, diner])));
+    ok("a booking in the past is refused",
+      await refused(() => as(diner, `insert into public.reservations (venue_id,user_id,res_date,party_size)
+        values ($1,$2,current_date-1,2)`, [vid, diner])));
+
+    // No client UPDATE policy ⇒ the update matches zero rows rather than raising: judge the OUTCOME.
+    await as(diner, `update public.reservations set status='confirmed' where id=$1`, [resId]);
+    ok("a guest cannot flip her own booking to confirmed (no client update path)",
+      (await db.query(`select status from public.reservations where id=$1`, [resId])).rows[0].status === "requested");
+    ok("a stranger cannot move someone else's booking",
+      await refused(() => as(diner2, `select public.set_reservation_status($1,'confirmed')`, [resId])));
+
+    await as(barman, `select public.set_reservation_status($1,'confirmed')`, [resId]);
+    ok("the venue's staff confirms the booking",
+      (await db.query(`select status from public.reservations where id=$1`, [resId])).rows[0].status === "confirmed");
+    await as(diner, `select public.set_reservation_status($1,'cancelled')`, [resId]);
+    ok("the guest can cancel her own booking",
+      (await db.query(`select status from public.reservations where id=$1`, [resId])).rows[0].status === "cancelled");
+
+    // The recheck trigger (destructive to vid's offers — run it last): un-verifying a
+    // venue drops every dining offer it was running.
+    await db.query(`update public.venues set verified=false where id=$1`, [vid]);
+    ok("un-verifying a venue drops its dining offers (the recheck trigger)",
+      (await db.query(`select count(*)::int n from public.dining_offers where venue_id=$1`, [vid])).rows[0].n === 0);
+    await db.query(`update public.venues set verified=true where id=$1`, [vid]);
+  } else {
+    console.log("  ~ dining offers + reservations (050) not applied — skipping");
+  }
 } catch (e) {
   // Print WHAT failed, not just that something did. Postgres puts the useful part in
   // detail/hint/where and the offending SQL in the driver's `query`; without these a

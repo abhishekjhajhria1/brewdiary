@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEntries } from "@/lib/store";
 import { signIn, signUp, sendPasswordReset } from "@/lib/profile";
@@ -12,9 +13,25 @@ import { useParallax } from "../ui/useParallax";
 
 type AuthMode = "signup" | "signin";
 
-// The logged-out intro. Swiss-minimal, but it embeds the *real* calendar so a
-// first-time visitor actually logs a drink before being asked to register —
-// "experience first, register at the moment of value."
+/**
+ * The logged-out intro.
+ *
+ * HOW IT'S BUILT — one client component, no route of its own: `app/page.tsx` reads the
+ * session cookie on the SERVER and renders either `CalendarHome` or this. So the visitor's
+ * first paint is the real landing, never a flash of app chrome.
+ *
+ * WHAT INSPIRED THE STRUCTURE — "experience first, register at the moment of value"
+ * (Duolingo's lesson-before-signup, Figma's live file). The page introduces the app in a
+ * narrative order and puts the REAL calendar a third of the way down, not at the bottom:
+ *
+ *   hero → the mosaic it becomes → how it works → TRY IT (live, no account)
+ *        → the Passport (why people stay) → what's inside → where you can get it
+ *        → the line we don't cross → sign up
+ *
+ * The platform block is deliberately INERT TEXT, not buttons. brewdiary is a web app today;
+ * a disabled-looking App Store badge that does nothing is a small lie and a dead tap target.
+ * Stating "in the works" in plain type is honest and costs the visitor nothing.
+ */
 export function Landing() {
   const entries = useEntries();
   const counts = countsByDate(entries);
@@ -57,8 +74,7 @@ export function Landing() {
 
   return (
     <>
-      {/* Sticky header — registration is ALWAYS one tap away (the first conversion lever:
-          a visible, persistent CTA that follows the reader down the page). */}
+      {/* Registration is ALWAYS one tap away — a persistent CTA that follows the reader down. */}
       <header className="sticky top-0 z-30 -mx-5 mb-9 flex items-center justify-between gap-3 border-b border-line/60 bg-canvas/75 px-5 py-3 backdrop-blur-xl">
         <span className="font-display text-lg italic text-muted">brewdiary</span>
         <div className="flex items-center gap-1.5">
@@ -79,67 +95,38 @@ export function Landing() {
         </div>
       </header>
 
-      {/* HERO — one clear value prop and a visible CTA above the fold. */}
-      <section className="mb-10">
-        <p className="label mb-4 text-faint">The all-inclusive drink diary</p>
-        <h1 className="display leading-[0.95]">
-          Every night
-          <br />
-          gets a square.
-        </h1>
-        <p className="mt-6 max-w-md text-[15px] leading-relaxed text-muted">
-          Coffee, wine, a midnight kombucha — whatever you poured. Tap a day, log it in a breath,
-          and watch a year of habits fill into a quiet mosaic you&apos;ll want to keep.
-        </p>
-        <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <button
-            type="button"
-            onClick={openSignup}
-            className="rounded-ctl bg-accent px-8 py-3.5 text-center text-sm font-medium uppercase tracking-[0.12em] text-accent-contrast shadow-[0_8px_28px_-8px_var(--accent),inset_0_1px_0_rgba(255,255,255,0.28)] transition-transform duration-150 ease-out hover:-translate-y-px active:translate-y-0"
-          >
-            Start your diary — free
-          </button>
-          <p className="text-xs leading-relaxed text-faint">Free · no card · 30 seconds · private by default</p>
-        </div>
-      </section>
+      <Hero onStart={openSignup} />
 
+      {/* The artefact you're being offered, immediately after the promise. */}
       <YearPreview />
 
-      {/* The reason people STAY, up front — the gamified Passport (map of your taste). */}
+      <HowItWorks />
+
+      {/* Moved UP from the foot of the page: the live diary is the strongest argument
+          on the page, and an argument you can't reach doesn't convert anyone. */}
+      <TryIt
+        counts={counts}
+        cursor={cursor}
+        canNext={canNext}
+        logged={entries.length}
+        onSelect={setSelected}
+        onStep={step}
+      />
+
+      {/* The reason people STAY — the gamified Passport (a map of your taste). */}
       <PassportTeaser />
 
-      {/* Benefits, not features. */}
-      <Ledger />
+      <Inside />
 
-      {/* Secondary: taste it before committing. The CTAs above lead; this reassures. */}
-      <section className="mt-20">
-        <p className="label mb-3 text-faint">Or try it first — no account needed</p>
-        <h2 className="display text-[2.5rem] leading-[1.05] sm:text-5xl">
-          Tap a day.
-          <br />
-          Feel it fill.
-        </h2>
-        <p className="mb-7 mt-5 max-w-md text-[15px] leading-relaxed text-muted">
-          Log one right here and your first square darkens. When you like it, make a diary and it comes
-          with you — phone, laptop, next year.
-        </p>
-        <MonthCalendar
-          year={cursor.y}
-          month={cursor.m}
-          counts={counts}
-          onSelect={setSelected}
-          onPrev={() => step(-1)}
-          onNext={() => step(1)}
-          canNext={canNext}
-        />
-        <p className="mt-8 text-center text-sm text-faint">
-          {entries.length === 0
-            ? "Tap any day to log your first drink. No account needed yet."
-            : "Logged on this device. Make a diary below and it comes with you."}
-        </p>
-      </section>
+      {/* Where you can actually get it. Honest, inert, no fake store badges. */}
+      <Platforms onStart={openSignup} />
+
+      {/* The product's spine, said out loud. */}
+      <Promise />
 
       <ClosingCTA loggedCount={entries.length} onStart={openSignup} />
+
+      <Footer />
 
       {selected && (
         <LogSheet
@@ -163,6 +150,40 @@ export function Landing() {
   );
 }
 
+// ─── Hero ────────────────────────────────────────────────────────────────────
+// One value prop, one CTA, and the platform truth stated in the same breath so
+// nobody scrolls the whole page wondering where the app store link is.
+function Hero({ onStart }: { onStart: () => void }) {
+  return (
+    <section className="mb-12">
+      <p className="label mb-4 text-faint">The all-inclusive drink diary</p>
+      <h1 className="display leading-[0.95]">
+        Every night
+        <br />
+        gets a square.
+      </h1>
+      <p className="mt-6 max-w-md text-[15px] leading-relaxed text-muted">
+        Coffee, wine, a midnight kombucha — whatever you poured. Tap a day, log it in a breath,
+        and watch a year of habits fill into a quiet mosaic you&apos;ll want to keep.
+      </p>
+      <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <button
+          type="button"
+          onClick={onStart}
+          className="rounded-ctl bg-accent px-8 py-3.5 text-center text-sm font-medium uppercase tracking-[0.12em] text-accent-contrast shadow-[0_8px_28px_-8px_var(--accent),inset_0_1px_0_rgba(255,255,255,0.28)] transition-transform duration-150 ease-out hover:-translate-y-px active:translate-y-0"
+        >
+          Start your diary — free
+        </button>
+        <p className="text-xs leading-relaxed text-faint">Free · no card · 30 seconds · private by default</p>
+      </div>
+      <p className="mt-6 border-t border-line/70 pt-4 text-xs leading-relaxed text-faint">
+        Runs in your browser, on any phone or laptop. Native iPhone and Android apps are in the works.
+      </p>
+    </section>
+  );
+}
+
+// ─── The mosaic preview ──────────────────────────────────────────────────────
 // A decorative, deterministic mosaic — "what your year becomes." Clearly a preview,
 // never the visitor's data. Deterministic so SSR and client render identically.
 function YearPreview() {
@@ -201,10 +222,100 @@ function YearPreview() {
   );
 }
 
-// The Passport teaser — a static, decorative version of the real Journey road
-// (a winding path of landmarks you travel by trying NEW things, never by volume).
-// Deterministic SVG so SSR and client render identically; travelled part gold,
-// the road ahead dim and dashed, "you are here" glowing at the frontier.
+// ─── How it works ────────────────────────────────────────────────────────────
+// The mechanic in three beats. A visitor should know exactly what they're being
+// asked to do before they're asked to do it (below, live).
+const STEPS: { n: string; title: string; body: string }[] = [
+  {
+    n: "01",
+    title: "Tap a day",
+    body: "The home is a calendar, not a feed. The day you're on is already waiting.",
+  },
+  {
+    n: "02",
+    title: "Say what you poured",
+    body: "A name, how it felt, a note or photo if you want. Five fields, most of them optional.",
+  },
+  {
+    n: "03",
+    title: "Watch the square darken",
+    body: "That's the whole ritual. Two nights in and the grid starts to look like yours.",
+  },
+];
+
+function HowItWorks() {
+  return (
+    <section className="mt-20">
+      <h2 className="display text-[2.5rem] leading-[1.05] sm:text-5xl">
+        Ten seconds
+        <br />
+        a night.
+      </h2>
+      <div className="mt-9 grid gap-8 sm:grid-cols-3 sm:gap-6">
+        {STEPS.map(({ n, title, body }) => (
+          <div key={n} className="border-t border-line pt-4">
+            <span aria-hidden className="label tnum text-accent">
+              {n}
+            </span>
+            <h3 className="mt-2 font-display text-lg text-ink">{title}</h3>
+            <p className="mt-1.5 text-[15px] leading-relaxed text-muted">{body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ─── Try it, for real ────────────────────────────────────────────────────────
+function TryIt({
+  counts,
+  cursor,
+  canNext,
+  logged,
+  onSelect,
+  onStep,
+}: {
+  counts: Map<string, number>;
+  cursor: { y: number; m: number };
+  canNext: boolean;
+  logged: number;
+  onSelect: (d: string) => void;
+  onStep: (delta: number) => void;
+}) {
+  return (
+    <section className="mt-20">
+      <h2 className="display text-[2.5rem] leading-[1.05] sm:text-5xl">
+        Tap a day.
+        <br />
+        Feel it fill.
+      </h2>
+      <p className="mb-7 mt-5 max-w-md text-[15px] leading-relaxed text-muted">
+        This calendar is live — no account, nothing to install. Log one right here and your first
+        square darkens. When you like it, make a diary and everything comes with you.
+      </p>
+      <MonthCalendar
+        year={cursor.y}
+        month={cursor.m}
+        counts={counts}
+        onSelect={onSelect}
+        onPrev={() => onStep(-1)}
+        onNext={() => onStep(1)}
+        canNext={canNext}
+      />
+      <p className="mt-8 text-center text-sm text-faint">
+        {logged === 0
+          ? "Tap any day to log your first drink. No account needed yet."
+          : "Saved on this device. Make a diary and it follows you to every screen you use."}
+      </p>
+    </section>
+  );
+}
+
+// ─── The Passport ────────────────────────────────────────────────────────────
+// A static, decorative version of the real Journey road (a winding path of landmarks
+// you travel by trying NEW things, never by volume). Deterministic SVG so SSR and
+// client render identically; travelled part gold, the road ahead dim and dashed,
+// "you are here" glowing at the frontier.
 function PassportTeaser() {
   const W = 640;
   const H = 120;
@@ -232,8 +343,8 @@ function PassportTeaser() {
       </h2>
       <p className="mt-6 max-w-md text-[15px] leading-relaxed text-muted">
         Your diary quietly draws a map of your taste. Try a drink you&apos;ve never had — a
-        world opens. A dry day counts too. Nothing here rewards drinking more, only
-        wandering wider.
+        world opens. Meet a drink the dictionary doesn&apos;t know and you can chart it yourself.
+        A dry day counts too. Nothing here rewards drinking more, only wandering wider.
       </p>
 
       <div aria-hidden className="glass mt-8 select-none overflow-hidden rounded-tile px-2 py-4">
@@ -267,16 +378,23 @@ function PassportTeaser() {
         </svg>
         <p className="label mt-2 text-center text-faint">you are here — the road only asks for something new</p>
       </div>
+
+      <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted">
+        The map keeps a lifetime score built from two things only: how wide you&apos;ve
+        wandered and how steadily you&apos;ve kept the diary. There is no axis for volume,
+        and there is no leaderboard.
+      </p>
     </section>
   );
 }
 
-// What the diary actually gives you back. A ledger, not a grid of feature cards —
-// every line here is a screen that already exists behind the sign-up.
+// ─── What's inside ───────────────────────────────────────────────────────────
+// A ledger, not a grid of feature cards — every line here is a screen that already
+// exists behind the sign-up. Nothing aspirational is listed.
 const LEDGER: { title: string; body: string }[] = [
   {
     title: "Streaks that survive a bad week",
-    body: "Log a night, keep the run. One missed day is forgiven, so a slip doesn’t wipe a month. Seven, thirty, a hundred — the meter fills as you go.",
+    body: "Log a night, keep the run — and a dry day keeps it too. One missed day is forgiven, so a slip doesn’t wipe a month.",
   },
   {
     title: "Your year, counted",
@@ -295,16 +413,16 @@ const LEDGER: { title: string; body: string }[] = [
     body: "Ask what to pour next. She reads your diary and your friends’ shared pours, not a catalogue of sponsored bottles.",
   },
   {
-    title: "Private until you say otherwise",
-    body: "Every entry starts private on your device. Sharing is a separate tap, always after the fact.",
+    title: "Gentle limits, if you want them",
+    body: "Set a weekly number or a couple of dry days and the diary quietly keeps track. Off by default, yours to switch off again.",
   },
   {
     title: "Four looks, one diary",
-    body: "Light, Dark, a hand-drawn Sketchbook, and a warm Espresso. Pick the one that feels like your notebook — it's in Settings, one tap.",
+    body: "Light, Dark, a hand-drawn Sketchbook, and a warm Espresso. Pick the one that feels like your notebook — it’s one tap in Settings.",
   },
 ];
 
-function Ledger() {
+function Inside() {
   return (
     <section className="mt-20">
       <h2 className="display text-[2.5rem] leading-[1.05] sm:text-5xl">
@@ -330,6 +448,111 @@ function Ledger() {
   );
 }
 
+// ─── Where you can get it ────────────────────────────────────────────────────
+// DELIBERATELY NOT BUTTONS. brewdiary ships as a web app today; the phone builds
+// aren't out. A greyed-out store badge is a dead tap target and a small lie, so
+// the two unreleased rows are plain text with a "soon" marker and no affordance —
+// nothing here is focusable, hoverable, or clickable. The only real action in this
+// section is the one real action we have: make a diary in the browser.
+const PLATFORMS: { name: string; note: string; ready: boolean }[] = [
+  {
+    name: "Web",
+    note: "Available now — works in any browser, phone or laptop, and syncs across both.",
+    ready: true,
+  },
+  {
+    name: "iPhone",
+    note: "In the works. Until then, open brewdiary in Safari, tap Share, then Add to Home Screen — it opens full-screen like an app.",
+    ready: false,
+  },
+  {
+    name: "Android",
+    note: "In the works. Until then, open brewdiary in Chrome, tap the menu, then Add to Home screen.",
+    ready: false,
+  },
+];
+
+function Platforms({ onStart }: { onStart: () => void }) {
+  return (
+    <section className="mt-20">
+      <h2 className="display text-[2.5rem] leading-[1.05] sm:text-5xl">
+        No download.
+        <br />
+        Not yet, anyway.
+      </h2>
+      <p className="mt-6 max-w-md text-[15px] leading-relaxed text-muted">
+        brewdiary lives on the web today, so there&apos;s nothing to install and nothing to
+        update. The App Store and Play Store builds are being made — when they land, your diary
+        will already be in them.
+      </p>
+
+      <ul className="mt-8 divide-y divide-line">
+        {PLATFORMS.map(({ name, note, ready }) => (
+          <li key={name} className="flex flex-col gap-1 py-5 sm:flex-row sm:items-baseline sm:gap-6">
+            <div className="flex w-32 shrink-0 items-baseline gap-2.5">
+              <span className="font-display text-lg text-ink">{name}</span>
+              <span
+                className={
+                  ready
+                    ? "label text-accent"
+                    : "label rounded-xs border border-line-strong px-1.5 py-0.5 text-[0.625rem] text-faint"
+                }
+              >
+                {ready ? "Live" : "Soon"}
+              </span>
+            </div>
+            <p className="max-w-md text-[15px] leading-relaxed text-muted">{note}</p>
+          </li>
+        ))}
+      </ul>
+
+      <button
+        type="button"
+        onClick={onStart}
+        className="mt-8 w-full rounded-ctl border border-line-strong py-3.5 text-sm font-medium uppercase tracking-[0.12em] text-ink transition-colors duration-150 hover:bg-ink hover:text-paper active:scale-[0.985] sm:w-auto sm:px-10"
+      >
+        Open it in this browser
+      </button>
+    </section>
+  );
+}
+
+// ─── The line ────────────────────────────────────────────────────────────────
+// The product's spine. It belongs on the landing page because it is the actual
+// difference between this and every other tracker — and because saying it in
+// public is what keeps us honest about it.
+function Promise() {
+  return (
+    <section className="mt-20">
+      <h2 className="display text-[2.5rem] leading-[1.05] sm:text-5xl">
+        Nothing here
+        <br />
+        rewards drinking
+        <br />
+        more.
+      </h2>
+      <div className="mt-8 space-y-5 border-l border-accent/50 pl-5">
+        <p className="max-w-md text-[15px] leading-relaxed text-muted">
+          Every count in the app is a count of <span className="text-ink">variety</span> — a drink
+          you&apos;ve never had, a place you&apos;ve never been, a night you had water instead. A dry
+          day keeps your streak. There is no total-drinks leaderboard, because we will not build the
+          scoreboard you win by pouring one more.
+        </p>
+        <p className="max-w-md text-[15px] leading-relaxed text-muted">
+          Every entry starts <span className="text-ink">private on your device</span>. Sharing is a
+          separate tap, always after the fact. You can export everything you&apos;ve ever written, or
+          delete the account and take it all with you, from one screen in Settings.
+        </p>
+        <p className="max-w-md text-[15px] leading-relaxed text-muted">
+          It&apos;s a diary for whatever you drink — the espresso at seven, the beer at nine, the
+          kombucha you keep meaning to finish. If you don&apos;t drink alcohol at all, the app still
+          works exactly the same.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function ClosingCTA({ loggedCount, onStart }: { loggedCount: number; onStart: () => void }) {
   const started = loggedCount > 0;
 
@@ -346,14 +569,29 @@ function ClosingCTA({ loggedCount, onStart }: { loggedCount: number; onStart: ()
       <button
         type="button"
         onClick={onStart}
-        className="mt-7 w-full rounded-ctl bg-ink py-3.5 text-sm font-medium uppercase tracking-[0.12em] text-paper transition-transform duration-150 ease-out hover:opacity-90 active:scale-[0.985] sm:w-auto sm:px-10"
+        className="mt-7 w-full rounded-ctl bg-accent py-3.5 text-sm font-medium uppercase tracking-[0.12em] text-accent-contrast shadow-[0_8px_28px_-8px_var(--accent),inset_0_1px_0_rgba(255,255,255,0.28)] transition-transform duration-150 ease-out hover:-translate-y-px active:translate-y-0 sm:w-auto sm:px-10"
       >
         Create a diary
       </button>
-      <p className="mt-4 text-xs text-faint">
-        Free · no card · private by default · works offline as an app
-      </p>
+      <p className="mt-4 text-xs text-faint">Free · no card · private by default · nothing to install</p>
     </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="mt-16 flex flex-col gap-3 border-t border-line pt-6 text-xs text-faint sm:flex-row sm:items-center sm:justify-between">
+      <span className="font-display text-base italic text-muted">brewdiary</span>
+      <div className="flex items-center gap-5">
+        <Link href="/privacy" className="transition-colors hover:text-ink">
+          Privacy
+        </Link>
+        <Link href="/terms" className="transition-colors hover:text-ink">
+          Terms
+        </Link>
+        <span>Please drink responsibly.</span>
+      </div>
+    </footer>
   );
 }
 

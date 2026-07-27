@@ -29,6 +29,8 @@ import { useMyReservations, cancelReservation, type ReservationStatus } from "@/
 import { useCompeteVisible, setCompeteVisible } from "@/lib/points";
 import { useProfilePrivacy, setProfileVisibility, setSocialHandle, type ProfileVisibility } from "@/lib/publicProfile";
 import { useExtras, setExtra, EXTRAS, type ExtraKey } from "@/lib/features";
+import { useMySpend, totalsByCurrency, byMonth, byVenue, typicalNight } from "@/lib/spending";
+import { formatMinor } from "@/lib/money";
 import { useWaterMl, setWaterMl, formatVolume } from "@/lib/waterPref";
 import { exportEverything, deleteAccount } from "@/lib/dataRights";
 import { savedCountry, moveTo, confirmAge, legalAgeFor } from "@/lib/age";
@@ -75,6 +77,9 @@ export function You() {
 
       {/* Table bookings you've made at partner bars (only shows if you have any). */}
       <MyTables />
+
+      {/* What you spent — yours alone, and it feeds nothing. */}
+      <Spending />
 
       {/* Your year — a calm look-back, all derived */}
       {yr.total > 0 && (
@@ -576,6 +581,127 @@ function MyTables() {
       </ul>
     </section>
   );
+}
+
+// ── what you spent ───────────────────────────────────────────────────────────
+//
+// A private mirror, in the same spirit as the weekly balance card above it: the
+// bar recorded these numbers, and you get to see your own. Nobody else does —
+// the rpc behind it takes no user id, so there is no way to ask it for someone
+// else's night (052).
+//
+// ⚠ This feeds NOTHING. No spark, no palate score, no passport, no streak, no
+// leaderboard reads a rupee of it. Money buys no progress in this app and this
+// screen is where that promise is most tempting to break — a "top spender"
+// badge is four lines from here. Don't.
+//
+// Two shapes deliberately avoided: a single grand total (₹ and € don't add, so
+// every figure is per-currency) and a mean (one anniversary dinner drags an
+// average somewhere that describes no actual evening — hence the median).
+function Spending() {
+  const [months, setMonths] = useState(12);
+  const { rows, loading } = useMySpend(months);
+
+  const totals = useMemo(() => totalsByCurrency(rows), [rows]);
+  const months12 = useMemo(() => byMonth(rows), [rows]);
+  const venues = useMemo(() => byVenue(rows), [rows]);
+  const typical = useMemo(() => typicalNight(rows), [rows]);
+
+  // Nothing recorded yet: stay out of the way entirely rather than showing an
+  // empty frame that implies you ought to be spending.
+  if (loading || rows.length === 0) return null;
+
+  const peak = Math.max(1, ...months12.map((m) => m.totalMinor));
+
+  return (
+    <section className="mt-10">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="label">What you spent</h2>
+        <div className="flex gap-1.5">
+          {[3, 6, 12].map((m) => (
+            <button
+              key={m}
+              onClick={() => setMonths(m)}
+              aria-pressed={months === m}
+              className={clsx(
+                "rounded-ctl px-2.5 py-1.5 text-xs transition-colors",
+                months === m ? "bg-ink font-medium text-paper" : "glass glass-press text-muted hover:text-ink",
+              )}
+            >
+              {m}m
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* the headline, one line per currency — a trip abroad keeps its own money */}
+      <dl className="glass mb-2 divide-y divide-line rounded-tile px-5">
+        {totals.map((t) => {
+          const typ = typical.find((x) => x.currency === t.currency);
+          return (
+            <div key={t.currency} className="flex items-baseline justify-between gap-3 py-4">
+              <dt className="min-w-0">
+                <span className="block text-[15px] text-ink">{formatMinor(t.totalMinor, t.currency)}</span>
+                <span className="mt-0.5 block text-xs text-faint">
+                  over {t.count} {t.count === 1 ? "night" : "nights"}
+                  {typ && <> · usually {formatMinor(typ.totalMinor, t.currency)} a night</>}
+                </span>
+              </dt>
+              <dd className="tnum shrink-0 text-xs text-faint">{t.currency}</dd>
+            </div>
+          );
+        })}
+      </dl>
+
+      {/* month by month — a thin monochrome bar, the mosaic's logic in a row */}
+      {months12.length > 1 && (
+        <ul className="mb-2 space-y-1.5">
+          {months12.map((m) => (
+            <li key={`${m.month}|${m.currency}`} className="flex items-center gap-3">
+              <span className="w-16 shrink-0 text-xs text-faint">{prettyMonth(m.month)}</span>
+              <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink/10">
+                <span
+                  className="block h-full rounded-full bg-ink/40"
+                  style={{ width: `${Math.round((m.totalMinor / peak) * 100)}%` }}
+                />
+              </span>
+              <span className="tnum w-24 shrink-0 text-right text-xs text-muted">
+                {formatMinor(m.totalMinor, m.currency)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* where it went. Ranking PLACES is fine — a place has no feelings about
+          its position. There is no equivalent list of people, ever. */}
+      {venues.length > 1 && (
+        <ul className="glass divide-y divide-line rounded-tile px-5">
+          {venues.slice(0, 6).map((v) => (
+            <li key={`${v.venueName}|${v.currency}`} className="flex items-baseline justify-between gap-3 py-3">
+              <span className="min-w-0 truncate text-[15px] text-ink">{v.venueName}</span>
+              <span className="shrink-0 text-right">
+                <span className="tnum block text-sm text-muted">{formatMinor(v.totalMinor, v.currency)}</span>
+                <span className="block text-xs text-faint">
+                  {v.visits} {v.visits === 1 ? "night" : "nights"}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <p className="mt-2 text-xs leading-relaxed text-faint">
+        Recorded by the bars you were at. Yours alone — no venue sees your history, and nothing here counts
+        toward a spark, a score or any board.
+      </p>
+    </section>
+  );
+}
+
+function prettyMonth(key: string): string {
+  const d = new Date(`${key}-01T00:00:00`);
+  return Number.isNaN(d.getTime()) ? key : d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
 }
 
 /** Transparency: every venue that keeps a first-party note on you, and the button

@@ -173,6 +173,15 @@ create index if not exists reservations_user_idx  on public.reservations (user_i
 create index if not exists reservations_venue_idx on public.reservations (venue_id, res_date desc);
 
 -- ── the guard: you can only book a real, sit-down, verified place, in the future ──
+-- INSERT ONLY, on purpose. These rules describe a NEW booking. They must NOT re-fire
+-- on update, because:
+--   • a venue can legitimately lose verification while old bookings still stand — and
+--     deleting one of its offers cascades `offer_id := null` onto those bookings, which
+--     is an UPDATE that would then be refused, aborting the delete;
+--   • staff must still be able to cancel/decline a booking at a now-unverified venue;
+--   • yesterday's booking is marked seated/no-show TODAY — an update whose res_date is
+--     now in the past, which the date check would wrongly reject.
+-- Every update path (set_reservation_status, FK cascades) is already trusted/gated.
 create or replace function public.reservations_guard()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare k text; ver boolean;
@@ -192,7 +201,7 @@ begin
 end; $$;
 
 drop trigger if exists reservations_check on public.reservations;
-create trigger reservations_check before insert or update on public.reservations
+create trigger reservations_check before insert on public.reservations
   for each row execute function public.reservations_guard();
 
 -- ── RLS: guest sees/creates their own; staff see their venue's; moves go via rpc ──

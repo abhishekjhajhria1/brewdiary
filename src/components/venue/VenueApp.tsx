@@ -56,9 +56,28 @@ import {
   type OfferKind,
   type ReservationStatus,
 } from "@/lib/reservations";
+import {
+  useOpenTickets,
+  useMenu,
+  openOrder,
+  addOrderItem,
+  setOrderItemQty,
+  removeOrderItem,
+  attributeItem,
+  raiseBill,
+  closeOrder,
+  voidOrder,
+  addMenuItem,
+  updateMenuItem,
+  billTotals,
+  drinkLinesFor,
+  type Ticket,
+  type MenuItem,
+} from "@/lib/orders";
+import { canonicalize, normalize } from "@/lib/drinks";
 import { KNOWN_COUNTRIES } from "@/lib/jurisdiction";
-import { currencyForCountry, currencySymbol, formatMoney } from "@/lib/money";
-import { useRoomGuests, staffAwardVibe, recordSpend, STAFF_VIBE_REASONS } from "@/lib/points";
+import { currencyForCountry, currencySymbol, formatMoney, formatMinor, toMinor } from "@/lib/money";
+import { useRoomGuests, staffAwardVibe, recordSpend, STAFF_VIBE_REASONS, type RoomGuest } from "@/lib/points";
 import { todayKey } from "@/lib/date";
 import { peakDays, pctChange } from "@/lib/venueAdvisor";
 import { requestLocationGeohash } from "@/lib/trends";
@@ -560,6 +579,9 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
       {section === "tonight" && (
         <>
           {store ? <StoreCounter venue={venue} meId={meId} /> : <VenueRooms venue={venue} meId={meId} />}
+          {/* Taking an order is SERVICE, so it's any-staff (049) — but kitchen's
+              only door is Insights, so this is belt-and-braces, not the gate. */}
+          {venue.myRole !== "kitchen" && <OrderFloor venue={venue} meId={meId} />}
           <MyKudos venue={venue} meId={meId} />
         </>
       )}
@@ -568,6 +590,10 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
         <>
           {!venue.verified && <VerificationPanel venue={venue} meId={meId} />}
           <VenuePerkEditor venue={venue} />
+          {/* The MENU is priced inventory, so it's manager-only and lives here,
+              away from the floor. A bartender rings drinks up; they don't reprice
+              the whiskey mid-shift. */}
+          <MenuEditor venue={venue} />
         </>
       )}
 
@@ -781,6 +807,762 @@ function VenueRooms({ venue, meId }: { venue: Venue; meId: string }) {
       {qrRoom && (
         <RoomQr url={`${mainOrigin}/p/${qrRoom}`} code={qrRoom} onClose={() => setQrRoom(null)} />
       )}
+    </div>
+  );
+}
+
+// ── the till: take an order, run a tab, close it ─────────────────────────────
+//
+// Built for a phone held in one hand, standing up, mid-service. So: open tickets
+// as cards, tap one to expand IN PLACE (no modal stack to escape from while a
+// guest waits), qty steppers instead of a keyboard, and the two destructive
+// actions (void, remove a line) behind a second tap.
+//
+// ⚠ WHAT IS DELIBERATELY ABSENT, AND MUST STAY ABSENT:
+// There is no per-guest spend total anywhere in this panel. No "biggest tab
+// tonight", no table leaderboard, no guests sorted by what they've run up. The
+// data to build one is sitting right here in `ticket.items` and it would take
+// four lines — that is exactly why this comment exists. Rule #1 is that nothing
+// in this product rewards drinking more, and a bar that can see who's spent most
+// tonight will work that list. If a future design asks for it, the answer is no.
+//
+// The one place a guest's name meets their drinks is the CLOSE summary, and it
+// says what they'll be OFFERED — never a figure, never a rank.
+function OrderFloor({ venue, meId }: { venue: Venue; meId: string }) {
+  const { tickets, loading } = useOpenTickets(venue.id);
+  const { items: menu } = useMenu(venue.id);
+  const { rooms } = useVenueRooms(venue.id);
+  const store = venue.kind === "store";
+  const currency = venue.currency || currencyForCountry(venue.country);
+
+  const [openTicket, setOpenTicket] = useState<string | null>(null);
+  // The close summary lives HERE, not inside the ticket. The moment a bill closes
+  // the ticket leaves `useOpenTickets` and its subtree unmounts — so a summary
+  // rendered down there would flash and vanish before anyone read who gets offered
+  // what. It stays until the floor dismisses it.
+  const [closed, setClosed] = useState<{ table: string; offers: { name: string; lines: string }[] } | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [label, setLabel] = useState("");
+  const [roomId, setRoomId] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function start() {
+    setBusy(true);
+    setError(null);
+    const res = await openOrder(venue.id, meId, label, roomId || null);
+    setBusy(false);
+    if ("error" in res) {
+      setError(res.error);
+      return;
+    }
+    setLabel("");
+    setRoomId("");
+    setStarting(false);
+    setOpenTicket(res.id);
+  }
+
+  if (!venue.verified) {
+    return (
+      <div className="mb-5">
+        <p className="label mb-1.5 text-faint">{store ? "Till" : "Orders"}</p>
+        <p className="text-sm leading-relaxed text-faint">
+          Taking orders opens up once this venue is verified.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-5 border-t border-line pt-4">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="label text-faint">{store ? "Till" : "Orders"}</p>
+        <button
+          onClick={() => setStarting((s) => !s)}
+          aria-expanded={starting}
+          className="min-h-11 text-sm font-medium text-accent transition-opacity hover:opacity-80"
+        >
+          {starting ? "Cancel" : store ? "New sale" : "Open a table"}
+        </button>
+      </div>
+
+      {starting && (
+        <div className="glass mb-3 rounded-ctl p-3">
+          <label htmlFor="table-label" className="label mb-1.5 block text-faint">
+            {store ? "Counter" : "Table"}
+          </label>
+          <input
+            id="table-label"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder={store ? "Counter 1" : "12"}
+            className="glass mb-3 w-full rounded-ctl px-3 py-2.5 text-[15px] text-ink placeholder:text-faint"
+          />
+
+          {/* Linking a room is what makes attribution possible later — it's where
+              the guest names come from. Optional: a walk-in table still works. */}
+          {!store && rooms.length > 0 && (
+            <>
+              <p className="label mb-1.5 text-faint">Room (optional)</p>
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                <button
+                  onClick={() => setRoomId("")}
+                  aria-pressed={roomId === ""}
+                  className={clsx(
+                    "min-h-11 rounded-ctl px-3 py-2 text-xs transition-colors",
+                    roomId === "" ? "bg-ink font-medium text-paper" : "glass glass-press text-muted hover:text-ink",
+                  )}
+                >
+                  No room
+                </button>
+                {rooms.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => setRoomId(r.id)}
+                    aria-pressed={roomId === r.id}
+                    className={clsx(
+                      "min-h-11 rounded-ctl px-3 py-2 text-xs transition-colors",
+                      roomId === r.id ? "bg-ink font-medium text-paper" : "glass glass-press text-muted hover:text-ink",
+                    )}
+                  >
+                    {r.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {error && <p className="mb-2 text-sm text-accent">{error}</p>}
+          <button
+            onClick={start}
+            disabled={busy}
+            className="min-h-11 w-full rounded-ctl bg-ink px-3.5 py-2.5 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? "Opening…" : store ? "Start sale" : "Open table"}
+          </button>
+        </div>
+      )}
+
+      {closed && (
+        <div className="glass mb-3 rounded-ctl p-3">
+          <p className="mb-2 text-[15px] text-ink">{closed.table} — bill closed.</p>
+          {closed.offers.length === 0 ? (
+            <p className="text-xs leading-relaxed text-faint">
+              No lines were attributed, so nobody will be offered anything. That&apos;s a normal bill.
+            </p>
+          ) : (
+            <>
+              <ul className="mb-2 space-y-1">
+                {closed.offers.map((o) => (
+                  <li key={o.name} className="text-sm text-muted">
+                    {o.name} will be offered: {o.lines}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs leading-relaxed text-faint">
+                They decide whether it lands in their diary. You&apos;ll never see which way they chose.
+              </p>
+            </>
+          )}
+          <button
+            onClick={() => setClosed(null)}
+            className="mt-3 min-h-11 text-sm font-medium text-accent hover:opacity-80"
+          >
+            Done
+          </button>
+        </div>
+      )}
+
+      {menu.length === 0 && (
+        <p className="mb-3 text-xs leading-relaxed text-faint">
+          Your menu is empty — a manager can add items under {store ? "Card" : "Perks"}. You can still open a
+          ticket, but there&apos;ll be nothing to put on it.
+        </p>
+      )}
+
+      {loading ? (
+        <div className="glass h-14 animate-pulse rounded-ctl" />
+      ) : tickets.length === 0 ? (
+        <p className="text-sm text-faint">
+          {store ? "No sales open. Start one when someone comes to the counter." : "No tables open. Open one when you take an order."}
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {tickets.map((t) => (
+            <li key={t.id}>
+              <TicketCard
+                ticket={t}
+                currency={currency}
+                open={openTicket === t.id}
+                onToggle={() => setOpenTicket((cur) => (cur === t.id ? null : t.id))}
+              />
+              {openTicket === t.id && (
+                <TicketSheet
+                  ticket={t}
+                  menu={menu}
+                  currency={currency}
+                  store={store}
+                  onClosed={(summary) => {
+                    setOpenTicket(null);
+                    if (summary) setClosed({ table: t.tableLabel || "Table", offers: summary });
+                  }}
+                />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** How long a ticket has been sitting — the one number that tells a floor manager
+ *  something actionable at a glance. Coarse on purpose: nobody needs seconds. */
+function openFor(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  return `${h}h ${mins % 60}m`;
+}
+
+function TicketCard({
+  ticket,
+  currency,
+  open,
+  onToggle,
+}: {
+  ticket: Ticket;
+  currency: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const count = ticket.items.reduce((n, i) => n + i.qty, 0);
+  const { subtotalMinor } = billTotals(ticket.items);
+  return (
+    <button
+      onClick={onToggle}
+      aria-expanded={open}
+      className={clsx(
+        "glass glass-press flex min-h-11 w-full items-center justify-between gap-3 rounded-ctl px-3.5 py-3 text-left transition-colors",
+        open && "text-accent",
+      )}
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-[15px] text-ink">{ticket.tableLabel || "Table"}</span>
+        <span className="tnum text-xs text-faint">
+          {count === 0 ? "nothing yet" : `${count} item${count === 1 ? "" : "s"}`} · open {openFor(ticket.openedAt)}
+        </span>
+      </span>
+      <span className="tnum shrink-0 text-[15px] text-ink">{formatMinor(subtotalMinor, currency)}</span>
+    </button>
+  );
+}
+
+// The ticket: lines, the picker, attribution, and the close.
+function TicketSheet({
+  ticket,
+  menu,
+  currency,
+  store,
+  onClosed,
+}: {
+  ticket: Ticket;
+  menu: MenuItem[];
+  currency: string;
+  store: boolean;
+  /** Called with the per-guest offer summary when a bill closes, or with nothing
+   *  when the ticket just went away (voided). The parent owns the summary because
+   *  this subtree unmounts the instant the ticket stops being open. */
+  onClosed: (summary?: { name: string; lines: string }[]) => void;
+}) {
+  // Guests come from the ROOM. No room, no names — and that's fine: the bill
+  // works either way, it just can't offer anyone their night afterwards.
+  const { guests } = useRoomGuests(ticket.partyId ?? null);
+  const [picking, setPicking] = useState(false);
+  const [attributing, setAttributing] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [confirmVoid, setConfirmVoid] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(fn: () => Promise<string | null>) {
+    setError(null);
+    const err = await fn();
+    if (err) setError(err);
+  }
+
+  const nameOf = (id?: string) => guests.find((g) => g.id === id)?.name;
+
+  return (
+    <div className="mt-1.5 mb-3 pl-3.5">
+      {error && <p className="mb-2 text-sm text-accent">{error}</p>}
+
+      {ticket.items.length === 0 ? (
+        <p className="mb-2 text-sm text-faint">Nothing on this ticket yet.</p>
+      ) : (
+        <ul className="mb-2 divide-y divide-line border-y border-line">
+          {ticket.items.map((line) => (
+            <li key={line.id} className="py-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px] text-ink">{line.name}</span>
+                  <span className="tnum text-xs text-faint">
+                    {formatMinor(line.unitPriceMinor, currency)} each
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1">
+                  <button
+                    onClick={() =>
+                      run(() =>
+                        line.qty <= 1 ? removeOrderItem(line.id) : setOrderItemQty(line.id, line.qty - 1),
+                      )
+                    }
+                    aria-label={`One fewer ${line.name}`}
+                    className="glass glass-press h-11 w-11 rounded-ctl text-ink transition-colors hover:text-accent"
+                  >
+                    −
+                  </button>
+                  <span className="tnum w-7 text-center text-[15px] text-ink">{line.qty}</span>
+                  <button
+                    onClick={() => run(() => setOrderItemQty(line.id, line.qty + 1))}
+                    aria-label={`One more ${line.name}`}
+                    className="glass glass-press h-11 w-11 rounded-ctl text-ink transition-colors hover:text-accent"
+                  >
+                    +
+                  </button>
+                </span>
+              </div>
+
+              {/* attribution — optional, and it has to LOOK optional */}
+              {!store && (
+                <button
+                  onClick={() => setAttributing((cur) => (cur === line.id ? null : line.id))}
+                  aria-expanded={attributing === line.id}
+                  className={clsx(
+                    "mt-1 min-h-11 text-xs transition-colors",
+                    line.guestUserId ? "text-accent" : "text-faint hover:text-ink",
+                  )}
+                >
+                  {line.guestUserId ? `for ${nameOf(line.guestUserId) ?? "a guest"}` : "for whom?"}
+                </button>
+              )}
+
+              {attributing === line.id && (
+                <div className="mt-1 mb-1">
+                  {guests.length === 0 ? (
+                    <p className="text-xs leading-relaxed text-faint">
+                      No one&apos;s in a room for this table, so there&apos;s nobody to attribute to. Open a room
+                      and link it when you start the next ticket.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {guests.map((g: RoomGuest) => (
+                        <button
+                          key={g.id}
+                          onClick={() => {
+                            setAttributing(null);
+                            run(() => attributeItem(line.id, g.id));
+                          }}
+                          aria-pressed={line.guestUserId === g.id}
+                          className={clsx(
+                            "min-h-11 rounded-ctl px-3 py-2 text-xs transition-colors",
+                            line.guestUserId === g.id
+                              ? "bg-ink font-medium text-paper"
+                              : "glass glass-press text-muted hover:text-ink",
+                          )}
+                        >
+                          {g.name}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => {
+                          setAttributing(null);
+                          run(() => attributeItem(line.id, null));
+                        }}
+                        aria-pressed={!line.guestUserId}
+                        className={clsx(
+                          "min-h-11 rounded-ctl px-3 py-2 text-xs transition-colors",
+                          !line.guestUserId
+                            ? "bg-ink font-medium text-paper"
+                            : "glass glass-press text-muted hover:text-ink",
+                        )}
+                      >
+                        Unattributed
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!store && ticket.items.length > 0 && (
+        <p className="mb-2 text-xs leading-relaxed text-faint">
+          Attributing a line is how the guest can log it later. Skip it and the bill still works.
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => {
+            setPicking((p) => !p);
+            setClosing(false);
+          }}
+          aria-expanded={picking}
+          className={clsx(
+            "min-h-11 text-sm font-medium transition-colors",
+            picking ? "text-accent" : "text-accent hover:opacity-80",
+          )}
+        >
+          {picking ? "Done adding" : "Add item"}
+        </button>
+        {ticket.items.length > 0 && (
+          <button
+            onClick={() => {
+              setClosing((c) => !c);
+              setPicking(false);
+            }}
+            aria-expanded={closing}
+            className="min-h-11 text-sm text-faint transition-colors hover:text-ink"
+          >
+            {closing ? "Not yet" : "Close bill"}
+          </button>
+        )}
+        {confirmVoid ? (
+          <span className="flex items-center gap-3 text-sm">
+            <span className="text-muted">Void it?</span>
+            <button
+              onClick={() => {
+                run(() => voidOrder(ticket.id));
+                onClosed();
+              }}
+              className="min-h-11 font-medium text-accent hover:opacity-80"
+            >
+              Void
+            </button>
+            <button onClick={() => setConfirmVoid(false)} className="min-h-11 text-faint hover:text-ink">
+              Keep
+            </button>
+          </span>
+        ) : (
+          <button
+            onClick={() => setConfirmVoid(true)}
+            className="min-h-11 text-sm text-faint transition-colors hover:text-ink"
+          >
+            Void
+          </button>
+        )}
+      </div>
+
+      {picking && <MenuPicker menu={menu} currency={currency} onPick={(id) => run(() => addOrderItem(ticket.id, id).then((r) => ("error" in r ? r.error : null)))} />}
+
+      {closing && (
+        <CloseBill ticket={ticket} currency={currency} guests={guests} store={store} onDone={onClosed} />
+      )}
+    </div>
+  );
+}
+
+/** The add-item picker: the live menu, grouped the way the venue grouped it. */
+function MenuPicker({
+  menu,
+  currency,
+  onPick,
+}: {
+  menu: MenuItem[];
+  currency: string;
+  onPick: (menuItemId: string) => void;
+}) {
+  if (menu.length === 0) {
+    return <p className="mt-2 text-sm text-faint">Nothing on the menu yet.</p>;
+  }
+  const groups = new Map<string, MenuItem[]>();
+  for (const m of menu) {
+    const k = m.category?.trim() || "Everything else";
+    const list = groups.get(k);
+    if (list) list.push(m);
+    else groups.set(k, [m]);
+  }
+
+  return (
+    <div className="mt-2 space-y-3">
+      {[...groups.entries()].map(([category, items]) => (
+        <div key={category}>
+          <p className="label mb-1.5 text-faint">{category}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {items.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => onPick(m.id)}
+                className="glass glass-press min-h-11 rounded-ctl px-3 py-2 text-left text-xs text-muted transition-colors hover:text-ink"
+              >
+                <span className="block text-ink">{m.name}</span>
+                <span className="tnum text-faint">{formatMinor(m.priceMinor, currency)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Close the bill: totals, a tip, then Close. Afterwards the one sentence per
+// guest that says what they'll be OFFERED — and nothing more. No figure next to
+// anyone's name, ever: that's the wall-board rule (money.ts) and it applies just
+// as hard on a staff screen, because a staff screen is where the habit forms.
+function CloseBill({
+  ticket,
+  currency,
+  guests,
+  store,
+  onDone,
+}: {
+  ticket: Ticket;
+  currency: string;
+  guests: RoomGuest[];
+  store: boolean;
+  onDone: (summary: { name: string; lines: string }[]) => void;
+}) {
+  const [tip, setTip] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Tax stays 0 until a venue carries a rate: there is no tax column on `venues`
+  // yet, and inventing a per-bill rate field for a bartender to type mid-service
+  // is how you get a bill filed at 500%. It lands with payments (prompt 4).
+  const tipMinor = Math.max(0, toMinor(Number(tip) || 0, currency));
+  const totals = billTotals(ticket.items, 0, tipMinor);
+
+  async function close() {
+    setBusy(true);
+    setError(null);
+    const bill = await raiseBill(ticket.id, ticket.items, 0, tipMinor);
+    if ("error" in bill) {
+      setBusy(false);
+      setError(bill.error);
+      return;
+    }
+    const err = await closeOrder(ticket.id);
+    setBusy(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+
+    // What each guest will be OFFERED. The offer itself is emitted server-side by
+    // suggest_order_log() — this is the floor's confirmation of what was
+    // attributed, not the thing that writes anyone's diary. Nothing here, and
+    // nothing anywhere, writes an entry.
+    //
+    // Handed UP rather than rendered here: closing the bill removes this ticket
+    // from the open list, which unmounts this component.
+    onDone(
+      guests
+        .map((g) => ({ name: g.name, lines: drinkLinesFor(ticket.items, g.id) }))
+        .filter((x) => x.lines.length > 0)
+        .map((x) => ({ name: x.name, lines: x.lines.map((l) => `${l.qty} × ${l.name}`).join(", ") })),
+    );
+  }
+
+  return (
+    <div className="glass mt-2 rounded-ctl p-3">
+      <dl className="mb-3 space-y-1 text-sm">
+        <div className="flex justify-between gap-3">
+          <dt className="text-faint">Subtotal</dt>
+          <dd className="tnum text-ink">{formatMinor(totals.subtotalMinor, currency)}</dd>
+        </div>
+        {tipMinor > 0 && (
+          <div className="flex justify-between gap-3">
+            <dt className="text-faint">Tip</dt>
+            <dd className="tnum text-ink">{formatMinor(tipMinor, currency)}</dd>
+          </div>
+        )}
+        <div className="flex justify-between gap-3 border-t border-line pt-1">
+          <dt className="text-muted">Total</dt>
+          <dd className="tnum font-medium text-ink">{formatMinor(totals.totalMinor, currency)}</dd>
+        </div>
+      </dl>
+
+      <label htmlFor={`tip-${ticket.id}`} className="label mb-1.5 block text-faint">
+        Tip (optional)
+      </label>
+      <input
+        id={`tip-${ticket.id}`}
+        type="number"
+        min={0}
+        inputMode="decimal"
+        value={tip}
+        onChange={(e) => setTip(e.target.value)}
+        placeholder={`${currencySymbol(currency)} 0`}
+        className="tnum glass mb-3 w-32 rounded-ctl px-3 py-2.5 text-[15px] text-ink placeholder:text-faint"
+      />
+
+      {error && <p className="mb-2 text-sm text-accent">{error}</p>}
+      <button
+        onClick={close}
+        disabled={busy}
+        className="min-h-11 w-full rounded-ctl bg-ink px-3.5 py-2.5 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+      >
+        {busy ? "Closing…" : store ? "Close sale" : "Close bill"}
+      </button>
+      {!store && (
+        <p className="mt-2 text-xs leading-relaxed text-faint">
+          Closing offers each guest their own attributed drinks. They choose whether to keep them.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── the menu (manager/owner only — RLS enforces the rung, this hides the door) ─
+//
+// `drink_key` is the bridge into the drink dictionary (drinks.ts): it's what lets
+// a Negroni rung up here become a Negroni in someone's diary. We derive it from
+// the item's name rather than asking a manager to think about canonical forms —
+// and the "food" toggle is how they say "this one never goes in a diary".
+function MenuEditor({ venue }: { venue: Venue }) {
+  const { items, loading } = useMenu(venue.id);
+  const currency = venue.currency || currencyForCountry(venue.country);
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+  const [category, setCategory] = useState("");
+  const [isDrink, setIsDrink] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canon = canonicalize(name);
+
+  async function add() {
+    setBusy(true);
+    setError(null);
+    const res = await addMenuItem(venue.id, {
+      name,
+      priceMinor: toMinor(Number(price) || 0, currency),
+      category,
+      // The canonical name, normalized — the same key drinks.ts folds variants into.
+      drinkKey: isDrink ? normalize(canon.canonical) : null,
+    });
+    setBusy(false);
+    if ("error" in res) {
+      setError(res.error);
+      return;
+    }
+    setName("");
+    setPrice("");
+  }
+
+  return (
+    <div className="mt-6 border-t border-line pt-4">
+      <p className="label mb-1.5 text-faint">Menu</p>
+      <p className="mb-3 text-xs leading-relaxed text-faint">
+        What your staff can ring up. Mark the drinks — only a drink can ever be offered to a guest&apos;s
+        diary, and food never leaves this building.
+      </p>
+
+      {loading ? (
+        <div className="glass mb-3 h-14 animate-pulse rounded-ctl" />
+      ) : items.length > 0 ? (
+        <ul className="mb-3 divide-y divide-line border-y border-line">
+          {items.map((m) => (
+            <li key={m.id} className="flex items-center justify-between gap-3 py-2.5">
+              <span className="min-w-0">
+                <span className="block truncate text-[15px] text-ink">{m.name}</span>
+                <span className="text-xs text-faint">
+                  {m.category || "uncategorised"} · {m.drinkKey ? "drink" : "food"}
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-3 text-sm">
+                <span className="tnum text-ink">{formatMinor(m.priceMinor, currency)}</span>
+                <button
+                  onClick={() => updateMenuItem(m.id, { active: false })}
+                  className="min-h-11 text-faint transition-colors hover:text-ink"
+                >
+                  Retire
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mb-3 text-sm text-faint">Nothing on the menu yet.</p>
+      )}
+
+      <label htmlFor="menu-name" className="label mb-1.5 block text-faint">
+        Item
+      </label>
+      <input
+        id="menu-name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Negroni"
+        className="glass mb-2 w-full rounded-ctl px-3 py-2.5 text-[15px] text-ink placeholder:text-faint"
+      />
+
+      <div className="mb-2 flex gap-2">
+        <span className="flex-1">
+          <label htmlFor="menu-price" className="label mb-1.5 block text-faint">
+            Price
+          </label>
+          <input
+            id="menu-price"
+            type="number"
+            min={0}
+            inputMode="decimal"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            placeholder={`${currencySymbol(currency)} 0`}
+            className="tnum glass w-full rounded-ctl px-3 py-2.5 text-[15px] text-ink placeholder:text-faint"
+          />
+        </span>
+        <span className="flex-1">
+          <label htmlFor="menu-category" className="label mb-1.5 block text-faint">
+            Section
+          </label>
+          <input
+            id="menu-category"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="Cocktails"
+            className="glass w-full rounded-ctl px-3 py-2.5 text-[15px] text-ink placeholder:text-faint"
+          />
+        </span>
+      </div>
+
+      <div className="glass mb-2 grid grid-cols-2 gap-1 rounded-ctl p-1" role="group" aria-label="Item kind">
+        {[
+          { v: true, label: "Drink" },
+          { v: false, label: "Food" },
+        ].map((o) => (
+          <button
+            key={o.label}
+            onClick={() => setIsDrink(o.v)}
+            aria-pressed={isDrink === o.v}
+            className={clsx(
+              "min-h-11 rounded-[7px] py-2.5 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors",
+              isDrink === o.v ? "bg-ink text-paper" : "text-faint hover:text-ink",
+            )}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      {/* the tidy-name nudge, same as the log sheet's — never forced */}
+      {isDrink && name.trim() && canon.matched && canon.canonical.toLowerCase() !== name.trim().toLowerCase() && (
+        <p className="mb-2 text-xs text-faint">≈ files under {canon.canonical}</p>
+      )}
+
+      {error && <p className="mb-2 text-sm text-accent">{error}</p>}
+      <button
+        onClick={add}
+        disabled={busy || !name.trim()}
+        className="min-h-11 w-full rounded-ctl bg-ink px-3.5 py-2.5 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+      >
+        {busy ? "Adding…" : "Add to menu"}
+      </button>
     </div>
   );
 }
