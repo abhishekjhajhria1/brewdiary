@@ -617,6 +617,57 @@ try {
     console.log("  ~ dining offers + reservations (050) not applied — skipping");
   }
 
+  console.log("\n── Nights (053): one object, and it can't be forged ──");
+  const partyCol = await one(`
+    select 1 x from information_schema.columns
+    where table_schema='public' and table_name='plans' and column_name='party_id'`);
+  if (partyCol) {
+    // open_night_room mints a room and walks approved people straight into it. If a
+    // GUEST could call it they'd hand themselves an approved party_members row — the
+    // exact "a guest can never write their own reward" line, one table over. The host
+    // check is the only thing standing between the two, so assert it directly.
+    const onr = await one(`
+      select pg_get_functiondef(p.oid) d, p.prosecdef from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname='public' and p.proname='open_night_room'`);
+    ok("open_night_room(): SECURITY DEFINER and HOST-ONLY", !!onr && onr.prosecdef && /host_id\s*<>\s*me/.test(onr.d));
+    ok("open_night_room(): idempotent — an existing room is returned, not replaced",
+      !!onr && /party_id is not null/.test(onr.d));
+
+    // The inbox unions four queues. Every branch must be pinned to auth.uid(), or it
+    // becomes a way to read other people's pending requests.
+    const inbox = await one(`
+      select pg_get_functiondef(p.oid) d, p.prosecdef from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname='public' and p.proname='together_inbox'`);
+    ok("together_inbox(): SECURITY DEFINER", !!inbox && inbox.prosecdef);
+    ok("together_inbox(): every branch scoped to auth.uid() (4 queues → ≥4 mentions)",
+      !!inbox && (inbox.d.match(/auth\.uid\(\)/g) || []).length >= 4);
+    ok("together_inbox(): respects blocks in every branch",
+      !!inbox && (inbox.d.match(/blocked_between/g) || []).length >= 4);
+
+    // A night joined by share link has no plan_joins row. If my_nights lost that
+    // branch, the whole share-link path would silently drop people's nights.
+    const mn = await one(`
+      select pg_get_functiondef(p.oid) d from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname='public' and p.proname='my_nights'`);
+    ok("my_nights(): covers hosted + approved + let-in-at-the-door",
+      !!mn && /plan_joins/.test(mn.d) && /party_members/.test(mn.d));
+    ok("my_nights(): set UNION, so the overlapping guest branches can't double a night",
+      !!mn && /union\s*\n/i.test(mn.d) && !/union all/i.test(mn.d));
+
+    // The line the whole plans layer rests on: still no stranger tier.
+    const policy = await one(`
+      select pg_get_constraintdef(c.oid) d from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+      where t.relname='plans' and pg_get_constraintdef(c.oid) ilike '%join_policy%'`);
+    ok("plans: join_policy still stops at friends-of-friends — no public/stranger tier",
+      !!policy && !/'open'|'public'|'anyone'|'stranger'/i.test(policy.d));
+  } else {
+    console.log("  ~ nights (053) not applied — skipping");
+  }
+
   console.log("\n── orphans / drift ──────────────────────────────────");
   const badCurrency = await one(`
     select count(*)::int n from public.venues v

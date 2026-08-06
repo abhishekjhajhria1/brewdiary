@@ -41,7 +41,12 @@ const RSVP_LABEL: Record<Rsvp, string> = { going: "Going", maybe: "Maybe", no: "
 // Positive-only, always — you can hand these to your table, never dock anyone.
 const VIBE_REASONS = ["good sport", "great vibe", "kept it classy", "MVP"] as const;
 
-export function PartyRoom({ partyId }: { partyId: string }) {
+// `embedded` = this room is being hosted INSIDE a night page (NightPage), which
+// already owns the title/date/place header and the call-off / leave controls. The
+// room then contributes only what is genuinely room-shaped: RSVP, the share code,
+// who's coming, the shared log, the tally, points, perks. Standalone (/party/<id>,
+// the pre-Nights links) it renders whole, exactly as before.
+export function PartyRoom({ partyId, embedded = false }: { partyId: string; embedded?: boolean }) {
   const me = useAuth().profile?.id;
   const router = useRouter();
   const { party, guests, entries, loading } = usePartyDetail(partyId);
@@ -91,7 +96,9 @@ export function PartyRoom({ partyId }: { partyId: string }) {
 
   return (
     <>
-      {/* header — name · date · venue → directions */}
+      {/* header — name · date · venue → directions. Suppressed when embedded: the
+          night page above has already said all three, louder. */}
+      {!embedded && (
       <header className="mb-6 border-b border-line pb-5">
         <p className="label mb-1 text-faint">{past ? "The recap" : "A party"}</p>
         <h1 className="font-display text-4xl leading-tight tracking-tight">{party.name}</h1>
@@ -114,6 +121,7 @@ export function PartyRoom({ partyId }: { partyId: string }) {
           )}
         </p>
       </header>
+      )}
 
       {/* host: people asking to join via the shared link — you decide who comes in */}
       {mine && pending.length > 0 && (
@@ -251,7 +259,9 @@ export function PartyRoom({ partyId }: { partyId: string }) {
         </>
       )}
 
-      {/* leave / delete */}
+      {/* leave / delete — embedded, the night page owns calling it off, and deleting
+          only the ROOM while the night lives on would be a confusing half-action. */}
+      {!embedded && (
       <div className="mt-8 border-t border-line pt-5 text-sm">
         {mine ? (
           confirmDelete ? (
@@ -287,6 +297,7 @@ export function PartyRoom({ partyId }: { partyId: string }) {
           </button>
         )}
       </div>
+      )}
     </>
   );
 }

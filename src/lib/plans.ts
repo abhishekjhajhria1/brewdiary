@@ -42,6 +42,8 @@ export interface Plan {
   capacity?: number;
   going: number;
   myStatus: JoinStatus | null;
+  /** Set once the night has a room (migration 053). Undefined = no room yet. */
+  partyId?: string;
 }
 
 /** A plan I'm hosting. */
@@ -98,6 +100,23 @@ function useVersion(): number {
     };
   }, []);
   return version;
+}
+
+/** The refresh bus, exported for `nights.ts` — it reads the SAME tables through
+ *  different rpcs (my_nights / open_night_room), so the two must invalidate each
+ *  other or a night approved here goes stale over there. Nights has no bus of its
+ *  own; it borrows this one. */
+export function subscribePlans(cb: () => void): () => void {
+  subs.add(cb);
+  return () => {
+    subs.delete(cb);
+  };
+}
+export function plansVersion(): number {
+  return version;
+}
+export function notifyPlansChanged() {
+  bump();
 }
 
 // ── the discover feed: upcoming plans I'm allowed to see ─────────────────────
@@ -390,6 +409,7 @@ function toPlan(r: Record<string, unknown>): Plan {
     capacity: (r.capacity as number) ?? undefined,
     going: Number(r.going ?? 1),
     myStatus: (r.my_status as JoinStatus) ?? null,
+    partyId: (r.party_id as string) ?? undefined,
   };
 }
 

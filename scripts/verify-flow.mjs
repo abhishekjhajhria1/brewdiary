@@ -1099,6 +1099,58 @@ try {
   await as(priya, `select public.uninvite_from_plan($1,$2)`, [planInv, guestA]);
   ok("uninviting removes the guest's view of the plan", (await countsPlan(guestA, planInv)) === 0);
 
+  // ── Nights (053): one night, its room, and the inbox ──────────────────────
+  // The share-link path is the risky one: opening a room mints approved
+  // party_members rows, so if a guest could call it they'd let themselves in.
+  const hasNights = (
+    await db.query(`select 1 from information_schema.columns
+                    where table_schema='public' and table_name='plans' and column_name='party_id'`)
+  ).rows.length > 0;
+  if (!hasNights) {
+    console.log("  ~ nights (053) not applied — skipping");
+  } else {
+    const nightId = randomUUID();
+    await as(priya, `insert into public.plans (id, host_id, title, plan_date, join_policy)
+                     values ($1,$2,'Room night', current_date, 'friends')`, [nightId, priya]);
+
+    ok("a GUEST cannot open the room (that would approve themselves into it)",
+      await refused(() => as(guestA, `select public.open_night_room($1)`, [nightId])));
+
+    const roomA = (await as(priya, `select public.open_night_room($1) id`, [nightId])).rows[0].id;
+    ok("the host opens the room and gets a party back", !!roomA);
+    const roomB = (await as(priya, `select public.open_night_room($1) id`, [nightId])).rows[0].id;
+    ok("open_night_room is idempotent — the same room, not a second one", roomA === roomB);
+    ok("the host is an APPROVED member of their own room",
+      (await as(priya, `select status from public.party_members
+                        where party_id=$1 and user_id=$2`, [roomA, priya])).rows[0]?.status === "approved");
+
+    // Someone who follows the link lands PENDING and their night must still be
+    // findable — that branch of my_nights is the whole share-link feature.
+    // Read as the host — a bare db.query would inherit whatever role/claims the last
+    // `as()` left behind, which is exactly the kind of thing that makes a harness lie.
+    const code = (await as(priya, `select invite_code c from public.parties where id=$1`, [roomA])).rows[0].c;
+    await as(rohan, `select * from public.join_party($1)`, [code]);
+    ok("following the share link lands you PENDING, not in",
+      (await as(priya, `select status from public.party_members
+                        where party_id=$1 and user_id=$2`, [roomA, rohan])).rows[0]?.status === "pending");
+    ok("a pending guest at the door shows up in the HOST's inbox",
+      (await as(priya, `select * from public.together_inbox()`)).rows
+        .some((r) => r.kind === "room_request" && r.actor_id === rohan));
+    ok("that same request does NOT appear in anyone else's inbox",
+      (await as(guestA, `select * from public.together_inbox()`)).rows
+        .every((r) => !(r.kind === "room_request" && r.actor_id === rohan)));
+
+    await as(priya, `select public.approve_party_member($1,$2)`, [roomA, rohan]);
+    ok("once let in at the door, the night appears in my_nights (no plan_joins row exists)",
+      (await as(rohan, `select * from public.my_nights()`)).rows.some((r) => r.id === nightId && r.host === false));
+    ok("the host sees the same night as theirs",
+      (await as(priya, `select * from public.my_nights()`)).rows.some((r) => r.id === nightId && r.host === true));
+    ok("my_nights lists a night ONCE even when approved by both paths",
+      (await as(rohan, `select * from public.my_nights()`)).rows.filter((r) => r.id === nightId).length === 1);
+    ok("a stranger to the night sees nothing of it",
+      (await as(guestA, `select * from public.my_nights()`)).rows.every((r) => r.id !== nightId));
+  }
+
   console.log("\n── 16. the Cartographer: charting the shared map (042) ──");
   // A drinker offers a drink the dictionary doesn't know. Accepting it changes what
   // EVERY user sees, so the write path is the whole security story: status is server-

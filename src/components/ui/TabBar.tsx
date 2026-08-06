@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { useAuth } from "@/lib/profile";
 import { useIsVenueApp } from "@/lib/host";
+import { useInboxCount } from "@/lib/inbox";
 
 const TABS = [
   { href: "/", label: "Calendar" },
@@ -20,6 +21,9 @@ export function TabBar() {
   const isVenue = useIsVenueApp();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // Called before the early returns below — hooks can't sit behind a condition.
+  // Returns 0 for a guest, so this costs a signed-out visitor nothing.
+  const waiting = useInboxCount();
 
   // Wait for the session to resolve so the bar doesn't flash between layouts.
   // The venue dashboard and the kiosk wall carry no consumer chrome.
@@ -74,6 +78,17 @@ export function TabBar() {
               >
                 {t.label}
               </span>
+              {/* Something is waiting on you in Together. A quiet amber dot, not a red
+                  count — the number would only ever be small, and a red badge turns a
+                  friend request into an alarm. It clears itself when you decide. */}
+              {t.href === "/together" && waiting > 0 && (
+                <>
+                  <span aria-hidden className="absolute right-[22%] top-2.5 h-1.5 w-1.5 rounded-full bg-accent" />
+                  <span className="sr-only">
+                    {waiting} waiting on you
+                  </span>
+                </>
+              )}
             </Link>
           );
         })}
