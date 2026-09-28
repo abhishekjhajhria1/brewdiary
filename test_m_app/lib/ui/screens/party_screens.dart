@@ -17,7 +17,7 @@ import '../../data/parties.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/share_card.dart';
-import '../widgets/sub_page.dart';
+import '../widgets/page.dart';
 import 'together_screen.dart' show pointRow;
 
 const _pendingKey = 'brewdiary.pendingParty.v1';

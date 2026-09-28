@@ -4,7 +4,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/date.dart';
 import '../../core/derive.dart';
@@ -23,6 +22,9 @@ class MonthCalendar extends StatelessWidget {
   final VoidCallback onNext;
   final bool canNext;
 
+  /// Shown as a "Today" shortcut while you're looking at another month.
+  final VoidCallback? onToday;
+
   const MonthCalendar({
     super.key,
     required this.year,
@@ -34,6 +36,7 @@ class MonthCalendar extends StatelessWidget {
     required this.onPrev,
     required this.onNext,
     required this.canNext,
+    this.onToday,
   });
 
   @override
@@ -42,67 +45,72 @@ class MonthCalendar extends StatelessWidget {
     final grid = monthGrid(year, month);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(
-        padding: const EdgeInsets.only(bottom: 24),
+        padding: const EdgeInsets.only(bottom: S.m),
         child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
           Expanded(
-            child: Wrap(crossAxisAlignment: WrapCrossAlignment.end, spacing: 12, children: [
-              Text(monthNames[month], style: T.serif(bd, size: 54, height: .92)),
-              Padding(padding: const EdgeInsets.only(bottom: 8), child: Label('$year')),
-            ]),
-          ),
-          _NavButton(label: 'Previous month', glyph: '‹', onTap: onPrev),
-          _NavButton(label: 'Next month', glyph: '›', onTap: canNext ? onNext : null),
-        ]),
-      ),
-      Glass(
-        padding: const EdgeInsets.all(14),
-        child: Column(children: [
-          Row(children: [for (final w in weekdays) Expanded(child: Center(child: Label(w)))]),
-          const SizedBox(height: 8),
-          GridView.count(
-            crossAxisCount: 7,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 6,
-            crossAxisSpacing: 6,
-            children: [
-              for (final d in grid)
-                DayCell(
-                  day: d,
-                  count: counts[d.key] ?? 0,
-                  hasPlan: planKeys.contains(d.key),
-                  dry: dryKeys.contains(d.key),
-                  onSelect: onSelect,
+            child: Semantics(
+              header: true,
+              label: '${monthNames[month]} $year',
+              excludeSemantics: true,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('$year', style: T.sans(bd, size: 13, weight: FontWeight.w500, color: bd.muted).copyWith(fontFeatures: T.tnum)),
+                const SizedBox(height: 2),
+                // Scales down rather than wrapping, so "September" never breaks at large text sizes.
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(monthNames[month], maxLines: 1, style: T.serif(bd, size: 40, height: 1.05)),
                 ),
-            ],
+              ]),
+            ),
           ),
+          if (onToday != null) TextAction('Today', accent: true, onTap: onToday),
+          IconBtn(Ph.caretLeft, tooltip: 'Previous month', onTap: onPrev),
+          IconBtn(Ph.caretRight, tooltip: 'Next month', onTap: canNext ? onNext : null),
         ]),
       ),
-    ]);
-  }
-}
-
-class _NavButton extends StatelessWidget {
-  final String label;
-  final String glyph;
-  final VoidCallback? onTap;
-  const _NavButton({required this.label, required this.glyph, this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    final bd = context.bd;
-    return Semantics(
-      label: label,
-      button: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Center(child: Text(glyph, style: T.sans(bd, size: 24, color: onTap == null ? bd.muted.withValues(alpha: .3) : bd.muted))),
+      GestureDetector(
+        // Swipe the grid sideways to change month, as in a phone's own calendar.
+        onHorizontalDragEnd: (d) {
+          final v = d.primaryVelocity ?? 0;
+          if (v < -300 && canNext) onNext();
+          if (v > 300) onPrev();
+        },
+        child: Glass(
+          padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+          // Day numbers live in fixed squares: let them grow only a little with the text size.
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.1,
+            child: Column(children: [
+            Row(children: [
+              for (final w in weekdays)
+                Expanded(child: Center(child: Text(w.substring(0, 1), style: T.sans(bd, size: 12, weight: FontWeight.w600, color: bd.faint)))),
+            ]),
+            const SizedBox(height: 8),
+            GridView.count(
+              crossAxisCount: 7,
+              shrinkWrap: true,
+              primary: false,
+              padding: EdgeInsets.zero,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 5,
+              crossAxisSpacing: 5,
+              children: [
+                for (final d in grid)
+                  DayCell(
+                    day: d,
+                    count: counts[d.key] ?? 0,
+                    hasPlan: planKeys.contains(d.key),
+                    dry: dryKeys.contains(d.key),
+                    onSelect: onSelect,
+                  ),
+              ],
+            ),
+          ]),
+          ),
         ),
       ),
-    );
+    ]);
   }
 }
 
@@ -119,46 +127,47 @@ class DayCell extends StatelessWidget {
     final bd = context.bd;
     final level = intensityLevel(count);
     final interactive = !day.isFuture || hasPlan;
-    final numColor = (!day.inMonth || day.isFuture) ? bd.faint : bd.ink;
+    final numColor = !day.inMonth ? bd.faint.withValues(alpha: .7) : (day.isFuture ? bd.faint : bd.ink);
+    final cell = AnimatedContainer(
+      duration: Motion.med,
+      decoration: BoxDecoration(
+        color: bd.cell(level),
+        borderRadius: BorderRadius.circular(rCell + 2),
+        border: day.isToday
+            ? Border.all(color: bd.accent, width: 1.6)
+            : (level == 0 && day.inMonth ? Border.all(color: bd.line, width: .8) : null),
+      ),
+      child: Stack(children: [
+        Center(
+          child: Text(
+            '${day.date.day}',
+            style: T.sans(bd, size: 13.5, color: numColor, weight: day.isToday ? FontWeight.w700 : FontWeight.w500).copyWith(fontFeatures: T.tnum),
+          ),
+        ),
+        if (count > 1)
+          Positioned(right: 3, top: 1, child: Text('$count', style: T.sans(bd, size: 9, weight: FontWeight.w600, color: bd.ink.withValues(alpha: .72)).copyWith(fontFeatures: T.tnum))),
+        if (hasPlan || (dry && count == 0))
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 4,
+            child: Center(
+              child: Container(
+                width: 5,
+                height: 5,
+                decoration: hasPlan
+                    ? BoxDecoration(color: bd.accent, shape: BoxShape.circle)
+                    : BoxDecoration(shape: BoxShape.circle, border: Border.all(color: bd.muted, width: 1)),
+              ),
+            ),
+          ),
+      ]),
+    );
     return Semantics(
       button: interactive,
-      label: '${day.key}${count > 0 ? ', $count logged' : ', nothing logged yet'}${hasPlan ? ', a plan' : ''}',
-      child: GestureDetector(
-        onTap: interactive
-            ? () {
-                HapticFeedback.selectionClick();
-                onSelect(day.key);
-              }
-            : null,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          decoration: BoxDecoration(
-            color: bd.cell(level),
-            borderRadius: BorderRadius.circular(rCell),
-            border: day.isToday
-                ? Border.all(color: bd.accent, width: 1.5)
-                : (level == 0 && day.inMonth ? Border.all(color: bd.line) : null),
-          ),
-          child: Stack(children: [
-            Positioned(
-              left: 5,
-              top: 5,
-              child: Text('${day.date.day}',
-                  style: T.sans(bd, size: 11, color: numColor, weight: day.isToday ? FontWeight.w600 : FontWeight.w400).copyWith(fontFeatures: T.tnum)),
-            ),
-            if (count > 1)
-              Positioned(right: 5, bottom: 3, child: Text('$count', style: T.sans(bd, size: 9, color: bd.muted).copyWith(fontFeatures: T.tnum))),
-            if (hasPlan)
-              Positioned(left: 5, bottom: 4, child: Container(width: 6, height: 6, decoration: BoxDecoration(color: bd.accent, shape: BoxShape.circle))),
-            if (dry && count == 0 && !hasPlan)
-              Positioned(
-                left: 5,
-                bottom: 4,
-                child: Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: bd.muted, width: 1))),
-              ),
-          ]),
-        ),
-      ),
+      label: '${formatDayLong(day.key)}${count > 0 ? ', $count logged' : (dry ? ', a dry day' : ', nothing logged yet')}${hasPlan ? ', a plan' : ''}${day.isToday ? ', today' : ''}',
+      excludeSemantics: true,
+      child: interactive ? Pressable(onTap: () => onSelect(day.key), child: cell) : cell,
     );
   }
 }
@@ -176,7 +185,7 @@ class YearMosaic extends StatelessWidget {
     final bd = context.bd;
     final jan1 = DateTime(year, 1, 1);
     final gridStart = addDays(jan1, -mondayIndex(jan1));
-    final now = DateTime.now();
+    final now = appNow();
     final today = DateTime(now.year, now.month, now.day);
     final todayK = todayKey();
     const cell = 11.0, gap = 3.0;
@@ -205,15 +214,16 @@ class YearMosaic extends StatelessWidget {
     final controller = ScrollController(initialScrollOffset: math.max(0, (todayWeek - 18) * (cell + gap)));
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Container(
-        padding: const EdgeInsets.only(bottom: 16),
-        margin: const EdgeInsets.only(bottom: 20),
-        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: bd.line))),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text('$year', style: T.serif(bd, size: 54)),
-          const SizedBox(width: 12),
-          const Padding(padding: EdgeInsets.only(bottom: 8), child: Label('the year so far')),
-        ]),
+      Padding(
+        padding: const EdgeInsets.only(bottom: S.m),
+        child: Semantics(
+          header: true,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('The year so far', style: T.sans(bd, size: 13, weight: FontWeight.w500, color: bd.muted)),
+            const SizedBox(height: 2),
+            Text('$year', style: T.serif(bd, size: 40, height: 1.05)),
+          ]),
+        ),
       ),
       Glass(
         padding: const EdgeInsets.all(16),
@@ -238,6 +248,7 @@ class YearMosaic extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(bottom: gap),
                         child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
                           onTap: d.inYear && !d.future ? () => onSelect(d.key) : null,
                           child: Opacity(
                             opacity: d.inYear ? 1 : 0,
@@ -262,8 +273,8 @@ class YearMosaic extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 14),
-      Row(children: [
-        Text('LESS', style: T.sans(bd, size: 10, color: bd.faint, spacing: 1.4)),
+      Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+        Text('Less', style: T.caption(bd)),
         const SizedBox(width: 8),
         for (var l = 0; l <= 4; l++)
           Container(
@@ -273,7 +284,7 @@ class YearMosaic extends StatelessWidget {
             decoration: BoxDecoration(color: bd.ycell(l), borderRadius: BorderRadius.circular(2), border: l == 0 ? Border.all(color: bd.line) : null),
           ),
         const SizedBox(width: 5),
-        Text('MORE', style: T.sans(bd, size: 10, color: bd.faint, spacing: 1.4)),
+        Text('More', style: T.caption(bd)),
       ]),
     ]);
   }
@@ -404,7 +415,9 @@ class _AchievementTileState extends State<AchievementTile> {
   Widget build(BuildContext context) {
     final bd = context.bd;
     return Glass(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(S.l),
+      onTap: () => setState(() => _i = (_i + 1) % 3),
+      semanticLabel: 'Achievement pattern ${_i + 1} of 3. Tap for the next.',
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(rCtl),
@@ -413,15 +426,12 @@ class _AchievementTileState extends State<AchievementTile> {
         const SizedBox(height: 12),
         Row(children: [
           for (var d = 0; d < 3; d++)
-            GestureDetector(
-              onTap: () => setState(() => _i = d),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                margin: const EdgeInsets.only(right: 6),
-                height: 6,
-                width: d == _i ? 20 : 6,
-                decoration: BoxDecoration(color: d == _i ? bd.accent : bd.ink.withValues(alpha: .15), borderRadius: BorderRadius.circular(99)),
-              ),
+            AnimatedContainer(
+              duration: Motion.slow,
+              margin: const EdgeInsets.only(right: 6),
+              height: 6,
+              width: d == _i ? 20 : 6,
+              decoration: BoxDecoration(color: d == _i ? bd.accent : bd.ink.withValues(alpha: .15), borderRadius: BorderRadius.circular(99)),
             ),
         ]),
       ]),
@@ -502,7 +512,7 @@ class YearPreview extends StatelessWidget {
           ]);
         }),
         const SizedBox(height: 12),
-        Label('A year of nights — darker is more', color: bd.faint),
+        Text('A year of nights — darker is more.', style: T.caption(bd)),
       ]),
     );
   }

@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/date.dart';
 import '../core/seed.dart';
 import '../core/types.dart';
 import 'auth.dart';
@@ -182,7 +183,7 @@ class EntryStore extends ChangeNotifier {
     final m = mood?.trim();
     final entry = Entry(
       id: newId(),
-      createdAt: DateTime.now().toUtc().toIso8601String(),
+      createdAt: appNow().toUtc().toIso8601String(),
       date: date,
       drink: drink.trim(),
       mood: (m == null || m.isEmpty) ? null : m,

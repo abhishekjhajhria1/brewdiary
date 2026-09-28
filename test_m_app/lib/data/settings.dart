@@ -9,15 +9,21 @@ import '../core/money.dart';
 import '../core/types.dart';
 import 'base.dart';
 
-// ── theme (dark-default, like the web) ───────────────────────────────────────
+// ── theme (dark-default, like the web; Light and System are choices) ─────────
 class ThemeStore extends ChangeNotifier {
   static final instance = ThemeStore();
   static const _key = 'brewdiary.theme';
-  ThemeMode get mode => Prefs.getString(_key) == 'light' ? ThemeMode.light : ThemeMode.dark;
-  bool get isDark => mode == ThemeMode.dark;
+  ThemeMode get mode => switch (Prefs.getString(_key)) {
+        'light' => ThemeMode.light,
+        'system' => ThemeMode.system,
+        _ => ThemeMode.dark,
+      };
+
+  /// The effective theme right now (resolving System against the device).
+  bool get isDark => mode == ThemeMode.dark || (mode == ThemeMode.system && WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark);
   void toggle() => set(isDark ? ThemeMode.light : ThemeMode.dark);
   void set(ThemeMode m) {
-    Prefs.setString(_key, m == ThemeMode.light ? 'light' : 'dark');
+    Prefs.setString(_key, switch (m) { ThemeMode.light => 'light', ThemeMode.system => 'system', ThemeMode.dark => 'dark' });
     notifyListeners();
   }
 }

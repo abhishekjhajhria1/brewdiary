@@ -13,7 +13,7 @@ import '../../data/settings.dart';
 import '../../data/split.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
-import '../widgets/sub_page.dart';
+import '../widgets/page.dart';
 
 String _money(double n) => formatMoney(((n.abs()) * 100).round() / 100, PlaceStore.instance.currency);
 

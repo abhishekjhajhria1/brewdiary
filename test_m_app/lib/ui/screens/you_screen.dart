@@ -33,6 +33,8 @@ import '../../data/wishlist.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/mosaic.dart';
+import '../widgets/page.dart';
+import '../widgets/pickers.dart';
 import 'landing_screen.dart';
 import 'profile_screen.dart';
 import 'together_screen.dart' show DateField;
@@ -87,8 +89,11 @@ class _YouScreenState extends State<YouScreen> {
               ),
             );
 
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          PageHeader('You', trailing: '${s.longest} night best'),
+        return ScrollPage(
+          title: 'You',
+          subtitle: s.longest > 0 ? 'Your longest run: ${s.longest} ${s.longest == 1 ? 'night' : 'nights'}.' : null,
+          onRefresh: entryStore.reload,
+          children: [
           Glass(
             padding: const EdgeInsets.all(20),
             child: Column(children: [
@@ -350,7 +355,7 @@ class _LogWish extends StatefulWidget {
 }
 
 class _LogWishState extends State<_LogWish> {
-  DateTime _date = DateTime.now();
+  DateTime _date = appNow();
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
@@ -361,7 +366,7 @@ class _LogWishState extends State<_LogWish> {
       const SizedBox(height: 20),
       Text('Which day', style: T.sans(bd, size: 12, color: bd.muted)),
       const SizedBox(height: 6),
-      DateField(value: _date, last: DateTime.now(), onChanged: (d) => setState(() => _date = d)),
+      DateField(value: _date, last: appNow(), onChanged: (d) => setState(() => _date = d)),
       const SizedBox(height: 20),
       InkButton('Log it', uppercase: false, onTap: () {
         entryStore.addEntry(date: toKey(_date), drink: widget.item.drink, type: canonicalize(widget.item.drink).type);
@@ -531,7 +536,21 @@ class _Settings extends StatelessWidget {
               TextSpan(text: profile.name, style: T.sans(bd, size: 14)),
             ])),
           ),
-        SettingRow(title: 'Appearance', hint: 'Switch between the light and dark themes.', trailing: const ThemeToggleButton()),
+        ListenableBuilder(
+          listenable: ThemeStore.instance,
+          builder: (context, _) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: S.s),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('Appearance', style: T.row(bd)),
+              const SizedBox(height: S.xs),
+              Segmented<ThemeMode>(
+                options: const [(ThemeMode.dark, 'Dark'), (ThemeMode.light, 'Light'), (ThemeMode.system, 'System')],
+                value: ThemeStore.instance.mode,
+                onChanged: ThemeStore.instance.set,
+              ),
+            ]),
+          ),
+        ),
         const _Hair(),
         const _ReminderRow(),
         const _Hair(),
@@ -621,7 +640,7 @@ class _ReminderRow extends StatelessWidget {
             Text('At', style: T.sans(bd, size: 12, color: bd.faint)),
             const SizedBox(width: 8),
             TextAction(r.time.format(context), accent: true, onTap: () async {
-              final t = await showTimePicker(context: context, initialTime: r.time);
+              final t = await pickTime(context, title: 'Remind me at', initial: r.time);
               if (t != null) r.setTime(t);
             }),
           ]),
@@ -828,9 +847,9 @@ class _TrustCard extends StatelessWidget {
       refresh: Listenable.merge([vouchRev, friendsRev]),
       load: () async => ((await FriendsApi.friends()).length, await VouchApi.myCount()),
       builder: (context, data, _) {
-        final created = DateTime.tryParse(profile.createdAt) ?? DateTime.now();
+        final created = DateTime.tryParse(profile.createdAt) ?? appNow();
         final signals = TrustSignals(
-          tenureDays: math.max(0, DateTime.now().difference(created).inDays),
+          tenureDays: math.max(0, appNow().difference(created).inDays),
           activeDays: entryStore.entries.map((e) => e.date).toSet().length,
           friends: data?.$1 ?? 0,
           presenceChecked: profile.presenceChecked,
@@ -1082,7 +1101,14 @@ class _WhereYouAreState extends State<_WhereYouAre> {
           const SizedBox(height: 3),
           Text("Travelling? Set this to the country you're in. It sets your currency, and the legal drinking age we hold you to — that follows where you are, not where you're from.",
               style: T.sans(bd, size: 12, color: bd.faint, height: 1.5)),
-          CountryPicker(value: knownCountries.any((c) => c.$1 == _country) ? _country : 'ZZ', includeElsewhere: true, onChanged: _pick),
+          const SizedBox(height: S.s),
+          PickerField(
+            value: knownCountries.any((c) => c.$1 == _country) ? countryLabel(_country) : 'Somewhere else',
+            onTap: () async {
+              final c = await pickCountry(context, current: knownCountries.any((c) => c.$1 == _country) ? _country : 'ZZ');
+              if (c != null) _pick(c);
+            },
+          ),
           if (_needsAge != null)
             Glass(
               margin: const EdgeInsets.only(top: 12),
@@ -1093,9 +1119,9 @@ class _WhereYouAreState extends State<_WhereYouAre> {
                 const SizedBox(height: 10),
                 Row(children: [
                   Expanded(
-                    child: TextAction(_dob == null ? 'Enter date of birth' : '${_dob!.day} ${monthNames[_dob!.month - 1]} ${_dob!.year}', onTap: () async {
-                      final now = DateTime.now();
-                      final d = await showDatePicker(context: context, initialDate: DateTime(now.year - 25), firstDate: DateTime(now.year - 110), lastDate: now, initialEntryMode: DatePickerEntryMode.input);
+                    child: TextAction(_dob == null ? 'Choose date of birth' : writtenDate(_dob!), accent: _dob == null, onTap: () async {
+                      final now = appNow();
+                      final d = await pickDate(context, title: 'Date of birth', initial: _dob ?? DateTime(now.year - 25, now.month, now.day), first: DateTime(now.year - 110), last: now);
                       if (d != null) setState(() => _dob = d);
                     }),
                   ),
@@ -1116,17 +1142,14 @@ class _WhereYouAreState extends State<_WhereYouAre> {
               ]),
             ),
           const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: Text('Currency for Split', style: T.sans(bd, size: 12, color: bd.faint))),
-            DropdownButton<String>(
-              value: PlaceStore.instance.currency,
-              dropdownColor: Color.alphaBlend(bd.glassStrong, bd.base),
-              underline: const SizedBox.shrink(),
-              style: T.sans(bd, size: 14),
-              items: [for (final c in supportedCurrencies) DropdownMenuItem(value: c, child: Text('$c  ${currencySymbol(c)}'))],
-              onChanged: (v) => v == null ? null : PlaceStore.instance.saveCurrency(v),
-            ),
-          ]),
+          PickerField(
+            label: 'Currency for Split',
+            value: '${PlaceStore.instance.currency}  ${currencySymbol(PlaceStore.instance.currency)}',
+            onTap: () async {
+              final c = await pickCurrency(context, current: PlaceStore.instance.currency);
+              if (c != null) PlaceStore.instance.saveCurrency(c);
+            },
+          ),
         ]),
       ),
     );

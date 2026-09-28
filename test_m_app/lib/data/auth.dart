@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
+import '../core/date.dart';
 import '../core/handles.dart';
 import 'base.dart';
 
@@ -33,7 +34,7 @@ class Profile {
         id: j['id'] as String,
         name: j['name'] as String? ?? 'you',
         handle: j['handle'] as String? ?? '',
-        createdAt: j['createdAt'] as String? ?? DateTime.now().toIso8601String(),
+        createdAt: j['createdAt'] as String? ?? appNow().toIso8601String(),
         presenceChecked: j['presenceChecked'] == true,
       );
 
@@ -137,7 +138,7 @@ class AuthStore extends ChangeNotifier {
   Future<AuthResult> signUp(String email, String password, String name) async {
     final c = db;
     if (c == null) {
-      final p = Profile(id: 'local', name: name.trim().isEmpty ? 'you' : name.trim(), handle: '', createdAt: DateTime.now().toIso8601String());
+      final p = Profile(id: 'local', name: name.trim().isEmpty ? 'you' : name.trim(), handle: '', createdAt: appNow().toIso8601String());
       await Prefs.setJson(_localKey, p.toJson());
       _set(AuthStatus.authed, p);
       return const AuthResult.success();
@@ -162,7 +163,7 @@ class AuthStore extends ChangeNotifier {
       final p = profile ??
           (Prefs.getJson<Map<String, dynamic>>(_localKey) != null
               ? Profile.fromJson(Prefs.getJson<Map<String, dynamic>>(_localKey)!)
-              : Profile(id: 'local', name: 'you', handle: '', createdAt: DateTime.now().toIso8601String()));
+              : Profile(id: 'local', name: 'you', handle: '', createdAt: appNow().toIso8601String()));
       await Prefs.setJson(_localKey, p.toJson());
       _set(AuthStatus.authed, p);
       return const AuthResult.success();

@@ -605,7 +605,7 @@ class _CreatePlanState extends State<_CreatePlan> {
   Widget build(BuildContext context) {
     final bd = context.bd;
     final isPrivate = _policy == JoinPolicy.private;
-    final now = DateTime.now();
+    final now = appNow();
     return Glass(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),

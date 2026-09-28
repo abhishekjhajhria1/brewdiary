@@ -20,6 +20,7 @@ import '../../data/wishlist.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/mosaic.dart';
+import '../widgets/page.dart';
 import '../widgets/share_card.dart';
 import 'party_screens.dart';
 import 'plans_section.dart';
@@ -52,73 +53,56 @@ class _TogetherScreenState extends State<TogetherScreen> {
     }
   }
 
+  Future<void> _refresh() async {
+    for (final r in [friendsRev, profileRev, plansRev, circlesRev, partiesRev, pointsRev]) {
+      r.bump();
+    }
+  }
+
+  void _openSplit() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SplitScreen()));
+
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    return Loader<(List<SocialProfile>, bool)>(
-      refresh: Listenable.merge([friendsRev, profileRev]),
-      load: () async {
-        final r = await Future.wait<Object>([FriendsApi.friends(), PointsApi.competeVisible()]);
-        return (r[0] as List<SocialProfile>, r[1] as bool);
-      },
-      builder: (context, data, loading) {
-        final friends = data?.$1 ?? const <SocialProfile>[];
-        final compete = data?.$2 ?? false;
-        final rooms = [_Room.feed, _Room.plans, _Room.circles, _Room.parties, if (compete) _Room.board];
-        final room = rooms.contains(_room) ? _room : _Room.feed;
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          PageHeader('Together', trailing: '${friends.length} ${friends.length == 1 ? 'friend' : 'friends'}'),
-          Text('Your calendar stays yours and quiet. This is the other room — what friends are pouring.', style: T.sans(bd, color: bd.muted, height: 1.6)),
-          const SizedBox(height: 20),
-          Glass(
-            radius: rCtl,
-            padding: const EdgeInsets.all(4),
-            child: Row(children: [
-              for (final r in rooms)
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      setState(() => _room = r);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      decoration: BoxDecoration(color: room == r ? bd.ink : Colors.transparent, borderRadius: BorderRadius.circular(7)),
-                      alignment: Alignment.center,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          _roomLabel[r]!.toUpperCase(),
-                          style: T.sans(bd, size: 11, weight: FontWeight.w500, spacing: 1.5, color: room == r ? bd.base : bd.faint),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ]),
-          ),
-          switch (room) {
-            _Room.feed => _Feed(friends: friends),
-            _Room.plans => const PlansSection(),
-            _Room.circles => const CirclesSection(),
-            _Room.parties => const PartiesSection(),
-            _Room.board => const _FriendsBoard(),
+    return ScrollPage(
+      title: 'Together',
+      actions: [IconBtn(Ph.receipt, tooltip: 'Split a tab', onTap: _openSplit)],
+      onRefresh: _refresh,
+      children: [
+        Loader<(List<SocialProfile>, bool)>(
+          refresh: Listenable.merge([friendsRev, profileRev]),
+          load: () async {
+            final r = await Future.wait<Object>([FriendsApi.friends(), PointsApi.competeVisible()]);
+            return (r[0] as List<SocialProfile>, r[1] as bool);
           },
-          const SizedBox(height: 44),
-          GestureDetector(
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SplitScreen())),
-            child: Container(
-              padding: const EdgeInsets.only(top: 20),
-              decoration: BoxDecoration(border: Border(top: BorderSide(color: bd.line))),
-              child: Row(children: [
-                Expanded(child: Text('Split a tab or a round with friends', style: T.sans(bd, color: bd.muted))),
-                Text('Split →', style: T.sans(bd, size: 14, weight: FontWeight.w500, color: bd.accent)),
+          builder: (context, data, loading) {
+            final friends = data?.$1 ?? const <SocialProfile>[];
+            final compete = data?.$2 ?? false;
+            final rooms = [_Room.feed, _Room.plans, _Room.circles, _Room.parties, if (compete) _Room.board];
+            final room = rooms.contains(_room) ? _room : _Room.feed;
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('Your calendar stays yours and quiet. This is the other room — what friends are pouring.', style: T.bodyMuted(bd)),
+              const SizedBox(height: S.xl),
+              Segmented<_Room>(
+                options: [for (final r in rooms) (r, _roomLabel[r]!)],
+                value: room,
+                onChanged: (r) => setState(() => _room = r),
+              ),
+              switch (room) {
+                _Room.feed => _Feed(friends: friends),
+                _Room.plans => const PlansSection(),
+                _Room.circles => const CirclesSection(),
+                _Room.parties => const PartiesSection(),
+                _Room.board => const _FriendsBoard(),
+              },
+              const SizedBox(height: S.section),
+              Group(children: [
+                GroupTile(icon: Ph.receipt, title: 'Split a tab', subtitle: 'Who paid, who owes — settled at the table.', chevron: true, onTap: _openSplit),
               ]),
-            ),
-          ),
-        ]);
-      },
+            ]);
+          },
+        ),
+      ],
     );
   }
 }
@@ -999,7 +983,7 @@ class _PartiesSectionState extends State<PartiesSection> {
   final _name = TextEditingController();
   final _venue = TextEditingController();
   final _code = TextEditingController();
-  DateTime _date = DateTime.now();
+  DateTime _date = appNow();
   String? _error;
   bool _busy = false;
 
@@ -1018,7 +1002,7 @@ class _PartiesSectionState extends State<PartiesSection> {
         if (r.error == null) {
           _name.clear();
           _venue.clear();
-          _date = DateTime.now();
+          _date = appNow();
           _mode = 'idle';
         }
       });
@@ -1142,7 +1126,7 @@ class DateField extends StatelessWidget {
     final bd = context.bd;
     return GestureDetector(
       onTap: () async {
-        final now = DateTime.now();
+        final now = appNow();
         final picked = await showDatePicker(context: context, initialDate: value, firstDate: first ?? DateTime(now.year - 5), lastDate: last ?? DateTime(now.year + 3));
         if (picked != null) onChanged(picked);
       },

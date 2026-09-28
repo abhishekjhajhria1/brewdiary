@@ -38,7 +38,7 @@ const _seed = [
 ];
 
 List<Entry> seedEntries() {
-  final now = DateTime.now();
+  final now = appNow();
   final today = DateTime(now.year, now.month, now.day);
   return [
     for (var i = 0; i < _seed.length; i++)
@@ -46,16 +46,7 @@ List<Entry> seedEntries() {
         final s = _seed[i];
         final day = addDays(today, -s.offset);
         final created = DateTime(day.year, day.month, day.day, s.hour, (i * 7) % 60);
-        return Entry(
-          id: 'seed_$i',
-          date: toKey(day),
-          createdAt: created.toUtc().toIso8601String(),
-          drink: s.drink,
-          type: s.type,
-          mood: s.mood,
-          note: s.note,
-          venue: s.venue,
-        );
+        return Entry(id: 'seed_$i', date: toKey(day), createdAt: created.toUtc().toIso8601String(), drink: s.drink, type: s.type, mood: s.mood, note: s.note, venue: s.venue);
       }(),
   ];
 }

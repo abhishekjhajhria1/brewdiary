@@ -17,10 +17,12 @@ import '../../data/safety.dart';
 import '../../data/settings.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
-import '../widgets/sub_page.dart';
+import '../widgets/page.dart';
 import 'bartender_screen.dart';
 
 class DiscoverScreen extends StatelessWidget {
+  /// Off in widget tests, where the sensor plugin doesn't exist.
+  static bool sensors = true;
   const DiscoverScreen({super.key});
   @override
   Widget build(BuildContext context) {
@@ -34,7 +36,7 @@ class DiscoverScreen extends StatelessWidget {
         const SizedBox(height: 24),
         Glass(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SubPage(title: 'ninkasi', scroll: false, child: BartenderScreen(inShell: false)))),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BartenderPage())),
           child: Row(children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -83,6 +85,7 @@ class _DiscoverLiveState extends State<_DiscoverLive> {
   @override
   void initState() {
     super.initState();
+    if (!DiscoverScreen.sensors) return;
     try {
       _mag = magnetometerEventStream(samplingPeriod: SensorInterval.uiInterval).listen((e) {
         // Phone held flat: heading from the horizontal field components.

@@ -1,6 +1,7 @@
 // Small pure helpers ported from several web modules (geohash.ts, plans.ts,
 // challenges.ts, expenses.ts, verify.ts, waterPref.ts). Kept together because each
 // is a handful of lines and none touches I/O.
+import 'date.dart';
 
 // ── geohash (trends.ts / geohash.ts) ─────────────────────────────────────────
 /// ~20 km cell: fine enough for "your area", coarse enough to never pinpoint anyone.
@@ -140,12 +141,7 @@ List<double> splitEvenly(double amount, int parts) {
 // ── verify.ts — the free TRUST LEVEL ─────────────────────────────────────────
 enum TrustLevel { fresh, active, established, trusted }
 
-const trustLabel = {
-  TrustLevel.fresh: 'New here',
-  TrustLevel.active: 'Active',
-  TrustLevel.established: 'Established',
-  TrustLevel.trusted: 'Trusted',
-};
+const trustLabel = {TrustLevel.fresh: 'New here', TrustLevel.active: 'Active', TrustLevel.established: 'Established', TrustLevel.trusted: 'Trusted'};
 
 class TrustSignals {
   final int tenureDays;
@@ -184,7 +180,7 @@ String formatVolume(int ml) {
 
 // ── age.ts ───────────────────────────────────────────────────────────────────
 int ageFrom(DateTime dob, [DateTime? now]) {
-  final n = now ?? DateTime.now();
+  final n = now ?? appNow();
   var age = n.year - dob.year;
   final m = n.month - dob.month;
   if (m < 0 || (m == 0 && n.day < dob.day)) age--;

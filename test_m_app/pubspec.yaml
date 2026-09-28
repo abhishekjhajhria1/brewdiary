@@ -88,6 +88,16 @@ flutter:
         - asset: assets/fonts/Newsreader.ttf
         - asset: assets/fonts/Newsreader-Italic.ttf
           style: italic
+    # Phosphor Icons (MIT) — see lib/ui/icons.dart.
+    - family: Phosphor
+      fonts:
+        - asset: assets/fonts/Phosphor.ttf
+    - family: PhosphorFill
+      fonts:
+        - asset: assets/fonts/Phosphor-Fill.ttf
+    - family: PhosphorBold
+      fonts:
+        - asset: assets/fonts/Phosphor-Bold.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

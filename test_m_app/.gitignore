@@ -50,3 +50,5 @@ app.*.map.json
 # Local build config (Supabase URL/key) — see env.example.json
 env.json
 /android/build/
+test/tour/
+test/failures/

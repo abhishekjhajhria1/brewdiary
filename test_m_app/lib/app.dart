@@ -1,6 +1,9 @@
-// The root: theme, the age gate, and the tabbed shell. Mirrors the web layout —
-// TopBar (brand · Discover · view toggle · theme) over the page, a glass TabBar at
-// the bottom. Together is sign-in only; guests still get the local diary.
+// The root: themes, the age gate, and the tabbed shell.
+//
+// Shell: each tab is its own scrolling page (pinned frosted top bar + large title,
+// see ui/widgets/page.dart) kept alive in an IndexedStack, and a floating glass tab
+// bar with icon + label that slides away while the keyboard is up. Together is
+// sign-in only; guests still get the local diary.
 import 'dart:async';
 import 'dart:ui';
 
@@ -13,7 +16,6 @@ import 'data/base.dart';
 import 'data/settings.dart';
 import 'ui/screens/bartender_screen.dart';
 import 'ui/screens/calendar_screen.dart';
-import 'ui/screens/discover_screen.dart';
 import 'ui/screens/landing_screen.dart';
 import 'ui/screens/party_screens.dart';
 import 'ui/screens/profile_screen.dart';
@@ -31,20 +33,31 @@ class BrewdiaryApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: ThemeStore.instance,
-      builder: (context, _) {
-        final dark = ThemeStore.instance.isDark;
-        final bd = dark ? BD.darkTokens : BD.light;
-        return AnnotatedRegion<SystemUiOverlayStyle>(
-          value: (dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark).copyWith(statusBarColor: Colors.transparent),
-          child: MaterialApp(
-            title: 'brewdiary',
-            debugShowCheckedModeBanner: false,
-            navigatorKey: navigatorKey,
-            theme: buildTheme(bd),
-            home: const _Root(),
-          ),
-        );
-      },
+      builder: (context, _) => MaterialApp(
+        title: 'brewdiary',
+        debugShowCheckedModeBanner: false,
+        navigatorKey: navigatorKey,
+        theme: buildTheme(BD.light),
+        darkTheme: buildTheme(BD.darkTokens),
+        themeMode: ThemeStore.instance.mode,
+        builder: (context, child) {
+          final mq = MediaQuery.of(context);
+          final dark = Theme.of(context).brightness == Brightness.dark;
+          return AnnotatedRegion<SystemUiOverlayStyle>(
+            value: (dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark).copyWith(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: Colors.transparent,
+              systemNavigationBarContrastEnforced: false,
+            ),
+            // Honour the person's text size, within the range the layouts are built for.
+            child: MediaQuery(
+              data: mq.copyWith(textScaler: mq.textScaler.clamp(minScaleFactor: .9, maxScaleFactor: 1.3)),
+              child: KeyboardScope(inset: mq.viewInsets.bottom, child: child!),
+            ),
+          );
+        },
+        home: const _Root(),
+      ),
     );
   }
 }
@@ -64,7 +77,9 @@ class _Root extends StatelessWidget {
         } else {
           body = const Shell();
         }
-        return Scaffold(backgroundColor: context.bd.base, body: Ambient(child: body));
+        // The scaffold resizes for the keyboard (so a focused field scrolls into
+        // view); the ambient layer stays outside it so the background never jumps.
+        return Ambient(child: Scaffold(backgroundColor: Colors.transparent, body: body));
       },
     );
   }
@@ -82,6 +97,8 @@ class Shell extends StatefulWidget {
 
 class _ShellState extends State<Shell> {
   Tab _tab = Tab.calendar;
+  final Set<Tab> _visited = {Tab.calendar};
+  final Map<String, ScrollController> _scrollers = {};
   StreamSubscription<Uri>? _links;
 
   @override
@@ -93,6 +110,9 @@ class _ShellState extends State<Shell> {
   @override
   void dispose() {
     _links?.cancel();
+    for (final c in _scrollers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -121,116 +141,110 @@ class _ShellState extends State<Shell> {
     }
   }
 
+  String _slot(Tab t, bool guest) => t == Tab.calendar && guest ? 'landing' : t.name;
+
+  ScrollController _scroller(String slot) => _scrollers.putIfAbsent(slot, ScrollController.new);
+
+  /// Switch tabs; tapping the tab you're on scrolls it back to the top.
+  void _select(Tab t) {
+    if (t == _tab) {
+      final c = _scrollers[_slot(t, !auth.isAuthed)];
+      if (c != null && c.hasClients && c.positions.length == 1 && c.offset > 0) c.animateTo(0, duration: Motion.slow, curve: Motion.curve);
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _tab = t;
+      _visited.add(t);
+    });
+  }
+
+  Widget _screen(Tab t, bool guest) => switch (t) {
+        Tab.calendar => guest ? const LandingScreen() : CalendarScreen(onOpenNinkasi: () => _select(Tab.ninkasi)),
+        Tab.together => const TogetherScreen(),
+        Tab.ninkasi => const BartenderScreen(),
+        Tab.you => const YouScreen(),
+      };
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: auth,
       builder: (context, _) {
         final signedIn = auth.isAuthed;
+        final guest = !signedIn;
         final tabs = [Tab.calendar, if (signedIn && db != null) Tab.together, Tab.ninkasi, Tab.you];
         if (!tabs.contains(_tab)) _tab = Tab.calendar;
-        final guestHome = !signedIn && _tab == Tab.calendar;
 
+        // Every visited tab stays alive (scroll position, a half-typed message,
+        // the Ninkasi chat); only the current one animates. A different person
+        // signing in starts from a clean slate.
         return Stack(children: [
           Positioned.fill(
-            child: guestHome
-                ? const LandingScreen()
-                : _TabPage(
-                    key: ValueKey(_tab),
-                    tab: _tab,
-                    child: switch (_tab) {
-                      Tab.calendar => CalendarScreen(onOpenNinkasi: () => setState(() => _tab = Tab.ninkasi)),
-                      Tab.together => const TogetherScreen(),
-                      Tab.ninkasi => const BartenderScreen(),
-                      Tab.you => const YouScreen(),
-                    },
+            child: IndexedStack(
+              key: ValueKey(auth.meId ?? 'guest'),
+              index: tabs.indexOf(_tab),
+              children: [
+                for (final t in tabs)
+                  KeyedSubtree(
+                    key: ValueKey(_slot(t, guest)),
+                    child: TickerMode(
+                      enabled: t == _tab,
+                      child: _visited.contains(t) ? PrimaryScrollController(controller: _scroller(_slot(t, guest)), child: _screen(t, guest)) : const SizedBox.shrink(),
+                    ),
                   ),
+              ],
+            ),
           ),
-          Positioned(left: 0, right: 0, bottom: 0, child: _TabBar(tabs: tabs, current: _tab, onSelect: (t) => setState(() => _tab = t))),
+          Positioned(left: 0, right: 0, bottom: 0, child: _TabBarHost(tabs: tabs, current: _tab, onSelect: _select)),
         ]);
       },
     );
   }
 }
 
-/// A scrolling page with the TopBar above it (the Ninkasi chat manages its own scroll).
-class _TabPage extends StatelessWidget {
-  final Tab tab;
-  final Widget child;
-  const _TabPage({super.key, required this.tab, required this.child});
+/// Hides the tab bar while the keyboard is up, so it never covers a field. Kept
+/// apart from the shell so the pages don't rebuild when the keyboard moves.
+class _TabBarHost extends StatelessWidget {
+  final List<Tab> tabs;
+  final Tab current;
+  final ValueChanged<Tab> onSelect;
+  const _TabBarHost({required this.tabs, required this.current, required this.onSelect});
 
-  @override
-  Widget build(BuildContext context) {
-    final top = MediaQuery.of(context).padding.top;
-    final bottom = MediaQuery.of(context).padding.bottom;
-    final bar = TopBar(onCalendar: tab == Tab.calendar);
-    if (tab == Tab.ninkasi) {
-      return Padding(
-        padding: EdgeInsets.fromLTRB(16, top + 12, 16, 0),
-        child: Column(children: [bar, const SizedBox(height: 24), Expanded(child: child)]),
-      );
-    }
-    return ListView(
-      padding: EdgeInsets.fromLTRB(16, top + 12, 16, bottom + 110),
-      children: [bar, const SizedBox(height: 24), child],
-    );
-  }
-}
-
-class TopBar extends StatelessWidget {
-  final bool onCalendar;
-  const TopBar({super.key, this.onCalendar = false});
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    return Glass(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(children: [
-        Text('brewdiary', style: T.serif(bd, size: 20, italic: true, color: bd.muted)),
-        const Spacer(),
-        AccentPill('Discover', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DiscoverScreen()))),
-        if (onCalendar) ...[const SizedBox(width: 6), const _ViewToggle()],
-        const SizedBox(width: 2),
-        const ThemeToggleButton(),
-      ]),
-    );
-  }
-}
-
-/// Month ↔ year squircle.
-class _ViewToggle extends StatelessWidget {
-  const _ViewToggle();
-  @override
-  Widget build(BuildContext context) {
-    final bd = context.bd;
-    return ListenableBuilder(
-      listenable: CalendarViewStore.instance,
-      builder: (context, _) {
-        final year = CalendarViewStore.instance.view == CalendarView.year;
-        return Semantics(
-          label: year ? 'Show the month' : 'Show the whole year',
-          button: true,
-          child: GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              CalendarViewStore.instance.toggle();
-            },
-            child: Container(
-              width: 34,
-              height: 34,
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: bd.glass, borderRadius: BorderRadius.circular(11), border: Border.all(color: bd.glassBorder)),
-              child: GridView.count(
-                crossAxisCount: year ? 4 : 2,
-                mainAxisSpacing: 2,
-                crossAxisSpacing: 2,
-                physics: const NeverScrollableScrollPhysics(),
-                children: List.generate(year ? 16 : 4, (i) => Container(decoration: BoxDecoration(color: bd.ycell(1 + (i * 3) % 4), borderRadius: BorderRadius.circular(1.5)))),
+    final keyboard = KeyboardScope.isUp(context);
+    return IgnorePointer(
+      ignoring: keyboard,
+      child: AnimatedOpacity(
+        opacity: keyboard ? 0 : 1,
+        duration: Motion.fast,
+        child: Stack(alignment: Alignment.bottomCenter, clipBehavior: Clip.none, children: [
+          // A soft fade under the floating bar, so content scrolling beneath it
+          // recedes instead of competing with the tabs.
+          Positioned.fill(
+            top: -28,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [bd.base.withValues(alpha: 0), bd.base.withValues(alpha: bd.dark ? .72 : .6)],
+                  ),
+                ),
               ),
             ),
           ),
-        );
-      },
+          AnimatedSlide(
+            offset: keyboard ? const Offset(0, 1.4) : Offset.zero,
+            duration: Motion.med,
+            curve: Motion.curve,
+            child: _TabBar(tabs: tabs, current: current, onSelect: onSelect),
+          ),
+        ]),
+      ),
     );
   }
 }
@@ -242,41 +256,53 @@ class _TabBar extends StatelessWidget {
   const _TabBar({required this.tabs, required this.current, required this.onSelect});
 
   static const _labels = {Tab.calendar: 'Calendar', Tab.together: 'Together', Tab.ninkasi: 'Ninkasi', Tab.you: 'You'};
+  static const _icons = {
+    Tab.calendar: (Ph.calendarBlank, PhFill.calendarBlank),
+    Tab.together: (Ph.usersThree, PhFill.usersThree),
+    Tab.ninkasi: (Ph.martini, PhFill.martini),
+    Tab.you: (Ph.userCircle, PhFill.userCircle),
+  };
 
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
     final bottom = MediaQuery.of(context).padding.bottom;
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 8, 16, bottom > 0 ? bottom : 16),
+      padding: EdgeInsets.fromLTRB(S.l, 0, S.l, bottom > 0 ? bottom : S.m),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(rTile),
+        borderRadius: BorderRadius.circular(rTile + 4),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
           child: Container(
-            decoration: BoxDecoration(color: bd.glassStrong, borderRadius: BorderRadius.circular(rTile), border: Border.all(color: bd.glassBorder)),
+            height: 64,
+            decoration: BoxDecoration(
+              color: bd.dark ? const Color(0xB31A1B22) : const Color(0xCCF7F4FA),
+              borderRadius: BorderRadius.circular(rTile + 4),
+              border: Border.all(color: bd.glassBorder, width: .8),
+            ),
             child: Row(children: [
               for (final t in tabs)
                 Expanded(
                   child: Semantics(
+                    key: ValueKey('tab-${t.name}'),
                     selected: t == current,
                     button: true,
+                    label: _labels[t],
+                    excludeSemantics: true,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () {
-                        HapticFeedback.selectionClick();
+                        if (t != current) HapticFeedback.selectionClick();
                         onSelect(t);
                       },
-                      child: SizedBox(
-                        height: 52,
-                        child: Stack(alignment: Alignment.center, children: [
-                          if (t == current) Positioned(top: 4, child: Container(width: 32, height: 4, decoration: BoxDecoration(color: bd.accent, borderRadius: BorderRadius.circular(99)))),
-                          Text(
-                            _labels[t]!.toUpperCase(),
-                            style: T.sans(bd, size: 11, spacing: 11 * .14, weight: t == current ? FontWeight.w500 : FontWeight.w400, color: t == current ? bd.ink : bd.faint),
-                          ),
-                        ]),
-                      ),
+                      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        AnimatedSwitcher(
+                          duration: Motion.fast,
+                          child: Icon(t == current ? _icons[t]!.$2 : _icons[t]!.$1, key: ValueKey(t == current), size: 24, color: t == current ? bd.accentText : bd.faint),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(_labels[t]!, maxLines: 1, style: T.sans(bd, size: 11, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint)),
+                      ]),
                     ),
                   ),
                 ),

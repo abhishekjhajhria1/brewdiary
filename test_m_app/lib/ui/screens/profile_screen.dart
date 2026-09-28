@@ -7,7 +7,7 @@ import '../../data/safety.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/mosaic.dart';
-import '../widgets/sub_page.dart';
+import '../widgets/page.dart';
 
 class PublicProfileScreen extends StatelessWidget {
   final String handle;

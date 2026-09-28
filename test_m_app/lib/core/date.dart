@@ -10,7 +10,12 @@ DateTime parseKey(String key) {
   return DateTime(p[0], p[1], p[2]);
 }
 
-String todayKey() => toKey(DateTime.now());
+/// The app's "now". Everything that shows or compares dates asks this, so tests
+/// can pin the day and screenshots don't drift with the calendar.
+DateTime Function() appClock = DateTime.now;
+DateTime appNow() => appClock();
+
+String todayKey() => toKey(appNow());
 
 /// Calendar-day arithmetic (DST-safe: builds a new local date rather than adding hours).
 DateTime addDays(DateTime d, int n) => DateTime(d.year, d.month, d.day + n, d.hour, d.minute, d.second);
@@ -46,7 +51,7 @@ List<GridDay> monthGrid(int year, int month) {
   final lead = mondayIndex(first);
   final start = addDays(first, -lead);
   final todayK = todayKey();
-  final now = DateTime.now();
+  final now = appNow();
   final todayDate = DateTime(now.year, now.month, now.day);
 
   return List.generate(42, (i) {
@@ -65,6 +70,12 @@ List<GridDay> monthGrid(int year, int month) {
 String formatDayLong(String key) {
   final d = parseKey(key);
   return '${monthNames[d.month - 1]} ${d.day}';
+}
+
+/// "September 12", or "September 12, 2025" when it isn't this year.
+String formatDayLongYear(String key) {
+  final d = parseKey(key);
+  return d.year == appNow().year ? formatDayLong(key) : '${formatDayLong(key)}, ${d.year}';
 }
 
 String timeOfDayLabel(String iso) {

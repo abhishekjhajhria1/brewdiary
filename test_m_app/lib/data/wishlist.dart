@@ -2,6 +2,7 @@
 // (wishlist_items) when signed in, optimistic writes, local→remote on sign-in.
 import 'package:flutter/foundation.dart';
 
+import '../core/date.dart';
 import 'auth.dart';
 import 'base.dart';
 
@@ -92,7 +93,7 @@ class WishlistStore extends ChangeNotifier {
     final d = drink.trim();
     if (d.isEmpty) return;
     if (_cache.any((w) => !w.done && w.drink.toLowerCase() == d.toLowerCase())) return;
-    final item = WishItem(id: newId(), drink: d, createdAt: DateTime.now().toUtc().toIso8601String());
+    final item = WishItem(id: newId(), drink: d, createdAt: appNow().toUtc().toIso8601String());
     _set([item, ..._cache]);
     final c = db;
     if (_remote && _user != null && c != null) {
