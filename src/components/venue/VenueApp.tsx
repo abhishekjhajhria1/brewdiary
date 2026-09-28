@@ -50,6 +50,7 @@ import { peakDays, pctChange } from "@/lib/venueAdvisor";
 import { requestLocationGeohash } from "@/lib/trends";
 import { VenueAdvisor } from "./VenueAdvisor";
 import { GuestBook } from "./GuestBook";
+import { VenueMenu } from "./VenueMenu";
 
 // Written for a BAR OWNER, not for us. They care about three things: do people come
 // back, does tonight feel good, and what does it cost me. Everything below answers
@@ -475,7 +476,7 @@ function VenueCard({ venue, meId, open, onToggle }: { venue: Venue; meId: string
 // and vibe controls — and everything administrative (perks, team, setup) is a tab
 // away rather than a scroll away. A bartender should never have to walk past the
 // "delete venue" button to record someone's tab.
-type Section = "tonight" | "perks" | "team" | "insights" | "guests" | "setup";
+type Section = "tonight" | "menu" | "perks" | "team" | "insights" | "guests" | "setup";
 
 function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; canManage: boolean }) {
   const { staff } = useVenueStaff(venue.id);
@@ -491,6 +492,7 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
   const sections: { id: Section; label: string }[] = canManage
     ? [
         { id: "tonight", label: store ? "Till" : "Tonight" },
+        { id: "menu", label: store ? "Shelf" : "Menu" },
         { id: "perks", label: store ? "Card" : "Perks" },
         { id: "insights", label: "Insights" },
         { id: "guests", label: "Guests" },
@@ -508,7 +510,7 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
       )}
 
       {sections.length > 1 && (
-        <div className="glass mb-4 grid grid-cols-3 gap-1 rounded-ctl p-1">
+        <div className="glass mb-4 grid grid-cols-4 gap-1 rounded-ctl p-1">
           {sections.map((s) => (
             <button
               key={s.id}
@@ -540,6 +542,8 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
           <VenuePerkEditor venue={venue} />
         </>
       )}
+
+      {section === "menu" && canManage && <VenueMenu venue={venue} />}
 
       {section === "insights" && canManage && <Insights venue={venue} />}
 

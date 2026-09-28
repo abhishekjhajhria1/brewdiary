@@ -98,6 +98,7 @@ states that break layouts: scrolled, keyboard up, small phone, large text, table
 | Handle re-roll, trust standing, profile privacy, blocks, venue notes | ✅ |
 | Data export + real account deletion | ✅ |
 | Public profiles (`/u/<handle>`), invite links (`/p/<code>`) | ✅ (opened as deep links) |
+| **Table menus** (new, web + app) | ✅ tap the venue's NFC tag (or scan its QR) → the menu opens in the app, with picks from your diary worked out on the phone and "Log it" per drink. Venues build the menu and write tags from the bar dashboard (Menu tab). Needs migration `042_menus.sql` |
 | **Nightly reminder** | ✅ **real scheduled notifications** (the website's toggle never fired one): skips evenings you've already logged, and tapping one opens today's log sheet |
 | Small moments (mobile only) | ✅ the day you log blooms; an empty diary's today beckons; a quiet sheet at 7 / 30 / 100 / 365 nights in a row (dry nights count); Ninkasi's typing dots; a plain "couldn't reach brewdiary" with a retry instead of a misleading empty list |
 | Live-camera presence check | ❌ not ported yet (MediaPipe on the web; needs ML Kit on mobile) |
@@ -112,11 +113,15 @@ states that break layouts: scrolled, keyboard up, small phone, large text, table
 2. **Deep links** (optional but nice — invite links open the app):
    - Android: host `https://bwdy.site/.well-known/assetlinks.json` with your release
      key's SHA-256 (`keytool -list -v -keystore upload-keystore.jks`), package
-     `site.bwdy.brewdiary`.
+     `site.bwdy.brewdiary`. Include `/m/*` (table menus) with `/p/*`, `/u/*`, `/party/*`.
    - iOS: add the *Associated Domains* capability (`applinks:bwdy.site`) in Xcode and
-     host `https://bwdy.site/.well-known/apple-app-site-association`.
+     host `https://bwdy.site/.well-known/apple-app-site-association` (paths `/p/*`, `/u/*`,
+     `/party/*`, `/m/*`). iPhones read NFC tags in the background (XS and newer), so a
+     tag opens the menu in the app once this is set up; until then it opens the website.
 3. **Supabase Auth → URL configuration:** keep `https://bwdy.site/reset` allow-listed
    (password reset emails open the website's reset page).
+4. **Run `supabase/042_menus.sql`** (the maintainer runs migrations), then
+   `npm run db:audit` — it checks a menu can never carry an offer or appear in Discover.
 
 ## Layout
 

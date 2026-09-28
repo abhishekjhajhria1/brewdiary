@@ -19,6 +19,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
 import 'bartender_screen.dart';
+import 'menu_screen.dart';
 
 class DiscoverScreen extends StatelessWidget {
   /// Off in widget tests, where the sensor plugin doesn't exist.
@@ -54,6 +55,8 @@ class DiscoverScreen extends StatelessWidget {
             Icon(Ph.caretRight, size: 16, color: bd.faint),
           ]),
         ),
+        const SizedBox(height: S.m),
+        const TableMenuCard(),
         const SectionHeader('Near you'),
         const _DiscoverLive(),
         const _VenuesNearby(),

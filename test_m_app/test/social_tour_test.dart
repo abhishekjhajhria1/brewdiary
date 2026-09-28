@@ -10,6 +10,7 @@ import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/data/friends.dart';
 import 'package:brewdiary/data/parties.dart';
 import 'package:brewdiary/data/plans.dart';
+import 'package:brewdiary/ui/screens/menu_screen.dart';
 import 'package:brewdiary/ui/screens/party_screens.dart';
 import 'package:brewdiary/ui/screens/plans_section.dart';
 import 'package:brewdiary/ui/screens/split_screen.dart';
@@ -203,6 +204,20 @@ void main() {
     showScoreCard(navigatorKey.currentContext!, const Score(name: 'you', sparks: 9, vibe: 2, context: 'Friday tasting', rank: 2, of: 3));
     await t.pumpAndSettle();
     await _shot(t, 's19_score_card');
+  });
+
+  _tourTest('table menu (sample data)', (t) async {
+    await _boot(t);
+    await _push(t, MenuView(menu: sampleMenu()));
+    await _shot(t, 'o1_menu');
+    await _scroll(t, 600);
+    await _shot(t, 'o2_menu_scrolled');
+    navigatorKey.currentState!.pop();
+    await t.pumpAndSettle();
+    await _push(t, const Scaffold(body: SubPage(title: 'Discover', child: TableMenuCard())));
+    await t.tap(find.byType(TableMenuCard));
+    await t.pumpAndSettle();
+    await _shot(t, 'o3_table_sheet');
   });
 
   _tourTest('light theme social', (t) async {

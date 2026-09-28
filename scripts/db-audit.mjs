@@ -402,6 +402,27 @@ try {
   ok("set_guest_note(): gated on has_venue_interaction + is_venue_staff",
     sgDef && /has_venue_interaction/.test(sgDef.d) && /is_venue_staff/.test(sgDef.d));
 
+  // ── menus (042): the paper menu on the table, never an offer ──────────────
+  const vmDef = await one(`
+    select pg_get_functiondef(p.oid) d from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname='public' and p.proname='venue_menu'`);
+  if (vmDef) {
+    ok("venue_menu(): serves VERIFIED venues only", /v\.verified/.test(vmDef.d));
+    ok("venue_menu(): never touches the diary or the perks (a menu is not an offer)",
+      !/\bentries\b/.test(vmDef.d) && !/venue_perks/.test(vmDef.d));
+    const menuCols = (await all(
+      `select column_name from information_schema.columns where table_schema='public' and table_name='venue_menu_items'`))
+      .map((r) => r.column_name);
+    ok("venue_menu_items: no discount / offer / happy-hour column",
+      !menuCols.some((c) => /discount|offer|promo|happy|deal/.test(c)), `— ${menuCols.join(", ")}`);
+    const dvDef = await one(`select pg_get_functiondef('public.discover_venues(text,int)'::regprocedure) d`);
+    ok("discover_venues(): lists the bar, never its menu (no join to venue_menu_items)",
+      dvDef && !/venue_menu/.test(dvDef.d));
+  } else {
+    console.log("  ~ venue_menu (042) not applied — skipping");
+  }
+
   console.log("\n── orphans / drift ──────────────────────────────────");
   const badCurrency = await one(`
     select count(*)::int n from public.venues v

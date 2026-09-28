@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:brewdiary/app.dart';
 import 'package:brewdiary/core/date.dart';
+import 'package:brewdiary/core/menus.dart';
 import 'package:brewdiary/data/auth.dart';
 import 'package:brewdiary/data/base.dart';
 import 'package:brewdiary/data/entries.dart';
@@ -88,3 +89,28 @@ Future<void> bootApp(
     await t.pumpAndSettle();
   }
 }
+
+/// A sample venue menu (the cloud isn't there in tests).
+Menu sampleMenu() => groupMenu([
+      for (final r in [
+        ('m1', 'Cocktails', 'Negroni', 'Gin, Campari, vermouth.', 450, 'cocktail', false),
+        ('m2', 'Cocktails', 'Boulevardier', 'Bourbon in place of gin.', 480, 'cocktail', false),
+        ('m3', 'Cocktails', 'Garden Spritz', 'Cucumber, elderflower, soda.', 320, 'soft', true),
+        ('m4', 'Beer', 'Hazy IPA', 'Local, on tap.', 380, 'beer', false),
+        ('m5', 'Coffee', 'Flat white', null, 220, 'coffee', false),
+        ('m6', 'Food', 'Masala fries', null, 260, 'food', false),
+      ])
+        {
+          'venue_name': 'Soka',
+          'venue_city': 'Bandra, Mumbai',
+          'venue_kind': 'bar',
+          'currency': 'INR',
+          'item_id': r.$1,
+          'section': r.$2,
+          'name': r.$3,
+          'description': r.$4,
+          'price': r.$5,
+          'kind': r.$6,
+          'no_alcohol': r.$7,
+        },
+    ])!;

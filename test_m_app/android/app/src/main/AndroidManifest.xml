@@ -7,6 +7,10 @@
     <!-- The nightly reminder: a local notification, re-armed after a reboot. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- Table menus: tapping a venue's NFC tag opens its menu. Optional hardware —
+         phones without NFC scan the QR instead. -->
+    <uses-permission android:name="android.permission.NFC"/>
+    <uses-feature android:name="android.hardware.nfc" android:required="false"/>
 
     <application
         android:label="brewdiary"
@@ -43,6 +47,15 @@
                 <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/p/"/>
                 <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/u/"/>
                 <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/party/"/>
+                <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/m/"/>
+            </intent-filter>
+            <!-- A venue's NFC tag holds https://bwdy.site/m/<slug>. Claiming it here
+                 sends the tap straight to the app (open or not) instead of a
+                 browser chooser; app_links hands the URL to the router. -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/m/"/>
             </intent-filter>
         </activity>
         <!-- flutter_local_notifications: fire scheduled reminders, and re-arm them after reboot. -->

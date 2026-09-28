@@ -31,6 +31,7 @@ abstract final class Ph {
   static const calendarCheck = IconData(0xe712, fontFamily: 'Phosphor');
   static const calendarPlus = IconData(0xe714, fontFamily: 'Phosphor');
   static const camera = IconData(0xe10e, fontFamily: 'Phosphor');
+  static const carProfile = IconData(0xe8cc, fontFamily: 'Phosphor');
   static const caretDown = IconData(0xe136, fontFamily: 'Phosphor');
   static const caretLeft = IconData(0xe138, fontFamily: 'Phosphor');
   static const caretRight = IconData(0xe13a, fontFamily: 'Phosphor');
@@ -51,6 +52,7 @@ abstract final class Ph {
   static const coffee = IconData(0xe1c2, fontFamily: 'Phosphor');
   static const compass = IconData(0xe1c8, fontFamily: 'Phosphor');
   static const confetti = IconData(0xe81a, fontFamily: 'Phosphor');
+  static const contactlessPayment = IconData(0xed42, fontFamily: 'Phosphor');
   static const copy = IconData(0xe1ca, fontFamily: 'Phosphor');
   static const crown = IconData(0xe614, fontFamily: 'Phosphor');
   static const dotsThree = IconData(0xe1fe, fontFamily: 'Phosphor');
@@ -79,6 +81,7 @@ abstract final class Ph {
   static const hash = IconData(0xe2a2, fontFamily: 'Phosphor');
   static const heart = IconData(0xe2a8, fontFamily: 'Phosphor');
   static const house = IconData(0xe2c2, fontFamily: 'Phosphor');
+  static const identificationBadge = IconData(0xe6f6, fontFamily: 'Phosphor');
   static const identificationCard = IconData(0xe2c8, fontFamily: 'Phosphor');
   static const image = IconData(0xe2ca, fontFamily: 'Phosphor');
   static const images = IconData(0xe836, fontFamily: 'Phosphor');
@@ -107,6 +110,8 @@ abstract final class Ph {
   static const notebook = IconData(0xe34e, fontFamily: 'Phosphor');
   static const paperPlaneTilt = IconData(0xe398, fontFamily: 'Phosphor');
   static const pencilSimple = IconData(0xe3b4, fontFamily: 'Phosphor');
+  static const personSimpleWalk = IconData(0xe73a, fontFamily: 'Phosphor');
+  static const phone = IconData(0xe3b8, fontFamily: 'Phosphor');
   static const pintGlass = IconData(0xedd0, fontFamily: 'Phosphor');
   static const plus = IconData(0xe3d4, fontFamily: 'Phosphor');
   static const plusCircle = IconData(0xe3d6, fontFamily: 'Phosphor');
@@ -131,6 +136,7 @@ abstract final class Ph {
   static const target = IconData(0xe47c, fontFamily: 'Phosphor');
   static const teaBag = IconData(0xe8e6, fontFamily: 'Phosphor');
   static const ticket = IconData(0xe490, fontFamily: 'Phosphor');
+  static const timer = IconData(0xe492, fontFamily: 'Phosphor');
   static const trash = IconData(0xe4a6, fontFamily: 'Phosphor');
   static const trophy = IconData(0xe67e, fontFamily: 'Phosphor');
   static const uploadSimple = IconData(0xe4c0, fontFamily: 'Phosphor');

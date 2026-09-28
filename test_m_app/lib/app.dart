@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'core/date.dart';
+import 'core/menus.dart';
 import 'data/auth.dart';
 import 'data/base.dart';
 import 'data/reminder.dart';
@@ -19,6 +20,7 @@ import 'data/settings.dart';
 import 'ui/screens/bartender_screen.dart';
 import 'ui/screens/calendar_screen.dart';
 import 'ui/screens/landing_screen.dart';
+import 'ui/screens/menu_screen.dart';
 import 'ui/screens/party_screens.dart';
 import 'ui/screens/profile_screen.dart';
 import 'ui/screens/together_intro.dart';
@@ -123,8 +125,9 @@ class _ShellState extends State<Shell> {
     super.dispose();
   }
 
-  /// Invite links (`bwdy.site/p/<code>`), public profiles (`/u/<handle>`) and
-  /// party pages (`/party/<id>`) open straight into the app when installed.
+  /// Invite links (`bwdy.site/p/<code>`), public profiles (`/u/<handle>`), party
+  /// pages (`/party/<id>`) and table menus (`/m/<slug>`, from an NFC tag or QR)
+  /// open straight into the app when installed.
   void _listenForLinks() {
     final links = AppLinks();
     links.getInitialLink().then((u) {
@@ -155,6 +158,10 @@ class _ShellState extends State<Shell> {
         nav.push(MaterialPageRoute(builder: (_) => PublicProfileScreen(handle: seg[1])));
       case 'party':
         nav.push(MaterialPageRoute(builder: (_) => PartyRoomScreen(partyId: seg[1])));
+      case 'm':
+        // A table's NFC tag or QR (bwdy.site/m/<slug>) — the venue's menu.
+        final slug = menuSlugFrom(uri);
+        if (slug != null) nav.push(MaterialPageRoute(builder: (_) => MenuScreen(slug: slug)));
     }
   }
 
