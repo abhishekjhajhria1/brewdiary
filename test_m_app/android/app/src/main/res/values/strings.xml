@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mosaic_widget_label">This month on brewdiary</string>
+    <string name="mosaic_widget_description">This month\'s mosaic, darker the more you logged. Tap to open your diary.</string>
+    <string name="mosaic_widget_empty">Open brewdiary once to draw your month here.</string>
+</resources>

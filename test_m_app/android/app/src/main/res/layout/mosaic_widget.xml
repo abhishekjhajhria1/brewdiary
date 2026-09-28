@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The home-screen widget: the month card Flutter draws, or a nudge to open the app once. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mosaic_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="4dp">
+
+    <ImageView
+        android:id="@+id/mosaic_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:adjustViewBounds="true"
+        android:contentDescription="@string/mosaic_widget_label"
+        android:scaleType="fitCenter" />
+
+    <TextView
+        android:id="@+id/mosaic_empty"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/mosaic_widget_bg"
+        android:gravity="center"
+        android:padding="16dp"
+        android:text="@string/mosaic_widget_empty"
+        android:textColor="#F0EBE2"
+        android:textSize="14sp"
+        android:visibility="gone" />
+</FrameLayout>

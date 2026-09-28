@@ -58,6 +58,13 @@
                 <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/m/"/>
             </intent-filter>
         </activity>
+        <!-- The home-screen widget: this month's mosaic (lib/ui/home_widget.dart draws it). -->
+        <receiver android:name=".MosaicWidget" android:exported="false" android:label="@string/mosaic_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/mosaic_widget_info"/>
+        </receiver>
         <!-- flutter_local_notifications: fire scheduled reminders, and re-arm them after reboot. -->
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">

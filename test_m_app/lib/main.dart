@@ -12,6 +12,7 @@ import 'data/base.dart';
 import 'data/entries.dart';
 import 'data/reminder.dart';
 import 'data/wishlist.dart';
+import 'ui/home_widget.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +25,7 @@ Future<void> main() async {
   entryStore.wire();
   wishlist.wire();
   ReminderStore.instance.restore();
+  HomeWidget.wire();
 
   // Phones stay upright; foldables and tablets (600dp+ on the short side) rotate freely.
   final view = WidgetsBinding.instance.platformDispatcher.views.first;
