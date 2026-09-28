@@ -225,6 +225,7 @@ class _VenuesNearby extends StatelessWidget {
   Widget build(BuildContext context) {
     final bd = context.bd;
     return Loader<List<DiscoverVenue>>(
+      retry: true,
       load: () => DiscoverApi.venues(PlaceStore.instance.country),
       builder: (context, venues, loading) {
         if (venues == null || venues.isEmpty) return const SizedBox.shrink();

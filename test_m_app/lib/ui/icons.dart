@@ -47,6 +47,7 @@ abstract final class Ph {
   static const circle = IconData(0xe18a, fontFamily: 'Phosphor');
   static const clock = IconData(0xe19a, fontFamily: 'Phosphor');
   static const clockCounterClockwise = IconData(0xe1a0, fontFamily: 'Phosphor');
+  static const cloudSlash = IconData(0xe1b6, fontFamily: 'Phosphor');
   static const coffee = IconData(0xe1c2, fontFamily: 'Phosphor');
   static const compass = IconData(0xe1c8, fontFamily: 'Phosphor');
   static const confetti = IconData(0xe81a, fontFamily: 'Phosphor');

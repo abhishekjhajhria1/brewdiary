@@ -37,6 +37,7 @@ class PartyRoomScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Loader<PartyDetail>(
+      failed: (context, retry) => SubPage(title: 'Party', child: LoadError(onRetry: retry)),
       refresh: partiesRev,
       load: () => PartiesApi.detail(partyId),
       builder: (context, d, loading) {

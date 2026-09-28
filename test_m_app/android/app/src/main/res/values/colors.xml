@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FAF6EE</color>
+    <!-- The dark theme's base (lib/ui/theme.dart BD.darkTokens.base). -->
+    <color name="brewdiary_night">#0B0C12</color>
 </resources>

@@ -55,6 +55,7 @@ Future<void> bootApp(
   bool age = true,
   bool signedIn = false,
   Map<String, Object> prefs = const {},
+  bool settle = true,
 }) async {
   t.view.physicalSize = size * dpr;
   t.view.devicePixelRatio = dpr;
@@ -75,7 +76,12 @@ Future<void> bootApp(
   entryStore.wire();
   wishlist.wire();
   await t.pumpWidget(const BrewdiaryApp());
-  await t.pumpAndSettle();
+  // `settle: false` stops mid-motion (for screenshots of an animation in flight).
+  if (settle) {
+    await t.pumpAndSettle();
+  } else {
+    await t.pump();
+  }
   if (signedIn) {
     entryStore.reseed();
     await auth.signUp('a@b.c', 'secret1', 'Sekhi');

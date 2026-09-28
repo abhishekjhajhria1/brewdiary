@@ -29,6 +29,7 @@ class PartiesSection extends StatelessWidget {
       ]),
       const SizedBox(height: S.l),
       Loader<List<Party>>(
+        retry: true,
         refresh: partiesRev,
         load: PartiesApi.mine,
         builder: (context, parties, loading) {

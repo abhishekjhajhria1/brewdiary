@@ -8,6 +8,7 @@ import 'package:brewdiary/app.dart';
 import 'package:brewdiary/core/date.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/data/settings.dart';
+import 'package:brewdiary/ui/screens/together_intro.dart';
 import 'package:brewdiary/ui/screens/you_screen.dart';
 import 'package:brewdiary/ui/widgets/log_sheet.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,7 @@ void main() {
   testWidgets('guest can log a drink on the landing calendar without an account', (tester) async {
     await bootApp(tester, prefs: _placed);
     expect(find.text('Every night\ngets a square.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tab-together')), findsOneWidget, reason: 'Together is in the bar for guests too');
     await expectLater(find.byType(BrewdiaryApp), matchesGoldenFile('goldens/02_landing.png'));
 
     // Open today's log sheet (the same call a tap on the square makes).
@@ -67,17 +69,25 @@ void main() {
     expect(find.text('night streak'.toUpperCase()), findsOneWidget);
     await expectLater(find.byType(BrewdiaryApp), matchesGoldenFile('goldens/04_calendar.png'));
 
-    await tester.tap(find.text('Year'));
+    await tester.tap(find.byTooltip('Show the year'));
     await tester.pumpAndSettle();
     expect(CalendarViewStore.instance.view, CalendarView.year);
     await expectLater(find.byType(BrewdiaryApp), matchesGoldenFile('goldens/05_year.png'));
-    await tester.tap(find.text('Month'));
+    await tester.tap(find.byTooltip('Show the month'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('tab-you')));
     await tester.pumpAndSettle();
     expect(find.text('Your year'), findsOneWidget);
     await expectLater(find.byType(BrewdiaryApp), matchesGoldenFile('goldens/06_you.png'));
+
+    // Together is always in the bar; without the cloud it's the introduction.
+    await tester.tap(find.byKey(const ValueKey('tab-together')));
+    await tester.pumpAndSettle();
+    expect(find.text('What lives here'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text("This build isn't connected yet"), 300,
+        scrollable: find.descendant(of: find.byType(TogetherIntro), matching: find.byType(Scrollable)).first);
+    expect(find.text("This build isn't connected yet"), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tab-ninkasi')));
     await tester.pumpAndSettle();

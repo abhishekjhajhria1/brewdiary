@@ -25,6 +25,7 @@ class SplitScreen extends StatelessWidget {
     final bd = context.bd;
     final me = auth.profile;
     return Loader<(List<SocialProfile>, ({List<Expense> expenses, List<Settlement> settlements}))>(
+      failed: (context, retry) => SubPage(title: 'Split', child: LoadError(onRetry: retry)),
       refresh: Listenable.merge([splitRev, friendsRev]),
       load: () async => (await FriendsApi.friends(), await SplitApi.load()),
       builder: (context, data, loading) {

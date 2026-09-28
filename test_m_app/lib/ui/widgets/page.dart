@@ -14,6 +14,15 @@ import 'common.dart';
 /// Height of the pinned top bar, excluding the status bar.
 const kTopBarHeight = 52.0;
 
+/// The widest a page's content grows (foldables, tablets); beyond it, it centres.
+const kContentMaxWidth = 640.0;
+
+/// Side padding that keeps content at most [kContentMaxWidth] wide, centred.
+double sideGutter(BuildContext context) {
+  final w = MediaQuery.sizeOf(context).width;
+  return w - 2 * S.gutter > kContentMaxWidth ? (w - kContentMaxWidth) / 2 : S.gutter;
+}
+
 /// Bottom padding that keeps the last item clear of the tab bar (or the home
 /// indicator on pushed pages).
 double bottomClearance(BuildContext context, {required bool tabBar}) {
@@ -74,6 +83,7 @@ class _ScrollPageState extends State<ScrollPage> {
     final mq = MediaQuery.of(context);
     final top = mq.padding.top;
     final hasLarge = widget.title != null;
+    final side = sideGutter(context);
 
     Widget scroll = CustomScrollView(
       controller: widget.controller,
@@ -82,7 +92,7 @@ class _ScrollPageState extends State<ScrollPage> {
       slivers: [
         SliverToBoxAdapter(child: SizedBox(height: top + kTopBarHeight)),
         SliverPadding(
-          padding: EdgeInsets.fromLTRB(S.gutter, hasLarge ? S.s : S.xs, S.gutter, bottomClearance(context, tabBar: widget.tabBar)),
+          padding: EdgeInsets.fromLTRB(side, hasLarge ? S.s : S.xs, side, bottomClearance(context, tabBar: widget.tabBar)),
           sliver: SliverList.list(children: [
             if (hasLarge) ...[
               Semantics(header: true, child: Text(widget.title!, style: T.largeTitle(bd), maxLines: 2, overflow: TextOverflow.ellipsis)),
@@ -133,10 +143,11 @@ class TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final bd = context.bd;
     final top = MediaQuery.of(context).padding.top;
+    final side = sideGutter(context);
     final bar = AnimatedContainer(
       duration: Motion.med,
       height: top + kTopBarHeight,
-      padding: EdgeInsets.only(top: top, left: back ? 4 : S.gutter, right: 6),
+      padding: EdgeInsets.only(top: top, left: back ? side - S.l : side, right: side - 14),
       decoration: BoxDecoration(
         color: frosted ? bd.base.withValues(alpha: bd.dark ? .72 : .70) : bd.base.withValues(alpha: 0),
         border: Border(bottom: BorderSide(color: frosted ? bd.line : Colors.transparent, width: .8)),

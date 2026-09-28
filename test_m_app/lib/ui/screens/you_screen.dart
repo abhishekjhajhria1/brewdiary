@@ -16,7 +16,7 @@ import '../../data/settings.dart';
 import '../../data/wishlist.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
-import '../widgets/log_sheet.dart';
+import '../widgets/moments.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
 import '../widgets/pickers.dart';
@@ -43,10 +43,7 @@ class _YouScreenState extends State<YouScreen> {
     super.dispose();
   }
 
-  void _openDay(String dateKey) {
-    final entries = entryStore.entries;
-    showLogSheet(context, dateKey: dateKey, recentDrinks: recentDrinks(entries), recentMoods: recentMoods(entries));
-  }
+  void _openDay(String dateKey) => openLog(context, dateKey, yearLink: false);
 
   @override
   Widget build(BuildContext context) {

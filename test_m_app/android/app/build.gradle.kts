@@ -20,7 +20,7 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        // flutter_local_notifications needs java.time on older Androids.
+        // flutter_local_notifications is built against desugared java.time.
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -28,10 +28,10 @@ android {
 
     defaultConfig {
         applicationId = "site.bwdy.brewdiary"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        // supabase_flutter / geolocator / notifications all support 23+.
-        minSdk = maxOf(flutter.minSdkVersion, 23)
+        // Built for phones from the last few years: Android 12 (API 31) and up. That
+        // is older than any phone launched since 2023, and it means the system splash
+        // screen, the photo picker, predictive back and 120 Hz are always there.
+        minSdk = maxOf(flutter.minSdkVersion, 31)
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)

@@ -13,7 +13,7 @@ import '../../data/plans.dart';
 import '../../data/settings.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
-import '../widgets/log_sheet.dart';
+import '../widgets/moments.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
 import 'discover_screen.dart';
@@ -45,16 +45,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
   }
 
-  void _open(String key, Map<String, PlanDay> planDays) {
-    final entries = entryStore.entries;
-    showLogSheet(
-      context,
-      dateKey: key,
-      plans: planDays[key]?.items ?? const [],
-      recentDrinks: recentDrinks(entries),
-      recentMoods: recentMoods(entries),
-    );
-  }
+  void _open(String key, Map<String, PlanDay> planDays) => openLog(context, key, plans: planDays[key]?.items ?? const []);
 
   Future<void> _refresh() async {
     plansRev.bump();
@@ -66,20 +57,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return ScrollPage(
       barTitle: const Wordmark(),
       actions: [
-        Watch(
-          to: [CalendarViewStore.instance],
-          builder: (context) => Segmented<CalendarView>(
-            compact: true,
-            options: const [(CalendarView.month, 'Month'), (CalendarView.year, 'Year')],
-            value: CalendarViewStore.instance.view,
-            onChanged: (_) {
-              CalendarViewStore.instance.toggle();
-              final c = PrimaryScrollController.maybeOf(context);
-              if (c != null && c.hasClients && c.positions.length == 1) c.jumpTo(0);
-            },
-          ),
-        ),
-        IconBtn(Ph.compass, tooltip: 'Discover', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DiscoverScreen()))),
+        AccentPill('Discover', icon: Ph.compass, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DiscoverScreen()))),
+        const SizedBox(width: S.xs),
+        ViewSquircle(onToggled: () {
+          final c = PrimaryScrollController.maybeOf(context);
+          if (c != null && c.hasClients && c.positions.length == 1) c.jumpTo(0);
+        }),
       ],
       onRefresh: _refresh,
       children: [
@@ -129,6 +112,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           onNext: () => _step(1),
           canNext: canNext,
           onToday: onThisMonth ? null : _thisMonth,
+          beckonToday: entries.isEmpty,
         )
       else
         YearMosaic(year: now.year, counts: counts, onSelect: (k) => _open(k, planDays)),

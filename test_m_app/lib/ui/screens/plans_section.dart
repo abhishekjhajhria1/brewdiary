@@ -111,6 +111,7 @@ class _ComingUp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Loader<List<Plan>>(
+      retry: true,
       refresh: plansRev,
       load: PlansApi.upcoming,
       builder: (context, plans, loading) {
@@ -182,6 +183,7 @@ class _PlanCardState extends State<PlanCard> {
         actions = [_status(bd, 'Full')];
       } else {
         actions = [
+          _status(bd, "You're invited"),
           TextAction("Can't make it", onTap: _busy ? null : () => _run(() => PlansApi.respondInvite(p.id, false))),
           BdButton('Going', expand: false, height: 40, busy: _busy, onTap: () => _run(() => PlansApi.respondInvite(p.id, true))),
         ];
@@ -291,6 +293,7 @@ class _Mine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Loader<List<MyPlan>>(
+      retry: true,
       refresh: plansRev,
       load: PlansApi.mine,
       builder: (context, plans, loading) {
@@ -367,7 +370,11 @@ class _MyPlanCardState extends State<MyPlanCard> {
           if (isPrivate && !cancelled) Padding(padding: const EdgeInsets.only(top: S.m, right: S.m), child: Text('Only you can see this — a quiet note on your calendar.', style: T.caption(bd))),
           if (isInvite && !cancelled) ...[
             const SizedBox(height: S.xs),
-            _Disclosure(label: 'Guests', open: _openGuests, onTap: () => setState(() => _openGuests = !_openGuests)),
+            Loader<List<({String userId, String name, String handle})>>(
+              refresh: plansRev,
+              load: () => PlansApi.invitees(p.id),
+              builder: (context, inv, _) => _Disclosure(label: inv == null || inv.isEmpty ? 'Guests' : 'Guests · ${inv.length}', open: _openGuests, onTap: () => setState(() => _openGuests = !_openGuests)),
+            ),
             if (_openGuests) Padding(padding: const EdgeInsets.only(right: S.m, bottom: S.s), child: _Guests(planId: p.id)),
           ],
           if (!cancelled && !isPrivate) ...[

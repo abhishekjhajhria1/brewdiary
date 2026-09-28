@@ -30,6 +30,7 @@ class CirclesSection extends StatelessWidget {
       ]),
       const SizedBox(height: S.l),
       Loader<List<Circle>>(
+        retry: true,
         refresh: circlesRev,
         load: CirclesApi.mine,
         builder: (context, circles, loading) {
@@ -123,6 +124,7 @@ class CircleScreen extends StatelessWidget {
     final bd = context.bd;
     final me = auth.meId;
     return Loader<CircleDetail>(
+      failed: (context, retry) => SubPage(title: circle.name, child: LoadError(onRetry: retry)),
       refresh: circlesRev,
       load: () => CirclesApi.detail(circle.id),
       builder: (context, detail, loading) {

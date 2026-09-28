@@ -372,7 +372,7 @@ class _ReminderGroup extends StatelessWidget {
       builder: (context, _) => Group(children: [
         SettingRow(
           title: 'Nightly reminder',
-          hint: 'A gentle nudge to log before bed.',
+          hint: "One quiet nudge in the evening, skipped on days you've already written in.",
           trailing: BdToggle(
             on: r.on,
             label: 'Nightly reminder',

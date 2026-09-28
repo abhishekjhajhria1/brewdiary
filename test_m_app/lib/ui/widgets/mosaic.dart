@@ -7,8 +7,10 @@ import 'package:flutter/material.dart';
 
 import '../../core/date.dart';
 import '../../core/derive.dart';
+import '../../data/settings.dart';
 import '../theme.dart';
 import 'common.dart';
+import 'moments.dart';
 
 // ── month grid ───────────────────────────────────────────────────────────────
 class MonthCalendar extends StatelessWidget {
@@ -25,6 +27,9 @@ class MonthCalendar extends StatelessWidget {
   /// Shown as a "Today" shortcut while you're looking at another month.
   final VoidCallback? onToday;
 
+  /// An empty diary: today's square breathes a few times to say "start here".
+  final bool beckonToday;
+
   const MonthCalendar({
     super.key,
     required this.year,
@@ -37,6 +42,7 @@ class MonthCalendar extends StatelessWidget {
     required this.onNext,
     required this.canNext,
     this.onToday,
+    this.beckonToday = false,
   });
 
   @override
@@ -87,24 +93,28 @@ class MonthCalendar extends StatelessWidget {
                 Expanded(child: Center(child: Text(w.substring(0, 1), style: T.sans(bd, size: 12, weight: FontWeight.w600, color: bd.faint)))),
             ]),
             const SizedBox(height: 8),
-            GridView.count(
-              crossAxisCount: 7,
-              shrinkWrap: true,
-              primary: false,
-              padding: EdgeInsets.zero,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 5,
-              crossAxisSpacing: 5,
-              children: [
-                for (final d in grid)
-                  DayCell(
-                    day: d,
-                    count: counts[d.key] ?? 0,
-                    hasPlan: planKeys.contains(d.key),
-                    dry: dryKeys.contains(d.key),
-                    onSelect: onSelect,
-                  ),
-              ],
+            DayRings(
+              grid: grid,
+              beckonKey: beckonToday ? todayKey() : null,
+              child: GridView.count(
+                crossAxisCount: 7,
+                shrinkWrap: true,
+                primary: false,
+                padding: EdgeInsets.zero,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 5,
+                crossAxisSpacing: 5,
+                children: [
+                  for (final d in grid)
+                    DayCell(
+                      day: d,
+                      count: counts[d.key] ?? 0,
+                      hasPlan: planKeys.contains(d.key),
+                      dry: dryKeys.contains(d.key),
+                      onSelect: onSelect,
+                    ),
+                ],
+              ),
             ),
           ]),
           ),
@@ -167,7 +177,63 @@ class DayCell extends StatelessWidget {
       button: interactive,
       label: '${formatDayLong(day.key)}${count > 0 ? ', $count logged' : (dry ? ', a dry day' : ', nothing logged yet')}${hasPlan ? ', a plan' : ''}${day.isToday ? ', today' : ''}',
       excludeSemantics: true,
-      child: interactive ? Pressable(onTap: () => onSelect(day.key), child: cell) : cell,
+      child: BloomOnLog(dateKey: day.key, child: interactive ? Pressable(onTap: () => onSelect(day.key), child: cell) : cell),
+    );
+  }
+}
+
+/// The month ⇄ year switch, after the website's top-bar squircle. Its face hints
+/// at where it takes you: in month view a tiny 3×3 mosaic (the year in miniature),
+/// in year view this month's name (the grid you'd go back to).
+class ViewSquircle extends StatelessWidget {
+  final VoidCallback? onToggled;
+  const ViewSquircle({super.key, this.onToggled});
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return ListenableBuilder(
+      listenable: CalendarViewStore.instance,
+      builder: (context, _) {
+        final month = CalendarViewStore.instance.view == CalendarView.month;
+        return IconBtnFrame(
+          tooltip: month ? 'Show the year' : 'Show the month',
+          onTap: () {
+            CalendarViewStore.instance.toggle();
+            onToggled?.call();
+          },
+          child: Container(
+            width: 38,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: bd.glass, borderRadius: BorderRadius.circular(12), border: Border.all(color: bd.glassBorder, width: .8)),
+            child: AnimatedSwitcher(
+              duration: Motion.med,
+              transitionBuilder: (child, a) => ScaleTransition(scale: Tween(begin: .6, end: 1.0).animate(a), child: FadeTransition(opacity: a, child: child)),
+              child: month
+                  ? SizedBox(
+                      key: const ValueKey('mosaic'),
+                      width: 16,
+                      height: 16,
+                      child: GridView.count(
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 2,
+                        crossAxisSpacing: 2,
+                        padding: EdgeInsets.zero,
+                        physics: const NeverScrollableScrollPhysics(),
+                        primary: false,
+                        children: [for (final l in const [3, 1, 4, 2, 4, 1, 4, 2, 3]) DecoratedBox(decoration: BoxDecoration(color: bd.ycell(l), borderRadius: BorderRadius.circular(1.2)))],
+                      ),
+                    )
+                  : Text(
+                      monthNames[appNow().month - 1].substring(0, 3).toUpperCase(),
+                      key: const ValueKey('month'),
+                      style: T.sans(bd, size: 9.5, weight: FontWeight.w700, spacing: 1, color: bd.ink),
+                    ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -13,7 +13,7 @@ import '../../data/entries.dart';
 import '../../data/settings.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
-import '../widgets/log_sheet.dart';
+import '../widgets/moments.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
 import '../widgets/pickers.dart';
@@ -38,12 +38,12 @@ class _LandingScreenState extends State<LandingScreen> {
   }
 
   Future<void> _open(String key) async {
-    final entries = entryStore.entries;
-    await showLogSheet(context, dateKey: key, recentDrinks: recentDrinks(entries), recentMoods: recentMoods(entries));
-    // After the first log, ask them to keep it — once.
+    final added = await openLog(context, key, cheer: false);
+    // After the first log, ask them to keep it — once, after the square has had its moment.
     if (!mounted || _autoOpened || entryStore.entries.isEmpty) return;
     _autoOpened = true;
-    showAuthSheet(context, signup: true);
+    if (added) await Future<void>.delayed(const Duration(milliseconds: 650));
+    if (mounted) showAuthSheet(context, signup: true);
   }
 
   @override
@@ -74,7 +74,17 @@ class _LandingScreenState extends State<LandingScreen> {
               const SizedBox(height: S.x3),
               const YearPreview(),
               const SectionHeader('Try it — tap a day'),
-              MonthCalendar(year: _y, month: _m, counts: countsByDate(entries), onSelect: _open, onPrev: () => _step(-1), onNext: () => _step(1), canNext: canNext),
+              MonthCalendar(
+                year: _y,
+                month: _m,
+                counts: countsByDate(entries),
+                dryKeys: dryDates(entries),
+                onSelect: _open,
+                onPrev: () => _step(-1),
+                onNext: () => _step(1),
+                canNext: canNext,
+                beckonToday: entries.isEmpty,
+              ),
               const SizedBox(height: S.m),
               Text(
                 entries.isEmpty ? 'No account needed yet — it stays on this phone.' : 'Logged on this device. Make a diary and it comes with you.',

@@ -17,6 +17,7 @@ import '../../data/safety.dart';
 import '../../data/settings.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/moments.dart';
 import '../widgets/page.dart';
 
 /// Ninkasi on her own pushed page (from Discover), with a back button.
@@ -164,7 +165,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
       AnimatedPadding(
         duration: Motion.fast,
         curve: Motion.curve,
-        padding: EdgeInsets.fromLTRB(S.l, S.xs, S.l, composerBottom),
+        padding: EdgeInsets.fromLTRB(sideGutter(context) - 4, S.xs, sideGutter(context) - 4, composerBottom),
         child: _composer(context),
       ),
     ]);
@@ -174,7 +175,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
     final bd = context.bd;
     return SingleChildScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: EdgeInsets.fromLTRB(S.gutter, top + S.s, S.gutter, S.xl),
+      padding: EdgeInsets.fromLTRB(sideGutter(context), top + S.s, sideGutter(context), S.xl),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Semantics(header: true, child: Text(ninkasiName, style: T.largeTitle(bd))),
         const SizedBox(height: S.s),
@@ -189,12 +190,13 @@ class _BartenderScreenState extends State<BartenderScreen> {
 
   Widget _chat(BuildContext context, double top) {
     final bd = context.bd;
-    final width = MediaQuery.sizeOf(context).width;
+    final width = MediaQuery.sizeOf(context).width.clamp(0.0, kContentMaxWidth + 2 * S.gutter);
+    final side = sideGutter(context) - 4;
     return ListView.builder(
       controller: _scroll,
       reverse: true,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: EdgeInsets.fromLTRB(S.l, top + S.s, S.l, S.s),
+      padding: EdgeInsets.fromLTRB(side, top + S.s, side, S.s),
       itemCount: _messages.length,
       itemBuilder: (context, i) {
         final m = _messages[_messages.length - 1 - i];
@@ -218,7 +220,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
                 ),
               ),
               child: m.content.isEmpty
-                  ? Text('Pouring…', style: T.body(bd, color: bd.faint).copyWith(fontStyle: FontStyle.italic))
+                  ? TypingDots(color: bd.muted)
                   : SelectableText(m.content, style: T.body(bd)),
             ),
           ),
@@ -277,9 +279,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(shape: BoxShape.circle, color: ready ? bd.accent : bd.ink.withValues(alpha: .1)),
-                  child: _busy
-                      ? Padding(padding: const EdgeInsets.all(11), child: CircularProgressIndicator(strokeWidth: 2, color: bd.muted))
-                      : Icon(PhBold.arrowUp, size: 18, color: ready ? bd.accentContrast : bd.faint),
+                  child: Icon(PhBold.arrowUp, size: 18, color: ready ? bd.accentContrast : bd.faint),
                 ),
               ),
             ),

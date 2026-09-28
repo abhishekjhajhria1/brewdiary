@@ -16,7 +16,20 @@ flutter run --dart-define-from-file=env.json
 ```
 
 With no `env.json` the app runs in **local mode**, like the website without its env:
-the diary lives on the phone and Together (the social tab) is hidden.
+the diary lives on the phone, and the Together tab shows an introduction that says
+this build isn't connected. With `env.json`, Together switches on once you sign in.
+
+## Devices
+
+Built for phones from roughly the last three years:
+
+- **Android 12+** (API 31, `minSdk` in `android/app/build.gradle.kts`): predictive back,
+  the Android 12 splash, a monochrome themed icon, drawing under the camera cutout,
+  and the panel's full refresh rate (90/120 Hz) via `flutter_displaymode`.
+- **iOS 17+** (deployment target in Xcode): ProMotion 120 Hz is on (`Info.plist`).
+- Phones stay portrait. Foldables and tablets (600 dp+ on the short side) rotate
+  freely, and pages centre at a comfortable width instead of stretching (content
+  640, sheets 600, tab bar 480).
 
 ## Build
 
@@ -25,6 +38,10 @@ the diary lives on the phone and Together (the social tab) is hidden.
 ```bash
 flutter build apk --release --dart-define-from-file=env.json        # sideload / test
 flutter build appbundle --release --dart-define-from-file=env.json  # Play Store (.aab)
+
+# Smallest APK for a modern phone (every phone in the target range is arm64):
+flutter build apk --release --split-per-abi --target-platform android-arm64 --dart-define-from-file=env.json
+# → build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
 For a Play upload, create a keystore and `android/key.properties`
@@ -46,14 +63,19 @@ if you want another).
 
 ```bash
 flutter analyze      # static analysis — clean
-flutter test         # 47 logic parity tests + 4 widget tests (51 total)
+flutter test         # 47 logic parity tests, 4 app walk-throughs, 6 tests for the small moments
+flutter test test/tour_test.dart --dart-define=TOUR=true --update-goldens         # screenshot tour → test/tour/
+flutter test test/social_tour_test.dart --dart-define=TOUR=true --update-goldens  # the social screens
 ```
 
 `test/core_test.dart` ports the website's vitest suite, so the streaks, dry days,
 drink matching, money formatting (₹1,23,456), jurisdiction and split maths are
 proven to behave exactly like `src/lib`. `test/app_test.dart` boots the real app and
-walks age gate → landing → log a drink → calendar / You / Ninkasi; its goldens in
-`test/goldens/` double as screenshots of each screen.
+walks age gate → landing → log a drink → calendar / You / Together / Ninkasi; its
+goldens in `test/goldens/` double as screenshots of each screen. `test/moments_test.dart`
+covers the streak milestones, the reminder's evenings, the bloom after a log and the
+retry state. The tours (skipped unless `TOUR` is set) render every screen in the
+states that break layouts: scrolled, keyboard up, small phone, large text, tablet.
 
 ## What's in it
 
@@ -76,7 +98,8 @@ walks age gate → landing → log a drink → calendar / You / Ninkasi; its gol
 | Handle re-roll, trust standing, profile privacy, blocks, venue notes | ✅ |
 | Data export + real account deletion | ✅ |
 | Public profiles (`/u/<handle>`), invite links (`/p/<code>`) | ✅ (opened as deep links) |
-| **Nightly reminder** | ✅ **real scheduled notification** (the website's toggle never fired one) |
+| **Nightly reminder** | ✅ **real scheduled notifications** (the website's toggle never fired one): skips evenings you've already logged, and tapping one opens today's log sheet |
+| Small moments (mobile only) | ✅ the day you log blooms; an empty diary's today beckons; a quiet sheet at 7 / 30 / 100 / 365 nights in a row (dry nights count); Ninkasi's typing dots; a plain "couldn't reach brewdiary" with a retry instead of a misleading empty list |
 | Live-camera presence check | ❌ not ported yet (MediaPipe on the web; needs ML Kit on mobile) |
 | Moderation queue (moderators only) | ❌ stays on the website |
 | Bar portal / kiosk | ❌ out of scope (user app only) |

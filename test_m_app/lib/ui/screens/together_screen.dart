@@ -76,6 +76,7 @@ class _TogetherScreenState extends State<TogetherScreen> {
       onRefresh: _refresh,
       children: [
         Loader<(List<SocialProfile>, bool)>(
+          retry: true,
           refresh: Listenable.merge([friendsRev, profileRev]),
           load: () async {
             final r = await Future.wait<Object>([FriendsApi.friends(), PointsApi.competeVisible()]);
@@ -121,6 +122,7 @@ class _Feed extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Loader<List<FeedEntry>>(
+      retry: true,
       refresh: friendsRev,
       load: FriendsApi.feed,
       builder: (context, feed, loading) {
@@ -413,13 +415,24 @@ class _FeedCardState extends State<FeedCard> {
         ),
         if (item.note != null) Padding(padding: const EdgeInsets.only(top: 6, right: S.s), child: Text(item.note!, style: T.body(bd, color: bd.muted))),
         if (item.venue != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Row(children: [
-              Icon(Ph.mapPin, size: 14, color: bd.faint),
-              const SizedBox(width: 4),
-              Flexible(child: Text(item.venue!, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.caption(bd))),
-            ]),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Semantics(
+              link: true,
+              label: 'Open ${item.venue} in Maps',
+              excludeSemantics: true,
+              child: Pressable(
+                onTap: () => openMaps(item.venue!),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Ph.mapPin, size: 14, color: bd.faint),
+                    const SizedBox(width: 4),
+                    Flexible(child: Text(item.venue!, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.caption(bd).copyWith(decoration: TextDecoration.underline, decorationColor: bd.line))),
+                  ]),
+                ),
+              ),
+            ),
           ),
         const SizedBox(height: S.xs),
         Row(children: [

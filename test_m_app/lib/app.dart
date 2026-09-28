@@ -3,7 +3,7 @@
 // Shell: each tab is its own scrolling page (pinned frosted top bar + large title,
 // see ui/widgets/page.dart) kept alive in an IndexedStack, and a floating glass tab
 // bar with icon + label that slides away while the keyboard is up. Together is
-// sign-in only; guests still get the local diary.
+// always in the bar; until you're signed in to the cloud it's the introduction.
 import 'dart:async';
 import 'dart:ui';
 
@@ -11,18 +11,22 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'core/date.dart';
 import 'data/auth.dart';
 import 'data/base.dart';
+import 'data/reminder.dart';
 import 'data/settings.dart';
 import 'ui/screens/bartender_screen.dart';
 import 'ui/screens/calendar_screen.dart';
 import 'ui/screens/landing_screen.dart';
 import 'ui/screens/party_screens.dart';
 import 'ui/screens/profile_screen.dart';
+import 'ui/screens/together_intro.dart';
 import 'ui/screens/together_screen.dart';
 import 'ui/screens/you_screen.dart';
 import 'ui/theme.dart';
 import 'ui/widgets/common.dart';
+import 'ui/widgets/moments.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
@@ -105,10 +109,13 @@ class _ShellState extends State<Shell> {
   void initState() {
     super.initState();
     if (Shell.deepLinks) _listenForLinks();
+    ReminderStore.instance.openToday.addListener(_openToday);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openToday());
   }
 
   @override
   void dispose() {
+    ReminderStore.instance.openToday.removeListener(_openToday);
     _links?.cancel();
     for (final c in _scrollers.values) {
       c.dispose();
@@ -126,6 +133,16 @@ class _ShellState extends State<Shell> {
     _links = links.uriLinkStream.listen(_route, onError: (_) {});
   }
 
+  /// The nightly reminder was tapped: straight to today's log sheet — one tap, done.
+  void _openToday() {
+    final pending = ReminderStore.instance.openToday;
+    final ctx = navigatorKey.currentContext;
+    if (!pending.value || ctx == null || !mounted) return;
+    pending.value = false;
+    _select(Tab.calendar);
+    openLog(ctx, todayKey(), cheer: auth.isAuthed);
+  }
+
   void _route(Uri uri) {
     final seg = uri.pathSegments.where((s) => s.isNotEmpty).toList();
     if (seg.length < 2) return;
@@ -141,7 +158,15 @@ class _ShellState extends State<Shell> {
     }
   }
 
-  String _slot(Tab t, bool guest) => t == Tab.calendar && guest ? 'landing' : t.name;
+  /// Together needs an account on the brewdiary cloud; without one its tab still
+  /// shows — as the introduction to the room rather than the room itself.
+  bool get _togetherLive => auth.isAuthed && db != null;
+
+  String _slot(Tab t, bool guest) => switch (t) {
+        Tab.calendar when guest => 'landing',
+        Tab.together when !_togetherLive => 'together-intro',
+        _ => t.name,
+      };
 
   ScrollController _scroller(String slot) => _scrollers.putIfAbsent(slot, ScrollController.new);
 
@@ -161,7 +186,7 @@ class _ShellState extends State<Shell> {
 
   Widget _screen(Tab t, bool guest) => switch (t) {
         Tab.calendar => guest ? const LandingScreen() : CalendarScreen(onOpenNinkasi: () => _select(Tab.ninkasi)),
-        Tab.together => const TogetherScreen(),
+        Tab.together => _togetherLive ? const TogetherScreen() : const TogetherIntro(),
         Tab.ninkasi => const BartenderScreen(),
         Tab.you => const YouScreen(),
       };
@@ -173,8 +198,8 @@ class _ShellState extends State<Shell> {
       builder: (context, _) {
         final signedIn = auth.isAuthed;
         final guest = !signedIn;
-        final tabs = [Tab.calendar, if (signedIn && db != null) Tab.together, Tab.ninkasi, Tab.you];
-        if (!tabs.contains(_tab)) _tab = Tab.calendar;
+        // Together is always in the bar — for guests it's the introduction.
+        const tabs = Tab.values;
 
         // Every visited tab stays alive (scroll position, a half-typed message,
         // the Ninkasi chat); only the current one animates. A different person
@@ -269,44 +294,66 @@ class _TabBar extends StatelessWidget {
     final bottom = MediaQuery.of(context).padding.bottom;
     return Padding(
       padding: EdgeInsets.fromLTRB(S.l, 0, S.l, bottom > 0 ? bottom : S.m),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(rTile + 4),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: Container(
-            height: 64,
-            decoration: BoxDecoration(
-              color: bd.dark ? const Color(0xB31A1B22) : const Color(0xCCF7F4FA),
-              borderRadius: BorderRadius.circular(rTile + 4),
-              border: Border.all(color: bd.glassBorder, width: .8),
-            ),
-            child: Row(children: [
-              for (final t in tabs)
-                Expanded(
-                  child: Semantics(
-                    key: ValueKey('tab-${t.name}'),
-                    selected: t == current,
-                    button: true,
-                    label: _labels[t],
-                    excludeSemantics: true,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        if (t != current) HapticFeedback.selectionClick();
-                        onSelect(t);
-                      },
-                      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        AnimatedSwitcher(
-                          duration: Motion.fast,
-                          child: Icon(t == current ? _icons[t]!.$2 : _icons[t]!.$1, key: ValueKey(t == current), size: 24, color: t == current ? bd.accentText : bd.faint),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(_labels[t]!, maxLines: 1, style: T.sans(bd, size: 11, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint)),
-                      ]),
-                    ),
-                  ),
+      // On a foldable or tablet the bar stays phone-width, centred.
+      child: Center(
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(rTile + 4),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                height: 64,
+                decoration: BoxDecoration(
+                  color: bd.dark ? const Color(0xB31A1B22) : const Color(0xCCF7F4FA),
+                  borderRadius: BorderRadius.circular(rTile + 4),
+                  border: Border.all(color: bd.glassBorder, width: .8),
                 ),
-            ]),
+                child: Row(children: [
+                  for (final t in tabs)
+                    Expanded(
+                      child: Semantics(
+                        key: ValueKey('tab-${t.name}'),
+                        selected: t == current,
+                        button: true,
+                        label: _labels[t],
+                        excludeSemantics: true,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (t != current) HapticFeedback.selectionClick();
+                            onSelect(t);
+                          },
+                          child: Stack(alignment: Alignment.topCenter, children: [
+                            // The website's amber marker over the current tab.
+                            Positioned(
+                              top: 4,
+                              child: AnimatedContainer(
+                                duration: Motion.med,
+                                curve: Motion.curve,
+                                width: t == current ? 22 : 0,
+                                height: 3,
+                                decoration: BoxDecoration(color: bd.accent, borderRadius: BorderRadius.circular(99)),
+                              ),
+                            ),
+                            Positioned.fill(
+                              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                AnimatedSwitcher(
+                                  duration: Motion.fast,
+                                  child: Icon(t == current ? _icons[t]!.$2 : _icons[t]!.$1, key: ValueKey(t == current), size: 24, color: t == current ? bd.accentText : bd.faint),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(_labels[t]!, maxLines: 1, style: T.sans(bd, size: 11, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint)),
+                              ]),
+                            ),
+                          ]),
+                        ),
+                      ),
+                    ),
+                ]),
+              ),
+            ),
           ),
         ),
       ),

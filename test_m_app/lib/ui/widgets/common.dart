@@ -494,6 +494,24 @@ class IconBtn extends StatelessWidget {
   }
 }
 
+/// A 44pt tappable frame around a custom face (with tooltip + semantics).
+class IconBtnFrame extends StatelessWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final String tooltip;
+  const IconBtnFrame({super.key, required this.child, required this.onTap, required this.tooltip});
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: tooltip,
+        child: Semantics(
+          button: true,
+          label: tooltip,
+          excludeSemantics: true,
+          child: Pressable(onTap: onTap, child: SizedBox(width: S.tap, height: S.tap, child: Center(child: child))),
+        ),
+      );
+}
+
 /// The on/off switch (iOS proportions, house colours).
 class BdToggle extends StatelessWidget {
   final bool on;
@@ -865,6 +883,8 @@ Future<R?> showBdSheet<R>(BuildContext context, {required WidgetBuilder builder,
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
+    // On a foldable or tablet the sheet stays phone-width, centred.
+    constraints: const BoxConstraints(maxWidth: 600),
     backgroundColor: Colors.transparent,
     barrierColor: context.bd.scrim,
     builder: (ctx) {
@@ -1063,7 +1083,15 @@ class Loader<D> extends StatefulWidget {
   final Listenable? refresh;
   final Object? deps;
   final Widget Function(BuildContext context, D? data, bool loading) builder;
-  const Loader({super.key, required this.load, required this.builder, this.refresh, this.deps});
+
+  /// For lists that come over the network: if a load fails with nothing to show,
+  /// say so and offer a retry, instead of an empty state that reads as "none".
+  final bool retry;
+
+  /// The same, for a whole page: build the page around the error (keep its top
+  /// bar and back button) — `retry` runs the load again.
+  final Widget Function(BuildContext context, VoidCallback retry)? failed;
+  const Loader({super.key, required this.load, required this.builder, this.refresh, this.deps, this.retry = false, this.failed});
   @override
   State<Loader<D>> createState() => _LoaderState<D>();
 }
@@ -1071,6 +1099,7 @@ class Loader<D> extends StatefulWidget {
 class _LoaderState<D> extends State<Loader<D>> {
   D? _data;
   bool _loading = true;
+  bool _failed = false;
   int _gen = 0;
 
   @override
@@ -1105,16 +1134,51 @@ class _LoaderState<D> extends State<Loader<D>> {
       setState(() {
         _data = d;
         _loading = false;
+        _failed = false;
       });
     } catch (e) {
       debugPrint('[brewdiary] load failed: $e');
       if (!mounted || gen != _gen) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _failed = true;
+      });
     }
   }
 
   @override
-  Widget build(BuildContext context) => widget.builder(context, _data, _loading);
+  Widget build(BuildContext context) {
+    if (_failed && !_loading && _data == null) {
+      if (widget.failed != null) return widget.failed!(context, _reload);
+      if (widget.retry) return LoadError(onRetry: _reload);
+    }
+    return widget.builder(context, _data, _loading);
+  }
+}
+
+/// A load that didn't make it — plainly said, with a way to try again.
+class LoadError extends StatelessWidget {
+  final VoidCallback onRetry;
+  const LoadError({super.key, required this.onRetry});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: S.xxl),
+      child: Semantics(
+        liveRegion: true,
+        child: Column(children: [
+          Icon(Ph.cloudSlash, size: 28, color: bd.faint),
+          const SizedBox(height: S.m),
+          Text("Couldn't reach brewdiary", textAlign: TextAlign.center, style: T.row(bd)),
+          const SizedBox(height: 4),
+          Text('Check your connection, then try again.', textAlign: TextAlign.center, style: T.sans(bd, size: 14.5, color: bd.muted, height: 1.55)),
+          const SizedBox(height: S.s),
+          TextAction('Try again', accent: true, icon: Ph.arrowsClockwise, onTap: onRetry),
+        ]),
+      ),
+    );
+  }
 }
 
 /// Listen to any number of ChangeNotifiers and rebuild.

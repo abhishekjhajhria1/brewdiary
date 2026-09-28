@@ -8,7 +8,10 @@ import 'dart:math';
 import 'package:brewdiary/app.dart';
 import 'package:brewdiary/core/date.dart';
 import 'package:brewdiary/ui/screens/you_screen.dart';
+import 'package:brewdiary/ui/widgets/common.dart';
 import 'package:brewdiary/ui/widgets/log_sheet.dart';
+import 'package:brewdiary/ui/widgets/moments.dart';
+import 'package:brewdiary/ui/widgets/page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -30,8 +33,8 @@ Future<void> _tab(WidgetTester t, String name) async {
 
 void _tourTest(String name, Future<void> Function(WidgetTester t) body) => testWidgets(name, body, skip: !_tour);
 
-Future<void> _boot(WidgetTester t, {Size size = const Size(390, 844), double text = 1, bool signedIn = true, bool age = true, bool dark = true, double keyboard = 0}) =>
-    bootApp(t, size: size, dpr: 2, text: text, insets: true, keyboard: keyboard, dark: dark, age: age, signedIn: signedIn);
+Future<void> _boot(WidgetTester t, {Size size = const Size(390, 844), double text = 1, bool signedIn = true, bool age = true, bool dark = true, double keyboard = 0, bool settle = true}) =>
+    bootApp(t, size: size, dpr: 2, text: text, insets: true, keyboard: keyboard, dark: dark, age: age, signedIn: signedIn, settle: settle);
 
 void main() {
   setUpAll(() async {
@@ -77,10 +80,10 @@ void main() {
     await _shot(t, 'c1_calendar');
     await _scroll(t, 600);
     await _shot(t, 'c2_calendar_scrolled');
-    await t.tap(find.text('Year'));
+    await t.tap(find.byTooltip('Show the year'));
     await t.pumpAndSettle();
     await _shot(t, 'c3_year');
-    await t.tap(find.text('Month'));
+    await t.tap(find.byTooltip('Show the month'));
     await t.pumpAndSettle();
     showLogSheet(navigatorKey.currentContext!, dateKey: todayKey(), recentDrinks: const ['Negroni', 'Flat white', 'Riesling'], recentMoods: const ['cozy', 'bright']);
     await t.pumpAndSettle(const Duration(milliseconds: 500));
@@ -119,6 +122,14 @@ void main() {
     }
   });
 
+  _tourTest('together intro (guest and unconnected)', (t) async {
+    await _boot(t, signedIn: false);
+    await _tab(t, 'together');
+    await _shot(t, 'j1_together_intro_guest');
+    await _scroll(t, 640);
+    await _shot(t, 'j2_together_intro_guest');
+  });
+
   _tourTest('settings', (t) async {
     await _boot(t);
     await _tab(t, 'you');
@@ -150,7 +161,7 @@ void main() {
 
   _tourTest('discover', (t) async {
     await _boot(t);
-    await t.tap(find.byTooltip('Discover'));
+    await t.tap(find.text('Discover'));
     await t.pumpAndSettle();
     await _shot(t, 'g1_discover');
     await _scroll(t, 640);
@@ -171,6 +182,70 @@ void main() {
   _tourTest('small phone landing', (t) async {
     await _boot(t, size: const Size(360, 640), text: 1.3, signedIn: false);
     await _shot(t, 'h5_small_large_landing');
+  });
+
+  _tourTest('moments: beckon, bloom, streak cheer, typing, load error', (t) async {
+    // An empty diary: once the calendar is on screen, today's square breathes
+    // (caught mid-breath).
+    await _boot(t, signedIn: false);
+    await t.drag(find.byType(Scrollable).hitTestable().first, const Offset(0, -520), warnIfMissed: false);
+    await t.pump();
+    await t.pump(); // an animation's first frame is its start
+    await t.pump(const Duration(milliseconds: 700));
+    await _shot(t, 'k1_beckon_today');
+    await t.pumpAndSettle();
+    // A day just logged: the square swells and a ring spreads.
+    LogBloom.fire(todayKey());
+    await t.pump(); // an animation's first frame is its start
+    await t.pump(const Duration(milliseconds: 220));
+    await _shot(t, 'k2_bloom');
+    await t.pumpAndSettle();
+  });
+
+  _tourTest('moments: streak cheer sheets', (t) async {
+    await _boot(t);
+    showStreakCheer(navigatorKey.currentContext!, 7);
+    await t.pumpAndSettle();
+    await _shot(t, 'k3_cheer_week');
+    await t.tap(find.text('Lovely'));
+    await t.pumpAndSettle();
+    showStreakCheer(navigatorKey.currentContext!, 30);
+    await t.pumpAndSettle();
+    await _shot(t, 'k4_cheer_month');
+  });
+
+  _tourTest('moments: ninkasi thinking + load error', (t) async {
+    await _boot(t);
+    await _tab(t, 'ninkasi');
+    await t.tap(find.text('Something cozy and low-effort.'));
+    await t.pump(const Duration(milliseconds: 16));
+    await t.pump(const Duration(milliseconds: 180));
+    await _shot(t, 'k5_ninkasi_thinking');
+    await t.pumpAndSettle(const Duration(seconds: 1));
+    navigatorKey.currentState!.push(MaterialPageRoute(
+      builder: (_) => Loader<int>(
+        load: () async => throw StateError('offline'),
+        failed: (context, retry) => SubPage(title: 'Friday at Soka', child: LoadError(onRetry: retry)),
+        builder: (context, data, loading) => const SizedBox(),
+      ),
+    ));
+    await t.pumpAndSettle();
+    await _shot(t, 'k6_load_error');
+  });
+
+  _tourTest('tablet / unfolded (800 wide)', (t) async {
+    await _boot(t, size: const Size(800, 1180));
+    await _shot(t, 'l1_tablet_calendar');
+    await _tab(t, 'together');
+    await _shot(t, 'l2_tablet_together');
+    await _tab(t, 'ninkasi');
+    await t.tap(find.text('Something cozy and low-effort.'));
+    await t.pumpAndSettle(const Duration(seconds: 1));
+    await _shot(t, 'l3_tablet_ninkasi');
+    await _tab(t, 'calendar');
+    showLogSheet(navigatorKey.currentContext!, dateKey: todayKey(), recentDrinks: const ['Negroni', 'Flat white'], recentMoods: const ['cozy']);
+    await t.pumpAndSettle(const Duration(milliseconds: 500));
+    await _shot(t, 'l4_tablet_log_sheet');
   });
 
   _tourTest('light theme', (t) async {
