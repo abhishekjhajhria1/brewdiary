@@ -192,12 +192,54 @@ class _AuthSheetState extends State<_AuthSheet> {
   String? _error;
   bool _confirm = false;
   bool _resetSent = false;
+  // Email-code sign-in (cloud builds): no password, a 6-digit code instead.
+  bool _useCode = false;
+  bool _codeSent = false;
+  final _code = TextEditingController();
+
+  Future<void> _sendCode() async {
+    if (_busy) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final res = await auth.sendEmailCode(_email.text, create: _signup, name: _name.text);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (res.ok) {
+        _codeSent = true;
+      } else {
+        _error = _signup ? res.error : "We couldn't send a code to that email. New here? Create a diary instead.";
+      }
+    });
+  }
+
+  Future<void> _verifyCode() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final res = await auth.verifyEmailCode(_email.text, _code.text);
+    if (!mounted) return;
+    if (!res.ok) {
+      setState(() {
+        _error = res.error;
+        _busy = false;
+      });
+      return;
+    }
+    Navigator.pop(context);
+  }
 
   @override
   void dispose() {
     _name.dispose();
     _email.dispose();
     _password.dispose();
+    _code.dispose();
     super.dispose();
   }
 
@@ -281,7 +323,20 @@ class _AuthSheetState extends State<_AuthSheet> {
         Text(_signup ? 'Keep your diary.' : 'Sign in.', style: T.title(bd)),
         const SizedBox(height: S.s),
         Text(_signup ? "Save what you logged and start a streak. Email and a password — that's it." : 'Pick up where you left off.', style: T.bodyMuted(bd)),
-        const SizedBox(height: S.xxl),
+        const SizedBox(height: S.xl),
+        if (Config.cloud) ...[
+          Segmented<bool>(
+            options: const [(false, 'Password'), (true, 'Email me a code')],
+            value: _useCode,
+            onChanged: (v) => setState(() {
+              _useCode = v;
+              _codeSent = false;
+              _error = null;
+            }),
+          ),
+          const SizedBox(height: S.xl),
+        ] else
+          const SizedBox(height: S.s),
         if (_signup) ...[
           LineField(controller: _name, label: 'Name', hint: 'What should we call you?', caps: TextCapitalization.words, action: TextInputAction.next, autofill: const [AutofillHints.name], onChanged: (_) => setState(() {})),
           const SizedBox(height: S.xl),
@@ -296,6 +351,29 @@ class _AuthSheetState extends State<_AuthSheet> {
           autofill: const [AutofillHints.email],
           onChanged: (_) => setState(() {}),
         ),
+        if (_useCode) ...[
+          if (_codeSent) ...[
+            const SizedBox(height: S.xl),
+            LineField(
+              controller: _code,
+              label: 'Code',
+              hint: 'The code from the email',
+              keyboard: TextInputType.number,
+              caps: TextCapitalization.none,
+              action: TextInputAction.done,
+              autofill: const [AutofillHints.oneTimeCode],
+              onChanged: (_) => setState(() {}),
+              onSubmitted: (_) => _code.text.trim().length >= 6 ? _verifyCode() : null,
+            ),
+            Padding(padding: const EdgeInsets.only(top: S.s), child: Text('Sent to ${_email.text.trim()}. It works for a few minutes.', style: T.caption(bd))),
+          ],
+          if (_error != null) Padding(padding: const EdgeInsets.only(top: S.m), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+          const SizedBox(height: S.xxl),
+          _codeSent
+              ? BdButton(_signup ? 'Start my diary' : 'Sign in', busy: _busy, onTap: _code.text.trim().length >= 6 ? _verifyCode : null)
+              : BdButton('Email me a code', busy: _busy, onTap: _email.text.trim().contains('@') ? _sendCode : null),
+          if (_codeSent) Center(child: TextAction('Send a new code', onTap: _busy ? null : _sendCode)),
+        ] else ...[
         const SizedBox(height: S.xl),
         Stack(alignment: Alignment.bottomRight, children: [
           LineField(
@@ -314,8 +392,9 @@ class _AuthSheetState extends State<_AuthSheet> {
         if (_error != null) Padding(padding: const EdgeInsets.only(top: S.m), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
         const SizedBox(height: S.xxl),
         BdButton(_signup ? 'Start my diary' : 'Sign in', busy: _busy, onTap: ready ? _submit : null),
+        ],
         const SizedBox(height: S.xs),
-        if (!_signup)
+        if (!_signup && !_useCode)
           Center(
             child: _resetSent
                 ? Padding(padding: const EdgeInsets.symmetric(vertical: S.m), child: Text('Reset link sent to ${_email.text.trim()} — check your inbox.', textAlign: TextAlign.center, style: T.caption(bd)))

@@ -63,7 +63,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `ai-db/` | The **separate** AI database schema (pseudonymous Ninkasi corpus; deny-all RLS). |
 | `scripts/` | Dev/ops tooling: `db.mjs` (migration runner), `gen-icons.mjs`, `verify-venue.mjs` (the only path that approves a venue), `ninkasi/` (dataset export, trend sync, AI-DB verify). |
 | `tests/` | Vitest unit tests for `src/lib` (excluded from `next build`). |
-| `test_m_app/` | The **Flutter mobile user app** (Android + iOS) on the same Supabase backend. Pure logic in `lib/core` is a 1:1 port of `src/lib` with parity tests — change one, change both. See `test_m_app/README.md`. |
+| `test_m_app/` | The **Flutter mobile user app** (Android + iOS) on the same Supabase backend. Pure logic in `lib/core` is a 1:1 port of `src/lib` with parity tests — change one, change both. See `test_m_app/README.md`; connecting it to the server, Ninkasi, email-code sign-in and the bar side: `docs/12-mobile-server-and-venues.md`. |
 | `docs/` | The beginner-proof handbook (committed — for every developer you hire). |
 | `.claude/skills/taste-engine/` | The design/product spec + anti-slop engine. Loaded as a Claude Code skill; **keep it here** (moving it breaks the skill). |
 | `internal/` | **Git-ignored** local planning/handoff. Not in a fresh clone. |

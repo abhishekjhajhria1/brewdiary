@@ -188,6 +188,38 @@ class AuthStore extends ChangeNotifier {
     await c.auth.signOut();
   }
 
+  /// Email a one-time code (no password). `create` lets a new email start a diary;
+  /// signing in never creates one. Needs the Supabase "Magic Link" email template to
+  /// include {{ .Token }} — see docs/12-mobile-server-and-venues.md.
+  Future<AuthResult> sendEmailCode(String email, {bool create = false, String? name}) async {
+    final c = db;
+    if (c == null) return const AuthResult.failure('Email codes need the brewdiary cloud.');
+    try {
+      await c.auth.signInWithOtp(email: email.trim(), shouldCreateUser: create, data: create && (name?.trim().isNotEmpty ?? false) ? {'name': name!.trim()} : null);
+      return const AuthResult.success();
+    } on AuthException catch (e) {
+      return AuthResult.failure(e.message);
+    } catch (e) {
+      return AuthResult.failure('$e');
+    }
+  }
+
+  /// Check the code from the email. On success the session arrives through the
+  /// auth listener, exactly like a password sign-in.
+  Future<AuthResult> verifyEmailCode(String email, String code) async {
+    final c = db;
+    if (c == null) return const AuthResult.failure('Email codes need the brewdiary cloud.');
+    try {
+      final res = await c.auth.verifyOTP(type: OtpType.email, email: email.trim(), token: code.trim());
+      if (res.session != null) await _applySession(res.session);
+      return const AuthResult.success();
+    } on AuthException catch (e) {
+      return AuthResult.failure(e.message.toLowerCase().contains('expired') ? 'That code has expired — send a new one.' : "That code didn't work — check it and try again.");
+    } catch (e) {
+      return AuthResult.failure('$e');
+    }
+  }
+
   /// Email a reset link. It opens the website's /reset page, which finishes the job.
   Future<AuthResult> sendPasswordReset(String email) async {
     final c = db;
