@@ -173,14 +173,18 @@ class Wordmark extends StatelessWidget {
       );
 }
 
-/// A pushed page (Discover, a party, a profile, Split): back button + large title.
+/// A pushed page (Settings, Discover, a party, a profile, Split): back button and,
+/// by default, a large title that condenses into the bar as you scroll. Pages
+/// whose content carries its own heading pass `large: false` for a bar title only.
 class SubPage extends StatelessWidget {
   final String? title;
   final Widget child;
   final bool scroll;
+  final bool large;
+  final String? subtitle;
   final List<Widget> actions;
   final Future<void> Function()? onRefresh;
-  const SubPage({super.key, this.title, required this.child, this.scroll = true, this.actions = const [], this.onRefresh});
+  const SubPage({super.key, this.title, required this.child, this.scroll = true, this.large = true, this.subtitle, this.actions = const [], this.onRefresh});
 
   @override
   Widget build(BuildContext context) {
@@ -191,7 +195,9 @@ class SubPage extends StatelessWidget {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: scroll
-            ? ScrollPage(back: true, tabBar: false, actions: actions, onRefresh: onRefresh, barTitle: title == null ? null : _FadeTitle(title!), children: [child])
+            ? (large && title != null
+                ? ScrollPage(title: title, subtitle: subtitle, back: true, tabBar: false, actions: actions, onRefresh: onRefresh, children: [child])
+                : ScrollPage(back: true, tabBar: false, actions: actions, onRefresh: onRefresh, barTitle: title == null ? null : _BarTitle(title!), children: [child]))
             : Stack(children: [
                 Padding(padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + kTopBarHeight), child: child),
                 Positioned(left: 0, right: 0, top: 0, child: TopBar(frosted: false, back: true, actions: actions, title: title == null ? null : Text(title!, style: T.sans(bd, size: 17, weight: FontWeight.w600)))),
@@ -201,9 +207,9 @@ class SubPage extends StatelessWidget {
   }
 }
 
-class _FadeTitle extends StatelessWidget {
+class _BarTitle extends StatelessWidget {
   final String text;
-  const _FadeTitle(this.text);
+  const _BarTitle(this.text);
   @override
-  Widget build(BuildContext context) => Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(context.bd, size: 17, weight: FontWeight.w600, color: context.bd.muted));
+  Widget build(BuildContext context) => Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(context.bd, size: 17, weight: FontWeight.w600));
 }

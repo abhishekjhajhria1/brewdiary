@@ -76,7 +76,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('tab-you')));
     await tester.pumpAndSettle();
-    expect(find.text('Your year'.toUpperCase()), findsOneWidget);
+    expect(find.text('Your year'), findsOneWidget);
     await expectLater(find.byType(BrewdiaryApp), matchesGoldenFile('goldens/06_you.png'));
 
     await tester.tap(find.byKey(const ValueKey('tab-ninkasi')));

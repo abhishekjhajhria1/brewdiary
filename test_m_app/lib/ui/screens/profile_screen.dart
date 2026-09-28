@@ -17,7 +17,8 @@ class PublicProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final bd = context.bd;
     return SubPage(
-      title: 'profile',
+      title: 'Profile',
+      large: false,
       child: Loader<PublicProfileData?>(
         load: () => DiscoverApi.publicProfile(handle),
         builder: (context, p, loading) {

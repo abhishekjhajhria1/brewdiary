@@ -39,7 +39,8 @@ class PartyRoomScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SubPage(
-      title: 'party',
+      title: 'Party',
+      large: false,
       child: Loader<PartyDetail>(
         refresh: partiesRev,
         load: () => PartiesApi.detail(partyId),
@@ -591,7 +592,8 @@ class _PartyInviteScreenState extends State<PartyInviteScreen> {
   Widget build(BuildContext context) {
     final bd = context.bd;
     return SubPage(
-      title: 'invite',
+      title: 'Invite',
+      large: false,
       child: Loader<PartyPreview?>(
         load: () => PartiesApi.preview(widget.code),
         builder: (context, p, loading) {

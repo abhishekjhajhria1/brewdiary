@@ -21,6 +21,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
+import '../widgets/pickers.dart';
 import '../widgets/share_card.dart';
 import 'party_screens.dart';
 import 'plans_section.dart';
@@ -1114,28 +1115,24 @@ class _PartiesSectionState extends State<PartiesSection> {
   }
 }
 
-/// Underlined date picker field.
+/// A date field that opens the house date wheels.
 class DateField extends StatelessWidget {
   final DateTime value;
   final ValueChanged<DateTime> onChanged;
   final DateTime? first;
   final DateTime? last;
-  const DateField({super.key, required this.value, required this.onChanged, this.first, this.last});
+  final String? label;
+  const DateField({super.key, required this.value, required this.onChanged, this.first, this.last, this.label});
   @override
   Widget build(BuildContext context) {
-    final bd = context.bd;
-    return GestureDetector(
+    return PickerField(
+      label: label,
+      value: toKey(value) == todayKey() ? 'Today' : writtenDate(value),
+      icon: Ph.calendarBlank,
       onTap: () async {
-        final now = appNow();
-        final picked = await showDatePicker(context: context, initialDate: value, firstDate: first ?? DateTime(now.year - 5), lastDate: last ?? DateTime(now.year + 3));
+        final picked = await pickDate(context, initial: value, first: first, last: last, title: label ?? 'Pick a date');
         if (picked != null) onChanged(picked);
       },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.only(bottom: 8, top: 4),
-        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: bd.lineStrong))),
-        child: Text('${value.day} ${monthNames[value.month - 1].substring(0, 3)} ${value.year}', style: T.sans(bd)),
-      ),
     );
   }
 }

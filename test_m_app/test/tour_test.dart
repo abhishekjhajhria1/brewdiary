@@ -85,6 +85,22 @@ void main() {
     showLogSheet(navigatorKey.currentContext!, dateKey: todayKey(), recentDrinks: const ['Negroni', 'Flat white', 'Riesling'], recentMoods: const ['cozy', 'bright']);
     await t.pumpAndSettle(const Duration(milliseconds: 500));
     await _shot(t, 'c4_log_sheet');
+    await t.tap(find.byTooltip('More for Flat white'));
+    await t.pumpAndSettle();
+    await _shot(t, 'c5_entry_actions');
+    await t.tap(find.text('Cancel'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Add a note, photo, place, who, kind'));
+    await t.pumpAndSettle();
+    await _scroll(t, 400);
+    await _shot(t, 'c6_log_sheet_more');
+  });
+
+  _tourTest('empty day log sheet', (t) async {
+    await _boot(t);
+    showLogSheet(navigatorKey.currentContext!, dateKey: '2026-09-02', recentDrinks: const ['Negroni', 'Flat white', 'Riesling'], recentMoods: const ['cozy', 'bright']);
+    await t.pumpAndSettle(const Duration(milliseconds: 500));
+    await _shot(t, 'c7_log_empty_day');
   });
 
   _tourTest('log sheet with keyboard', (t) async {
@@ -103,10 +119,25 @@ void main() {
     }
   });
 
+  _tourTest('settings', (t) async {
+    await _boot(t);
+    await _tab(t, 'you');
+    await t.tap(find.byTooltip('Settings'));
+    await t.pumpAndSettle();
+    for (var i = 0; i < 5; i++) {
+      await _shot(t, 'e${i + 11}_settings');
+      await _scroll(t, 640);
+    }
+  });
+
   _tourTest('ninkasi + keyboard', (t) async {
     await _boot(t);
     await _tab(t, 'ninkasi');
     await _shot(t, 'f1_ninkasi');
+    await t.tap(find.text('Something cozy and low-effort.'));
+    await t.pump(const Duration(milliseconds: 300));
+    await t.pumpAndSettle(const Duration(seconds: 1));
+    await _shot(t, 'f3_ninkasi_chat');
   });
 
   _tourTest('ninkasi with keyboard', (t) async {

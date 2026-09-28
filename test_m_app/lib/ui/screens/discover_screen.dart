@@ -28,33 +28,40 @@ class DiscoverScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final bd = context.bd;
     return SubPage(
-      title: 'discover',
+      title: 'Discover',
+      subtitle: 'Point the compass, find a place near you, ask Ninkasi.',
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text('Discover', style: T.serif(bd, size: 54, height: .92)),
-        const SizedBox(height: 8),
-        Text('Point the compass, find a place near you, ask Ninkasi.', style: T.sans(bd, color: bd.muted)),
-        const SizedBox(height: 24),
         Glass(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BartenderPage())),
+          semanticLabel: 'Ask Ninkasi',
+          padding: const EdgeInsets.fromLTRB(S.l, S.l, S.m, S.l),
           child: Row(children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: bd.accent.withValues(alpha: .16)),
+              child: Icon(PhFill.martini, size: 20, color: bd.accentText),
+            ),
+            const SizedBox(width: S.m),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Ask Ninkasi', style: T.serif(bd, size: 20)),
-                Text("What should I pour tonight? — she knows what you've been logging.", style: T.sans(bd, size: 14, color: bd.muted)),
+                Text('Ask Ninkasi', style: T.row(bd)),
+                const SizedBox(height: 2),
+                Text("What should I pour tonight? She knows what you've been logging.", style: T.caption(bd)),
               ]),
             ),
-            Text('→', style: T.sans(bd, color: bd.accent)),
+            Icon(Ph.caretRight, size: 16, color: bd.faint),
           ]),
         ),
-        const SizedBox(height: 24),
+        const SectionHeader('Near you'),
         const _DiscoverLive(),
         const _VenuesNearby(),
         if (auth.isAuthed && db != null) ...[const _NearbyTrends(), const _Trends()],
-        const SizedBox(height: 32),
+        const SizedBox(height: S.x3),
         Text(
           'Nothing here is paid for, and no bar can pay to appear. Location is opt-in and never leaves your device — the compass and “near me” search hand your maps app a query, nothing more.',
-          style: T.sans(bd, size: 12, color: bd.faint, height: 1.5),
+          style: T.caption(bd),
         ),
       ]),
     );
@@ -130,51 +137,54 @@ class _DiscoverLiveState extends State<_DiscoverLive> {
     final bd = context.bd;
     final has = _heading != null;
     return Glass(
-      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
-      child: Column(children: [
-        Container(
-          width: 144,
-          height: 144,
-          decoration: BoxDecoration(color: bd.glass, shape: BoxShape.circle, border: Border.all(color: bd.glassBorder)),
-          child: Stack(alignment: Alignment.center, children: [
-            AnimatedRotation(
-              turns: has ? -_heading! / 360 : 0,
-              duration: const Duration(milliseconds: 150),
-              child: SizedBox.expand(
-                child: Stack(children: [
-                  Align(alignment: const Alignment(0, -.85), child: Label('N', color: bd.accent)),
-                  const Align(alignment: Alignment(0, .85), child: Label('S')),
-                  const Align(alignment: Alignment(-.85, 0), child: Label('W')),
-                  const Align(alignment: Alignment(.85, 0), child: Label('E')),
-                ]),
-              ),
+      padding: const EdgeInsets.fromLTRB(S.l, S.xxl, S.l, S.l),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Center(
+          child: Semantics(
+            label: has ? 'Compass: facing ${_heading!.round()} degrees' : 'Compass',
+            excludeSemantics: true,
+            child: Container(
+              width: 156,
+              height: 156,
+              decoration: BoxDecoration(color: bd.ink.withValues(alpha: .04), shape: BoxShape.circle, border: Border.all(color: bd.glassBorder, width: .8)),
+              child: Stack(alignment: Alignment.center, children: [
+                AnimatedRotation(
+                  turns: has ? -_heading! / 360 : 0,
+                  duration: Motion.fast,
+                  child: SizedBox.expand(
+                    child: Stack(children: [
+                      Align(alignment: const Alignment(0, -.82), child: Text('N', style: T.sans(bd, size: 13, weight: FontWeight.w700, color: bd.accentText))),
+                      Align(alignment: const Alignment(0, .82), child: Text('S', style: T.sans(bd, size: 12, weight: FontWeight.w600, color: bd.faint))),
+                      Align(alignment: const Alignment(-.82, 0), child: Text('W', style: T.sans(bd, size: 12, weight: FontWeight.w600, color: bd.faint))),
+                      Align(alignment: const Alignment(.82, 0), child: Text('E', style: T.sans(bd, size: 12, weight: FontWeight.w600, color: bd.faint))),
+                    ]),
+                  ),
+                ),
+                CustomPaint(size: const Size(14, 104), painter: _NeedlePainter(bd)),
+                Container(width: 8, height: 8, decoration: BoxDecoration(color: bd.ink, shape: BoxShape.circle)),
+              ]),
             ),
-            CustomPaint(size: const Size(14, 104), painter: _NeedlePainter(bd)),
-            Container(width: 8, height: 8, decoration: BoxDecoration(color: bd.ink, shape: BoxShape.circle)),
-          ]),
+          ),
         ),
-        const SizedBox(height: 20),
-        Label(has ? 'facing' : 'compass'),
-        Text(has ? '${_heading!.round()}°' : '—', style: T.serif(bd, size: 26)),
-        const SizedBox(height: 20),
-        if (_geo != 'ok')
-          Glass(radius: rCtl, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10), onTap: _enable, child: Text(_geo == 'loading' ? 'Locating…' : 'Find places near me', style: T.sans(bd, size: 14)))
+        const SizedBox(height: S.m),
+        Text(has ? 'Facing ${_heading!.round()}°' : 'Hold your phone flat to use the compass', textAlign: TextAlign.center, style: has ? T.serif(bd, size: 24) : T.caption(bd)),
+        const SizedBox(height: S.xl),
+        if (_geo == 'ok')
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(PhFill.mapPin, size: 16, color: bd.accentText),
+            const SizedBox(width: 6),
+            Text('Searching near you', style: T.sans(bd, size: 14, weight: FontWeight.w500, color: bd.accentText)),
+          ])
         else
-          Label('near you', color: bd.faint),
+          BdButton(_geo == 'loading' ? 'Locating…' : 'Find places near me', kind: BtnKind.secondary, icon: Ph.navigationArrow, busy: _geo == 'loading', onTap: _enable),
         if (_geo == 'denied')
           Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text('Location is off — the links below still open your maps app; allow location for closer results.', textAlign: TextAlign.center, style: T.sans(bd, size: 12, color: bd.faint)),
+            padding: const EdgeInsets.only(top: S.s),
+            child: Text('Location is off — the places below still open your maps app; allow location for closer results.', textAlign: TextAlign.center, style: T.caption(bd)),
           ),
-        const SizedBox(height: 20),
-        Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
-          for (final c in _categories)
-            Glass(
-              radius: rCtl,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              onTap: () => launchUrl(_near(c.$2), mode: LaunchMode.externalApplication),
-              child: Text(c.$1, style: T.sans(bd, size: 14, color: bd.muted)),
-            ),
+        const SizedBox(height: S.m),
+        Wrap(alignment: WrapAlignment.center, spacing: S.s, children: [
+          for (final c in _categories) BdChip(c.$1, icon: Ph.arrowUpRight, onTap: () => launchUrl(_near(c.$2), mode: LaunchMode.externalApplication)),
         ]),
       ]),
     );
@@ -218,37 +228,26 @@ class _VenuesNearby extends StatelessWidget {
       load: () => DiscoverApi.venues(PlaceStore.instance.country),
       builder: (context, venues, loading) {
         if (venues == null || venues.isEmpty) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.only(top: 36),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Label('On brewdiary', color: bd.faint),
-            const SizedBox(height: 12),
-            for (final v in venues)
-              Glass(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                child: Row(children: [
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(v.name, overflow: TextOverflow.ellipsis, style: T.sans(bd)),
-                      Text.rich(TextSpan(children: [
-                        TextSpan(text: v.isStore ? 'Bottle shop${v.city != null ? ' · ${v.city}' : ''}' : (v.city ?? 'A brewdiary venue'), style: T.sans(bd, size: 12, color: bd.muted)),
-                        if (v.openTonight) TextSpan(text: ' · a room is open', style: T.sans(bd, size: 12, color: bd.accent)),
-                      ])),
-                    ]),
-                  ),
-                  Glass(
-                    radius: rCtl,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const SectionHeader('On brewdiary'),
+          Group(
+            footer: 'Verified bars using brewdiary. If one is running a room, you can join it when you get there — ask for the code or scan the card on the table.',
+            children: [
+              for (final v in venues)
+                GroupTile(
+                  icon: v.isStore ? Ph.storefront : Ph.beerStein,
+                  title: v.name,
+                  subtitle: '${v.isStore ? 'Bottle shop${v.city != null ? ' · ${v.city}' : ''}' : (v.city ?? 'A brewdiary venue')}${v.openTonight ? ' · a room is open' : ''}',
+                  trailing: IconBtn(
+                    Ph.navigationArrow,
+                    tooltip: 'Directions to ${v.name}',
+                    color: bd.muted,
                     onTap: () => launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent('${v.name} ${v.city ?? ''}'.trim())}'), mode: LaunchMode.externalApplication),
-                    child: Text('DIRECTIONS', style: T.sans(bd, size: 11, spacing: 1.3, color: bd.muted)),
                   ),
-                ]),
-              ),
-            Text('Verified bars using brewdiary. If one is running a room, you can join it when you get there — ask for the code or scan the card on the table.',
-                style: T.sans(bd, size: 12, color: bd.faint, height: 1.5)),
-          ]),
-        );
+                ),
+            ],
+          ),
+        ]);
       },
     );
   }
@@ -257,30 +256,23 @@ class _VenuesNearby extends StatelessWidget {
 Widget _trendList(BD bd, List<Trend> trends, {required String unit, required String moodLead, required String foot}) {
   final drinks = trends.where((t) => t.kind == 'drink').toList();
   final moods = trends.where((t) => t.kind == 'mood').toList();
+  String people(int n) => '$n ${n == 1 ? unit : (unit == 'person' ? 'people' : '${unit}s')}';
   return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    Hairlines(children: [
-      for (final t in drinks)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(children: [
-            Expanded(child: Text(t.name, style: T.sans(bd))),
-            Text('${t.users} ${t.users == 1 ? unit : (unit == 'person' ? 'people' : '${unit}s')} · ${t.logs} pours', style: T.sans(bd, size: 12, color: bd.faint)),
-          ]),
-        ),
+    Group(children: [
+      for (final t in drinks) GroupTile(title: t.name, trailing: Text('${people(t.users)} · ${t.logs} pours', style: T.caption(bd))),
     ]),
     if (moods.isNotEmpty)
       Padding(
-        padding: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.only(top: S.m, left: S.xs),
         child: Text.rich(TextSpan(children: [
-          TextSpan(text: '$moodLead ', style: T.sans(bd, size: 14, color: bd.muted)),
+          TextSpan(text: '$moodLead ', style: T.body(bd, color: bd.muted)),
           for (var i = 0; i < moods.length; i++) ...[
-            if (i > 0) TextSpan(text: ' · ', style: T.sans(bd, size: 14, color: bd.faint)),
-            TextSpan(text: moods[i].name, style: T.sans(bd, size: 14, color: bd.muted).copyWith(fontStyle: FontStyle.italic)),
+            if (i > 0) TextSpan(text: ' · ', style: T.body(bd, color: bd.faint)),
+            TextSpan(text: moods[i].name, style: T.body(bd, color: bd.muted).copyWith(fontStyle: FontStyle.italic)),
           ],
         ])),
       ),
-    const SizedBox(height: 12),
-    Text(foot, style: T.sans(bd, size: 12, color: bd.faint, height: 1.5)),
+    Padding(padding: const EdgeInsets.fromLTRB(S.xs, S.s, S.xs, 0), child: Text(foot, style: T.caption(bd))),
   ]);
 }
 
@@ -333,32 +325,28 @@ class _NearbyTrendsState extends State<_NearbyTrends> {
         if (data == null) return const SizedBox.shrink();
         final hasArea = data.$1.trendsGeo != null;
         final drinks = data.$2.where((t) => t.kind == 'drink').toList();
-        return Padding(
-          padding: const EdgeInsets.only(top: 32),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Label('Near you · last 30 days', color: bd.faint),
-            const SizedBox(height: 12),
-            if (!hasArea)
-              Glass(
-                padding: const EdgeInsets.all(20),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('See what your neighbourhood is drinking.', style: T.sans(bd)),
-                  const SizedBox(height: 6),
-                  Text(
-                    "Set your area from your location — a rough ~40 km cell, never your exact spot — and you'll see the local taste. It also turns on anonymous trends (counts only, never your name or notes).",
-                    style: T.sans(bd, size: 14, color: bd.muted, height: 1.5),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(width: 150, child: InkButton(_busy ? 'Locating…' : 'Set my area', height: 40, uppercase: false, busy: _busy, onTap: _optIn)),
-                  if (_msg != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_msg!, style: T.sans(bd, size: 12, color: bd.accent))),
-                ]),
-              )
-            else if (drinks.isEmpty)
-              Text('Quiet in your area so far — local trends appear once at least five people near you have opted in.', style: T.sans(bd, size: 14, color: bd.faint, height: 1.5))
-            else
-              _trendList(bd, data.$2, unit: 'person', moodLead: 'The mood nearby:', foot: 'Anonymous counts from people near you who opted in — a rough area, never an exact spot, never who.'),
-          ]),
-        );
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          SectionHeader('Pouring near you', trailing: Text('Last 30 days', style: T.caption(bd))),
+          if (!hasArea)
+            Glass(
+              padding: const EdgeInsets.all(S.xl),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Text('See what your neighbourhood is drinking.', style: T.row(bd)),
+                const SizedBox(height: S.s),
+                Text(
+                  "Set your area from your location — a rough ~40 km cell, never your exact spot — and you'll see the local taste. It also turns on anonymous trends (counts only, never your name or notes).",
+                  style: T.body(bd, color: bd.muted),
+                ),
+                const SizedBox(height: S.l),
+                BdButton(_busy ? 'Locating…' : 'Set my area', kind: BtnKind.secondary, icon: Ph.mapPin, busy: _busy, onTap: _optIn),
+                if (_msg != null) Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_msg!, style: T.sans(bd, size: 14, color: bd.accentText))),
+              ]),
+            )
+          else if (drinks.isEmpty)
+            const EmptyNote('Quiet in your area so far — local trends appear once at least five people near you have opted in.')
+          else
+            _trendList(bd, data.$2, unit: 'person', moodLead: 'The mood nearby:', foot: 'Anonymous counts from people near you who opted in — a rough area, never an exact spot, never who.'),
+        ]);
       },
     );
   }
@@ -373,19 +361,15 @@ class _Trends extends StatelessWidget {
       load: DiscoverApi.tasteTrends,
       builder: (context, trends, loading) {
         final drinks = (trends ?? const <Trend>[]).where((t) => t.kind == 'drink').toList();
-        return Padding(
-          padding: const EdgeInsets.only(top: 32),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Label("What's pouring · last two weeks", color: bd.faint),
-            const SizedBox(height: 12),
-            if (trends == null)
-              const Skeleton(height: 64)
-            else if (drinks.isEmpty)
-              Text('Quiet so far — trends appear once enough guests opt in (You → Settings → anonymous taste trends).', style: T.sans(bd, size: 14, color: bd.faint, height: 1.5))
-            else
-              _trendList(bd, trends, unit: 'guest', moodLead: 'The mood around the bar:', foot: 'Anonymous counts from guests who opted in — never who poured what.'),
-          ]),
-        );
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          SectionHeader("What's pouring", trailing: Text('Last two weeks', style: T.caption(bd))),
+          if (trends == null)
+            const Skeleton(height: 120)
+          else if (drinks.isEmpty)
+            const EmptyNote('Quiet so far — trends appear once enough guests opt in (You → Settings → anonymous taste trends).')
+          else
+            _trendList(bd, trends, unit: 'guest', moodLead: 'The mood around the bar:', foot: 'Anonymous counts from guests who opted in — never who poured what.'),
+        ]);
       },
     );
   }
