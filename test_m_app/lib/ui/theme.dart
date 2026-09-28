@@ -182,7 +182,8 @@ class T {
   static TextStyle body(BD bd, {Color? color}) => sans(bd, size: 15, color: color ?? bd.ink, height: 1.5);
   static TextStyle bodyMuted(BD bd) => sans(bd, size: 15, color: bd.muted, height: 1.55);
   static TextStyle row(BD bd, {Color? color}) => sans(bd, size: 16, color: color ?? bd.ink, height: 1.3);
-  static TextStyle section(BD bd) => sans(bd, size: 17, weight: FontWeight.w600, height: 1.25);
+  /// Section titles, as on the website: small, spaced capitals (the text is upper-cased by SectionHeader).
+  static TextStyle section(BD bd) => sans(bd, size: 11.5, weight: FontWeight.w500, spacing: 11.5 * .16, color: bd.muted, height: 1.25);
   static TextStyle title(BD bd) => serif(bd, size: 28, height: 1.1);
   static TextStyle largeTitle(BD bd) => serif(bd, size: 40, height: 1.0);
 

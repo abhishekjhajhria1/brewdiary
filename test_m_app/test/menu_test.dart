@@ -23,7 +23,7 @@ void main() {
     await t.pumpAndSettle();
 
     expect(find.text('Soka'), findsWidgets);
-    expect(find.text("You'd probably like"), findsOneWidget);
+    expect(find.text("YOU'D PROBABLY LIKE"), findsOneWidget);
     expect(find.text('₹450'), findsWidgets);
 
     final before = entryStore.entries.length;

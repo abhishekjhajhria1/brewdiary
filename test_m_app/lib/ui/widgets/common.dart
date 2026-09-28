@@ -14,7 +14,7 @@ export '../icons.dart';
 
 
 /// Height of the floating tab bar (bar + its margins), excluding the safe area.
-const kTabBarSpace = 64.0 + S.m;
+const kTabBarSpace = 56.0 + S.m;
 
 // ── keyboard ─────────────────────────────────────────────────────────────────
 /// The on-screen keyboard's height, published once above the navigator. (Scaffolds
@@ -164,7 +164,7 @@ class Label extends StatelessWidget {
   Widget build(BuildContext context) => Text(text.toUpperCase(), style: T.label(context.bd, color: color), textAlign: align);
 }
 
-/// A section title in sentence case, with an optional action on the right.
+/// A section title — small spaced capitals like the website — with an optional action on the right.
 class SectionHeader extends StatelessWidget {
   final String title;
   final String? action;
@@ -178,7 +178,7 @@ class SectionHeader extends StatelessWidget {
     return Padding(
       padding: padding,
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        Expanded(child: Semantics(header: true, child: Text(title, style: T.section(bd)))),
+        Expanded(child: Semantics(header: true, label: title, excludeSemantics: true, child: Text(title.toUpperCase(), style: T.section(bd)))),
         ?trailing,
         if (action != null) TextAction(action!, accent: true, onTap: onAction),
       ]),
@@ -408,7 +408,7 @@ class AccentPill extends StatelessWidget {
               decoration: BoxDecoration(color: bd.accent, borderRadius: BorderRadius.circular(999)),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 if (icon != null) ...[Icon(icon, size: 16, color: bd.accentContrast), const SizedBox(width: 6)],
-                Text(text, style: T.sans(bd, size: 13.5, weight: FontWeight.w600, color: bd.accentContrast)),
+                Text(text.toUpperCase(), style: T.sans(bd, size: 11.5, weight: FontWeight.w600, spacing: 11.5 * .16, color: bd.accentContrast)),
               ]),
             ),
           ),

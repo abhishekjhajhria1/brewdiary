@@ -578,7 +578,7 @@ class YearPreview extends StatelessWidget {
           ]);
         }),
         const SizedBox(height: 12),
-        Text('A year of nights — darker is more.', style: T.caption(bd)),
+        Text('A YEAR OF NIGHTS — DARKER IS MORE', style: T.section(bd).copyWith(fontSize: 10.5)),
       ]),
     );
   }

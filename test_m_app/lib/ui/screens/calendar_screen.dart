@@ -59,12 +59,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return ScrollPage(
       barTitle: const Wordmark(),
       actions: [
-        AccentPill('Discover', icon: Ph.compass, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DiscoverScreen()))),
+        AccentPill('Discover', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DiscoverScreen()))),
         const SizedBox(width: S.xs),
         ViewSquircle(onToggled: () {
           final c = PrimaryScrollController.maybeOf(context);
           if (c != null && c.hasClients && c.positions.length == 1) c.jumpTo(0);
         }),
+        ThemeDot(dark: ThemeStore.instance.isDark, onTap: ThemeStore.instance.toggle),
       ],
       onRefresh: _refresh,
       children: [

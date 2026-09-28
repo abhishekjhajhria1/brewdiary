@@ -75,7 +75,6 @@ class _YouScreenState extends State<YouScreen> {
         return ScrollPage(
           title: 'You',
           subtitle: s.longest > 0 ? 'Your longest run: ${s.longest} ${s.longest == 1 ? 'night' : 'nights'}.' : 'Your numbers fill in as you log.',
-          actions: [IconBtn(Ph.gearSix, tooltip: 'Settings', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen())))],
           onRefresh: entryStore.reload,
           children: [
             StreakStrip(stats: s),
@@ -178,6 +177,9 @@ class _YouScreenState extends State<YouScreen> {
               if (filtered.length > shown.length)
                 Center(child: TextAction('Show all ${filtered.length}', accent: true, onTap: () => setState(() => _allHistory = true))),
             ],
+            // Settings live right here, like the website — no gear to find.
+            const SectionHeader('Settings'),
+            const SettingsBody(),
           ],
         );
       },

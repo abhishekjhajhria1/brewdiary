@@ -34,8 +34,17 @@ import '../widgets/pickers.dart';
 import 'landing_screen.dart' show showAuthSheet;
 import 'profile_screen.dart';
 
+/// Settings on a page of its own (kept for links); in the app they live inline at
+/// the bottom of You, like the website — see [SettingsBody].
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
+  @override
+  Widget build(BuildContext context) => const SubPage(title: 'Settings', child: SettingsBody());
+}
+
+/// Every setting, as one column: shown at the bottom of the You tab (no gear to find).
+class SettingsBody extends StatelessWidget {
+  const SettingsBody({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -44,44 +53,40 @@ class SettingsScreen extends StatelessWidget {
       builder: (context, _) {
         final profile = auth.profile;
         final cloud = profile != null && db != null;
-        return SubPage(
-          title: 'Settings',
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            _AccountCard(),
-            const _Header('Appearance'),
-            const _AppearanceGroup(),
-            const _Header('Reminder'),
-            const _ReminderGroup(),
-            const _Header('Where you are'),
-            const _PlaceGroup(),
-            const _Header('Gentle limits'),
-            const _LimitsGroup(),
-            const _Header('Extras'),
-            const _ExtrasGroup(),
-            const _Header('Ninkasi'),
-            const _NinkasiGroup(),
-            if (cloud) ...[
-              const _Header('Together and privacy'),
-              const _PrivacyGroup(),
-            ],
-            const _Header('Your data'),
-            _DataGroup(cloud: cloud),
-            const _Header('About'),
-            Group(children: [
-              GroupTile(icon: Ph.shieldCheck, title: 'Privacy', trailing: Icon(Ph.arrowUpRight, size: 16, color: context.bd.faint), onTap: () => launchUrl(Config.api('/privacy'), mode: LaunchMode.externalApplication)),
-              GroupTile(icon: Ph.fileText, title: 'Terms', trailing: Icon(Ph.arrowUpRight, size: 16, color: context.bd.faint), onTap: () => launchUrl(Config.api('/terms'), mode: LaunchMode.externalApplication)),
-            ]),
-            if (profile != null) ...[
-              const SizedBox(height: S.x3),
-              BdButton('Sign out', kind: BtnKind.secondary, icon: Ph.signOut, onTap: () async {
-                if (await confirm(context, title: 'Sign out?', body: 'Your diary stays safe in your account — sign back in any time.', yes: 'Sign out', no: 'Stay signed in')) {
-                  await auth.signOut();
-                  if (context.mounted) Navigator.of(context).maybePop();
-                }
-              }),
-            ],
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _AccountCard(),
+          const _Header('Appearance'),
+          const _AppearanceGroup(),
+          const _Header('Reminder'),
+          const _ReminderGroup(),
+          const _Header('Where you are'),
+          const _PlaceGroup(),
+          const _Header('Gentle limits'),
+          const _LimitsGroup(),
+          const _Header('Extras'),
+          const _ExtrasGroup(),
+          const _Header('Ninkasi'),
+          const _NinkasiGroup(),
+          if (cloud) ...[
+            const _Header('Together and privacy'),
+            const _PrivacyGroup(),
+          ],
+          const _Header('Your data'),
+          _DataGroup(cloud: cloud),
+          const _Header('About'),
+          Group(children: [
+            GroupTile(icon: Ph.shieldCheck, title: 'Privacy', trailing: Icon(Ph.arrowUpRight, size: 16, color: context.bd.faint), onTap: () => launchUrl(Config.api('/privacy'), mode: LaunchMode.externalApplication)),
+            GroupTile(icon: Ph.fileText, title: 'Terms', trailing: Icon(Ph.arrowUpRight, size: 16, color: context.bd.faint), onTap: () => launchUrl(Config.api('/terms'), mode: LaunchMode.externalApplication)),
           ]),
-        );
+          if (profile != null) ...[
+            const SizedBox(height: S.x3),
+            BdButton('Sign out', kind: BtnKind.secondary, icon: Ph.signOut, onTap: () async {
+              if (await confirm(context, title: 'Sign out?', body: 'Your diary stays safe in your account — sign back in any time.', yes: 'Sign out', no: 'Stay signed in')) {
+                await auth.signOut();
+              }
+            }),
+          ],
+        ]);
       },
     );
   }

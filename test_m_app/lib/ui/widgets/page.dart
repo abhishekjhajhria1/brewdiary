@@ -12,7 +12,7 @@ import '../theme.dart';
 import 'common.dart';
 
 /// Height of the pinned top bar, excluding the status bar.
-const kTopBarHeight = 52.0;
+const kTopBarHeight = 64.0; // the floating header pill (52) and the space around it
 
 /// The widest a page's content grows (foldables, tablets); beyond it, it centres.
 const kContentMaxWidth = 640.0;
@@ -29,6 +29,31 @@ double bottomClearance(BuildContext context, {required bool tabBar}) {
   // With the keyboard up the page has already been resized to end at its top edge.
   if (KeyboardScope.isUp(context)) return S.xl;
   return (tabBar ? kTabBarSpace : 0) + MediaQuery.paddingOf(context).bottom + S.xxl;
+}
+
+/// The website's header actions (DISCOVER + the theme dot), set once by the app
+/// shell. Tab pages that bring no actions of their own show these.
+List<Widget> Function(BuildContext context)? siteHeaderActions;
+
+/// The theme switch as the website draws it: a small dot in the header.
+class ThemeDot extends StatelessWidget {
+  final bool dark;
+  final VoidCallback onTap;
+  const ThemeDot({super.key, required this.dark, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return IconBtnFrame(
+      tooltip: dark ? 'Switch to light' : 'Switch to dark',
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: Motion.med,
+        width: 11,
+        height: 11,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: bd.ink.withValues(alpha: .55)),
+      ),
+    );
+  }
 }
 
 class ScrollPage extends StatefulWidget {
@@ -122,9 +147,19 @@ class _ScrollPageState extends State<ScrollPage> {
         top: 0,
         child: TopBar(
           frosted: _offset > 4,
-          title: widget.barTitle ?? (hasLarge ? AnimatedOpacity(opacity: _offset > 48 ? 1 : 0, duration: Motion.fast, child: Text(widget.title!, style: T.sans(bd, size: 17, weight: FontWeight.w600))) : null),
+          // Tab pages wear the website's header: the wordmark, handing over to the
+          // page's own title once its large title has scrolled away.
+          title: widget.barTitle ??
+              (hasLarge
+                  ? AnimatedSwitcher(
+                      duration: Motion.fast,
+                      child: _offset > 48 || !widget.tabBar
+                          ? Opacity(key: const ValueKey('t'), opacity: _offset > 48 ? 1 : 0, child: Text(widget.title!, style: T.sans(bd, size: 17, weight: FontWeight.w600)))
+                          : const Align(key: ValueKey('w'), alignment: Alignment.centerLeft, child: Wordmark()),
+                    )
+                  : null),
           back: widget.back,
-          actions: widget.actions,
+          actions: widget.actions.isEmpty && widget.tabBar ? (siteHeaderActions?.call(context) ?? const []) : widget.actions,
         ),
       ),
     ]);
@@ -144,30 +179,35 @@ class TopBar extends StatelessWidget {
     final bd = context.bd;
     final top = MediaQuery.of(context).padding.top;
     final side = sideGutter(context);
-    final bar = AnimatedContainer(
-      duration: Motion.med,
-      height: top + kTopBarHeight,
-      padding: EdgeInsets.only(top: top, left: back ? side - S.l : side, right: side - 14),
-      decoration: BoxDecoration(
-        color: frosted ? bd.base.withValues(alpha: bd.dark ? .72 : .70) : bd.base.withValues(alpha: 0),
-        border: Border(bottom: BorderSide(color: frosted ? bd.line : Colors.transparent, width: .8)),
+    // The website's header: a glass pill floating over the page, a touch more
+    // opaque once content scrolls beneath it.
+    final pill = ClipRRect(
+      borderRadius: BorderRadius.circular(26),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: AnimatedContainer(
+          duration: Motion.med,
+          height: 52,
+          padding: EdgeInsets.only(left: back ? 2 : S.l, right: 4),
+          decoration: BoxDecoration(
+            // Quiet at rest (the page shows through), firmer once content scrolls under.
+            color: frosted ? bd.glassStrong : bd.base.withValues(alpha: bd.dark ? .38 : .45),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: bd.glassBorder, width: .8),
+          ),
+          child: Row(children: [
+            if (back) IconBtn(Ph.caretLeft, tooltip: 'Back', onTap: () => Navigator.of(context).maybePop()),
+            if (title != null) Expanded(child: title!) else const Spacer(),
+            ...actions,
+          ]),
+        ),
       ),
-      child: Row(children: [
-        if (back) IconBtn(Ph.caretLeft, tooltip: 'Back', onTap: () => Navigator.of(context).maybePop()),
-        if (title != null) Expanded(child: title!) else const Spacer(),
-        ...actions,
-      ]),
     );
     // Chrome grows with the text size only so far (as native bars do), so a
     // title and its actions always fit on one line.
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.15,
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: frosted ? 20 : 0, sigmaY: frosted ? 20 : 0),
-          child: bar,
-        ),
-      ),
+      child: Padding(padding: EdgeInsets.fromLTRB(side - 6, top + 6, side - 6, 6), child: pill),
     );
   }
 }

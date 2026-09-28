@@ -20,6 +20,7 @@ import 'data/reminder.dart';
 import 'data/settings.dart';
 import 'ui/screens/bartender_screen.dart';
 import 'ui/screens/calendar_screen.dart';
+import 'ui/screens/discover_screen.dart';
 import 'ui/screens/landing_screen.dart';
 import 'ui/screens/menu_screen.dart';
 import 'ui/screens/morning_after.dart';
@@ -32,6 +33,7 @@ import 'ui/screens/you_screen.dart';
 import 'ui/theme.dart';
 import 'ui/widgets/common.dart';
 import 'ui/widgets/moments.dart';
+import 'ui/widgets/page.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
@@ -113,6 +115,11 @@ class _ShellState extends State<Shell> {
   @override
   void initState() {
     super.initState();
+    // Every tab's header carries the website's DISCOVER pill and theme dot.
+    siteHeaderActions = (context) => [
+          AccentPill('Discover', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DiscoverScreen()))),
+          ThemeDot(dark: ThemeStore.instance.isDark, onTap: ThemeStore.instance.toggle),
+        ];
     if (Shell.deepLinks) _listenForLinks();
     ReminderStore.instance.openToday.addListener(_openToday);
     ReminderStore.instance.openMorning.addListener(_openMorning);
@@ -322,12 +329,6 @@ class _TabBar extends StatelessWidget {
   const _TabBar({required this.tabs, required this.current, required this.onSelect});
 
   static const _labels = {Tab.calendar: 'Calendar', Tab.together: 'Together', Tab.ninkasi: 'Ninkasi', Tab.you: 'You'};
-  static const _icons = {
-    Tab.calendar: (Ph.calendarBlank, PhFill.calendarBlank),
-    Tab.together: (Ph.usersThree, PhFill.usersThree),
-    Tab.ninkasi: (Ph.martini, PhFill.martini),
-    Tab.you: (Ph.userCircle, PhFill.userCircle),
-  };
 
   @override
   Widget build(BuildContext context) {
@@ -345,7 +346,7 @@ class _TabBar extends StatelessWidget {
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
               child: Container(
-                height: 64,
+                height: 56,
                 decoration: BoxDecoration(
                   color: bd.dark ? const Color(0xB31A1B22) : const Color(0xCCF7F4FA),
                   borderRadius: BorderRadius.circular(rTile + 4),
@@ -379,14 +380,14 @@ class _TabBar extends StatelessWidget {
                               ),
                             ),
                             Positioned.fill(
-                              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                                AnimatedSwitcher(
+                              // Text-only, in the website's spaced capitals: the amber mark says where you are.
+                              child: Center(
+                                child: AnimatedDefaultTextStyle(
                                   duration: Motion.fast,
-                                  child: Icon(t == current ? _icons[t]!.$2 : _icons[t]!.$1, key: ValueKey(t == current), size: 24, color: t == current ? bd.accentText : bd.faint),
+                                  style: T.sans(bd, size: 11.5, spacing: 11.5 * .16, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint),
+                                  child: Text(_labels[t]!.toUpperCase(), maxLines: 1),
                                 ),
-                                const SizedBox(height: 3),
-                                Text(_labels[t]!, maxLines: 1, style: T.sans(bd, size: 11, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint)),
-                              ]),
+                              ),
                             ),
                           ]),
                         ),

@@ -54,7 +54,7 @@ class _LandingScreenState extends State<LandingScreen> {
       barTitle: const Wordmark(),
       actions: [
         TextAction('Sign in', accent: true, size: 15, onTap: () => showAuthSheet(context, signup: false)),
-        const ThemeToggleButton(),
+        ThemeDot(dark: ThemeStore.instance.isDark, onTap: ThemeStore.instance.toggle),
       ],
       children: [
         ListenableBuilder(
@@ -64,7 +64,7 @@ class _LandingScreenState extends State<LandingScreen> {
             final canNext = _y < now.year || (_y == now.year && _m < now.month - 1);
             return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               const SizedBox(height: S.l),
-              Text('A drink diary', style: T.sans(bd, size: 14, weight: FontWeight.w500, color: bd.accentText)),
+              Text('A DRINK DIARY', style: T.section(bd)),
               const SizedBox(height: S.m),
               Semantics(header: true, child: Text('Every night\ngets a square.', style: T.serif(bd, size: 46, height: 1.02))),
               const SizedBox(height: S.xl),

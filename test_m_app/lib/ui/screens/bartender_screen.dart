@@ -151,12 +151,15 @@ class _BartenderScreenState extends State<BartenderScreen> {
             child: TopBar(
               frosted: _under,
               back: !widget.inShell,
-              title: AnimatedOpacity(
-                opacity: _messages.isEmpty && !_under ? 0 : 1,
+              title: AnimatedSwitcher(
                 duration: Motion.fast,
-                child: Text(ninkasiName, style: T.sans(bd, size: 17, weight: FontWeight.w600)),
+                child: _messages.isEmpty && !_under && widget.inShell
+                    ? const Align(key: ValueKey('w'), alignment: Alignment.centerLeft, child: Wordmark())
+                    : Text(ninkasiName, key: const ValueKey('t'), style: T.sans(bd, size: 17, weight: FontWeight.w600)),
               ),
-              actions: [if (_messages.isNotEmpty) IconBtn(Ph.notePencil, tooltip: 'New conversation', onTap: _busy ? null : _newChat)],
+              actions: _messages.isNotEmpty
+                  ? [IconBtn(Ph.notePencil, tooltip: 'New conversation', onTap: _busy ? null : _newChat)]
+                  : (widget.inShell ? (siteHeaderActions?.call(context) ?? const []) : const []),
             ),
           ),
         ]),
@@ -181,8 +184,25 @@ class _BartenderScreenState extends State<BartenderScreen> {
         const SizedBox(height: S.s),
         Text("Mistress of the bar, named for the goddess who brewed for the gods. Tell her the mood — she knows what you've been pouring.", style: T.bodyMuted(bd)),
         const SectionHeader('Try asking', padding: EdgeInsets.only(top: S.x3, bottom: S.m)),
-        Group(children: [
-          for (final s in starters) GroupTile(title: s, trailing: Icon(Ph.arrowUpRight, size: 16, color: bd.faint), onTap: () => _send(s)),
+        // The website's starters: glass pills, one tap to ask.
+        Wrap(spacing: S.s, runSpacing: S.s, children: [
+          for (final s in starters)
+            Semantics(
+              button: true,
+              child: Pressable(
+                onTap: () => _send(s),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: S.tap),
+                  padding: const EdgeInsets.symmetric(horizontal: S.l, vertical: 11),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [bd.glassTop, bd.glass]),
+                    borderRadius: BorderRadius.circular(rCtl),
+                    border: Border.all(color: bd.glassBorder, width: .8),
+                  ),
+                  child: Text(s, style: T.body(bd)),
+                ),
+              ),
+            ),
         ]),
       ]),
     );

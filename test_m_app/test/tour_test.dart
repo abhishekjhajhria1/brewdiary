@@ -132,10 +132,10 @@ void main() {
     await _shot(t, 'j2_together_intro_guest');
   });
 
-  _tourTest('settings', (t) async {
+  _tourTest('settings (inline in You)', (t) async {
     await _boot(t);
     await _tab(t, 'you');
-    await t.tap(find.byTooltip('Settings'));
+    await t.scrollUntilVisible(find.text('SETTINGS'), 600, scrollable: find.byType(Scrollable).hitTestable().first);
     await t.pumpAndSettle();
     for (var i = 0; i < 5; i++) {
       await _shot(t, 'e${i + 11}_settings');
@@ -163,7 +163,7 @@ void main() {
 
   _tourTest('discover', (t) async {
     await _boot(t);
-    await t.tap(find.text('Discover'));
+    await t.tap(find.text('DISCOVER'));
     await t.pumpAndSettle();
     await _shot(t, 'g1_discover');
     await _scroll(t, 640);

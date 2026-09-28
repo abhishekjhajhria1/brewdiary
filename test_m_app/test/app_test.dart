@@ -78,20 +78,20 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('tab-you')));
     await tester.pumpAndSettle();
-    expect(find.text('Your year'), findsOneWidget);
+    expect(find.text('YOUR YEAR'), findsOneWidget);
     await expectLater(find.byType(BrewdiaryApp), matchesGoldenFile('goldens/06_you.png'));
 
     // Together is always in the bar; without the cloud it's the introduction.
     await tester.tap(find.byKey(const ValueKey('tab-together')));
     await tester.pumpAndSettle();
-    expect(find.text('What lives here'), findsOneWidget);
+    expect(find.text('WHAT LIVES HERE'), findsOneWidget);
     await tester.scrollUntilVisible(find.text("This build isn't connected yet"), 300,
         scrollable: find.descendant(of: find.byType(TogetherIntro), matching: find.byType(Scrollable)).first);
     expect(find.text("This build isn't connected yet"), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tab-ninkasi')));
     await tester.pumpAndSettle();
-    expect(find.text('Try asking'), findsOneWidget);
+    expect(find.text('TRY ASKING'), findsOneWidget);
     await expectLater(find.byType(BrewdiaryApp), matchesGoldenFile('goldens/07_ninkasi.png'));
   });
 
