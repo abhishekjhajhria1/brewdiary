@@ -15,7 +15,8 @@ import '../../data/plans.dart';
 import '../../data/safety.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
-import 'together_screen.dart' show DateField, showReportSheet;
+import '../widgets/pickers.dart';
+import '../widgets/social.dart';
 
 const _policyHint = {
   JoinPolicy.private: 'A private note on your calendar — no one else sees it.',
@@ -23,11 +24,13 @@ const _policyHint = {
   JoinPolicy.friends: 'Any of your friends can see it and ask to join.',
   JoinPolicy.fof: 'Friends, and their friends, can ask to join.',
 };
-const _policyShort = {JoinPolicy.private: 'just me', JoinPolicy.invite: 'invite only', JoinPolicy.friends: 'friends', JoinPolicy.fof: 'friends of friends'};
+const _policyShort = {JoinPolicy.private: 'Just me', JoinPolicy.invite: 'Invite only', JoinPolicy.friends: 'Friends', JoinPolicy.fof: 'Friends of friends'};
+const _policyIcon = {JoinPolicy.private: Ph.lock, JoinPolicy.invite: Ph.userCheck, JoinPolicy.friends: Ph.users, JoinPolicy.fof: Ph.usersThree};
 
 String _prettyDate(String key) {
   final d = parseKey(key);
-  return '${weekdays[mondayIndex(d)]} ${d.day} ${monthNames[d.month - 1]}';
+  if (key == todayKey()) return 'Tonight';
+  return '${weekdays[mondayIndex(d)]} ${d.day} ${monthNames[d.month - 1].substring(0, 3)}';
 }
 
 /// "18:30" → "6:30 pm".
@@ -48,44 +51,27 @@ class PlansSection extends StatefulWidget {
 
 class _PlansSectionState extends State<PlansSection> {
   bool _mine = false;
-  bool _creating = false;
 
   @override
   Widget build(BuildContext context) {
-    final bd = context.bd;
-    return Padding(
-      padding: const EdgeInsets.only(top: 24),
-      child: Loader<({bool banned, String? suspendedUntil})?>(
-        refresh: safetyRev,
-        load: SafetyApi.mySanction,
-        builder: (context, sanction, _) {
-          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            if (sanction != null) _SanctionBanner(banned: sanction.banned, until: sanction.suspendedUntil),
-            Row(children: [
-              Glass(
-                radius: rCtl,
-                padding: const EdgeInsets.all(4),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  for (final m in [false, true])
-                    GestureDetector(
-                      onTap: () => setState(() => _mine = m),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                        decoration: BoxDecoration(color: _mine == m ? bd.ink : Colors.transparent, borderRadius: BorderRadius.circular(7)),
-                        child: Text((m ? 'Mine' : 'Coming up').toUpperCase(), style: T.sans(bd, size: 11, weight: FontWeight.w500, spacing: 1.3, color: _mine == m ? bd.base : bd.faint)),
-                      ),
-                    ),
-                ]),
-              ),
-              const Spacer(),
-              if (sanction == null) SizedBox(width: 130, child: InkButton(_creating ? 'Close' : 'Plan a night', height: 40, uppercase: false, onTap: () => setState(() => _creating = !_creating))),
-            ]),
-            const SizedBox(height: 16),
-            if (_creating && sanction == null) _CreatePlan(onDone: () => setState(() => _creating = false)),
-            if (_mine) const _Mine() else const _ComingUp(),
-          ]);
-        },
-      ),
+    return Loader<({bool banned, String? suspendedUntil})?>(
+      refresh: safetyRev,
+      load: SafetyApi.mySanction,
+      builder: (context, sanction, _) {
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const SizedBox(height: S.l),
+          if (sanction != null) _SanctionBanner(banned: sanction.banned, until: sanction.suspendedUntil),
+          Row(children: [
+            Expanded(child: Segmented<bool>(options: const [(false, 'Coming up'), (true, 'Mine')], value: _mine, onChanged: (v) => setState(() => _mine = v))),
+            if (sanction == null) ...[
+              const SizedBox(width: S.s),
+              BdButton('Plan a night', expand: false, height: 40, icon: Ph.calendarPlus, onTap: () => showBdSheet(context, title: 'Plan a night', builder: (_) => const _CreatePlan())),
+            ],
+          ]),
+          const SizedBox(height: S.m),
+          if (_mine) const _Mine() else const _ComingUp(),
+        ]);
+      },
     );
   }
 }
@@ -100,14 +86,20 @@ class _SanctionBanner extends StatelessWidget {
     final u = until == null ? null : DateTime.tryParse(until!);
     final untilText = u == null ? null : '${monthNames[u.month - 1].substring(0, 3)} ${u.day}';
     return Glass(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(banned ? 'Your account is limited.' : 'Your account is paused for now.', style: T.sans(bd)),
-        const SizedBox(height: 4),
-        Text(
-          'You can still look around, but planning and joining are off${!banned && untilText != null ? ' until $untilText' : ''}. If you think this is a mistake, reach out through the help link.',
-          style: T.sans(bd, size: 14, color: bd.faint, height: 1.5),
+      margin: const EdgeInsets.only(bottom: S.l),
+      padding: const EdgeInsets.all(S.l),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(Ph.warningCircle, size: 22, color: bd.accentText),
+        const SizedBox(width: S.m),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(banned ? 'Your account is limited.' : 'Your account is paused for now.', style: T.row(bd)),
+            const SizedBox(height: 4),
+            Text(
+              'You can still look around, but planning and joining are off${!banned && untilText != null ? ' until $untilText' : ''}. If you think this is a mistake, reach out through the help link.',
+              style: T.caption(bd),
+            ),
+          ]),
         ),
       ]),
     );
@@ -122,24 +114,31 @@ class _ComingUp extends StatelessWidget {
       refresh: plansRev,
       load: PlansApi.upcoming,
       builder: (context, plans, loading) {
-        if (plans == null) return const Column(children: [Skeleton(height: 140), SizedBox(height: 12), Skeleton(height: 140)]);
+        if (plans == null) return const Column(children: [Skeleton(height: 160), SizedBox(height: S.m), Skeleton(height: 160)]);
         if (plans.isEmpty) {
-          return const EmptyNote('No plans from your circle yet. When a friend (or a friend of a friend) plans a night, it shows up here — or start one yourself with “Plan a night”.');
+          return const EmptyNote('No plans from your circle yet. When a friend (or a friend of a friend) plans a night, it shows up here — or start one yourself.', icon: Ph.calendarBlank);
         }
-        return Column(children: [for (final p in plans) Padding(padding: const EdgeInsets.only(bottom: 12), child: _DiscoverCard(plan: p))]);
+        return Column(children: [
+          for (var i = 0; i < plans.length; i++) ...[
+            if (i > 0) const SizedBox(height: S.m),
+            PlanCard(plan: plans[i]),
+          ],
+        ]);
       },
     );
   }
 }
 
-class _DiscoverCard extends StatefulWidget {
+/// A plan from your circle: what, when, who's hosting, soft comfort cues, and the
+/// one action that fits your state (ask, going, waiting, full…).
+class PlanCard extends StatefulWidget {
   final Plan plan;
-  const _DiscoverCard({required this.plan});
+  const PlanCard({super.key, required this.plan});
   @override
-  State<_DiscoverCard> createState() => _DiscoverCardState();
+  State<PlanCard> createState() => _PlanCardState();
 }
 
-class _DiscoverCardState extends State<_DiscoverCard> {
+class _PlanCardState extends State<PlanCard> {
   bool _busy = false;
   String? _err;
 
@@ -157,6 +156,14 @@ class _DiscoverCardState extends State<_DiscoverCard> {
     }
   }
 
+  Widget _status(BD bd, String text, {bool accent = false}) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: S.s),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (accent) ...[Icon(PhBold.check, size: 14, color: bd.accentText), const SizedBox(width: 4)],
+          Text(text, style: T.sans(bd, size: 14, weight: FontWeight.w500, color: accent ? bd.accentText : bd.muted)),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
@@ -165,90 +172,84 @@ class _DiscoverCardState extends State<_DiscoverCard> {
     final full = p.capacity != null && p.going >= p.capacity!;
     final isInvite = p.joinPolicy == JoinPolicy.invite;
 
-    Widget action;
+    final List<Widget> actions;
     if (isInvite) {
       if (p.myStatus == JoinStatus.approved) {
-        action = Row(mainAxisSize: MainAxisSize.min, children: [
-          Text("You're going", style: T.sans(bd, size: 14, color: bd.accent)),
-          const SizedBox(width: 12),
-          TextAction("Can't make it", faint: true, onTap: _busy ? null : () => _run(() => PlansApi.respondInvite(p.id, false))),
-        ]);
+        actions = [_status(bd, "You're going", accent: true), TextAction("Can't make it", onTap: _busy ? null : () => _run(() => PlansApi.respondInvite(p.id, false)))];
       } else if (p.myStatus == JoinStatus.declined) {
-        action = Row(mainAxisSize: MainAxisSize.min, children: [
-          Text('Not going', style: T.sans(bd, size: 14, color: bd.faint)),
-          const SizedBox(width: 12),
-          TextAction('Going', accent: true, onTap: _busy || full ? null : () => _run(() => PlansApi.respondInvite(p.id, true))),
-        ]);
+        actions = [_status(bd, 'Not going'), TextAction('Going after all', accent: true, onTap: _busy || full ? null : () => _run(() => PlansApi.respondInvite(p.id, true)))];
       } else if (full) {
-        action = Text('Full', style: T.sans(bd, size: 14, color: bd.faint));
+        actions = [_status(bd, 'Full')];
       } else {
-        action = Row(mainAxisSize: MainAxisSize.min, children: [
-          TextAction("Can't make it", faint: true, onTap: _busy ? null : () => _run(() => PlansApi.respondInvite(p.id, false))),
-          const SizedBox(width: 10),
-          SizedBox(width: 84, child: InkButton('Going', height: 38, uppercase: false, busy: _busy, onTap: () => _run(() => PlansApi.respondInvite(p.id, true)))),
-        ]);
+        actions = [
+          TextAction("Can't make it", onTap: _busy ? null : () => _run(() => PlansApi.respondInvite(p.id, false))),
+          BdButton('Going', expand: false, height: 40, busy: _busy, onTap: () => _run(() => PlansApi.respondInvite(p.id, true))),
+        ];
       }
     } else if (p.myStatus == JoinStatus.approved) {
-      action = Row(mainAxisSize: MainAxisSize.min, children: [
-        Text("You're in", style: T.sans(bd, size: 14, color: bd.accent)),
-        const SizedBox(width: 12),
-        TextAction('Leave', faint: true, onTap: _busy ? null : () => _run(() => PlansApi.withdraw(p.id))),
-      ]);
+      actions = [_status(bd, "You're in", accent: true), TextAction('Leave', onTap: _busy ? null : () => _run(() => PlansApi.withdraw(p.id)))];
     } else if (p.myStatus == JoinStatus.requested) {
-      action = Row(mainAxisSize: MainAxisSize.min, children: [
-        Text('Asked · waiting', style: T.sans(bd, size: 14, color: bd.muted)),
-        const SizedBox(width: 12),
-        TextAction('Cancel', faint: true, onTap: _busy ? null : () => _run(() => PlansApi.withdraw(p.id))),
-      ]);
+      actions = [_status(bd, 'Asked · waiting'), TextAction('Cancel', onTap: _busy ? null : () => _run(() => PlansApi.withdraw(p.id)))];
     } else if (p.myStatus == JoinStatus.declined) {
-      action = Text('Not this time', style: T.sans(bd, size: 14, color: bd.faint));
+      actions = [_status(bd, 'Not this time')];
     } else if (full) {
-      action = Text('Full', style: T.sans(bd, size: 14, color: bd.faint));
+      actions = [_status(bd, 'Full')];
     } else {
-      action = SizedBox(width: 116, child: InkButton('Ask to join', height: 38, uppercase: false, busy: _busy, onTap: () => _run(() => PlansApi.requestJoin(p.id))));
+      actions = [BdButton('Ask to join', expand: false, height: 40, busy: _busy, onTap: () => _run(() => PlansApi.requestJoin(p.id)))];
     }
 
     return Glass(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(S.l, S.l, S.xs, S.m),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(p.title, style: T.serif(bd, size: 21, height: 1.15)),
-              const SizedBox(height: 3),
-              Text(
-                [_prettyDate(p.date), _prettyTime(p.time), p.city, '${p.hostName} @${p.hostHandle}'].whereType<String>().join(' · '),
-                style: T.sans(bd, size: 12, color: bd.faint),
-              ),
+              Text(p.title, style: T.serif(bd, size: 22, height: 1.15)),
+              const SizedBox(height: 4),
+              Text([_prettyDate(p.date), _prettyTime(p.time), p.city].whereType<String>().join(' · '), style: T.sans(bd, size: 14, weight: FontWeight.w500, color: bd.muted)),
+              const SizedBox(height: 2),
+              Text('Hosted by ${p.hostName} @${p.hostHandle}', style: T.caption(bd)),
             ]),
           ),
-          if (p.hostId != me) _PersonMenu(subjectId: p.hostId, subjectName: p.hostName, planId: p.id),
+          if (p.hostId != me) IconBtn(Ph.dotsThree, tooltip: 'Options for ${p.hostName}', color: bd.muted, onTap: () => personActions(context, id: p.hostId, name: p.hostName, planId: p.id)),
         ]),
-        if (p.note != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(p.note!, style: T.sans(bd, color: bd.muted, height: 1.55))),
+        if (p.note != null) Padding(padding: const EdgeInsets.only(top: S.m, right: S.m), child: Text(p.note!, style: T.body(bd, color: bd.muted))),
         if (p.drinks.isNotEmpty || p.vibeTags.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.only(top: S.m, right: S.m),
             child: Wrap(spacing: 6, runSpacing: 6, children: [
-              for (final d in p.drinks) Glass(radius: rCtl, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), child: Text(d, style: T.sans(bd, size: 12, color: bd.muted))),
-              for (final t in p.vibeTags)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(rCtl), border: Border.all(color: bd.line)),
-                  child: Text(t, style: T.sans(bd, size: 12, color: bd.faint)),
-                ),
+              for (final d in p.drinks) _Tag(d),
+              for (final t in p.vibeTags) _Tag(t, quiet: true),
             ]),
           ),
         Loader<PlanSignals?>(
           load: () => PlansApi.signals(p.id),
           builder: (context, s, _) => _SoftSignals(signals: s),
         ),
-        const SizedBox(height: 16),
+        Padding(padding: const EdgeInsets.only(top: S.m, right: S.m), child: Divider(height: 1, thickness: .8, color: bd.line)),
+        const SizedBox(height: S.xs),
         Row(children: [
-          Expanded(child: Text('${p.going} going${p.capacity != null ? ' · ${(p.capacity! - p.going).clamp(0, 999)} spots left' : ''}', style: T.sans(bd, size: 12, color: bd.faint))),
-          action,
+          Expanded(child: Text('${p.going} going${p.capacity != null ? ' · ${(p.capacity! - p.going).clamp(0, 999)} spots left' : ''}', style: T.caption(bd))),
+          ...actions,
+          const SizedBox(width: S.xs),
         ]),
-        if (_err != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_err!, style: T.sans(bd, size: 12, color: bd.accent))),
+        if (_err != null) Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_err!, style: T.caption(bd, color: bd.accentText))),
       ]),
+    );
+  }
+}
+
+class _Tag extends StatelessWidget {
+  final String text;
+  final bool quiet;
+  const _Tag(this.text, {this.quiet = false});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(color: quiet ? Colors.transparent : bd.glass, borderRadius: BorderRadius.circular(rCtl - 4), border: Border.all(color: quiet ? bd.line : bd.glassBorder, width: .8)),
+      child: Text(text, style: T.sans(bd, size: 13, color: quiet ? bd.faint : bd.muted)),
     );
   }
 }
@@ -270,43 +271,17 @@ class _SoftSignals extends StatelessWidget {
     ];
     if (bits.isEmpty && !s.hostVerified) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Text.rich(TextSpan(children: [
-        if (s.hostVerified) TextSpan(text: '✓ verified${bits.isNotEmpty ? ' · ' : ''}', style: T.sans(bd, size: 12, color: bd.accent)),
-        TextSpan(text: bits.join(' · '), style: T.sans(bd, size: 12, color: bd.faint)),
-      ])),
-    );
-  }
-}
-
-/// The quiet safety affordance on every person.
-class _PersonMenu extends StatelessWidget {
-  final String subjectId;
-  final String subjectName;
-  final String? planId;
-  const _PersonMenu({required this.subjectId, required this.subjectName, this.planId});
-  @override
-  Widget build(BuildContext context) {
-    final bd = context.bd;
-    return PopupMenuButton<String>(
-      tooltip: 'Options for $subjectName',
-      color: Color.alphaBlend(bd.glassStrong, bd.base),
-      icon: Icon(Icons.more_horiz, size: 20, color: bd.faint),
-      onSelected: (v) async {
-        if (v == 'report') {
-          showReportSheet(context, subjectId, subjectName, planId: planId);
-        } else if (v == 'block') {
-          if (await confirm(context, title: 'Block $subjectName?', body: "You won't see each other, and any live join between you is withdrawn.", yes: 'Block')) {
-            await SafetyApi.block(subjectId);
-            plansRev.bump();
-            if (context.mounted) toast(context, "Blocked. You won't see each other.");
-          }
-        }
-      },
-      itemBuilder: (_) => [
-        PopupMenuItem(value: 'report', child: Text('Report', style: T.sans(bd, size: 14, color: bd.muted))),
-        PopupMenuItem(value: 'block', child: Text('Block $subjectName', style: T.sans(bd, size: 14, color: bd.muted))),
-      ],
+      padding: const EdgeInsets.only(top: S.m, right: S.m),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(s.hostVerified ? Ph.sealCheck : Ph.users, size: 15, color: s.hostVerified ? bd.accentText : bd.faint),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text.rich(TextSpan(children: [
+            if (s.hostVerified) TextSpan(text: 'Verified${bits.isNotEmpty ? ' · ' : ''}', style: T.caption(bd, color: bd.accentText)),
+            TextSpan(text: bits.join(' · '), style: T.caption(bd)),
+          ])),
+        ),
+      ]),
     );
   }
 }
@@ -319,26 +294,45 @@ class _Mine extends StatelessWidget {
       refresh: plansRev,
       load: PlansApi.mine,
       builder: (context, plans, loading) {
-        if (plans == null) return const Column(children: [Skeleton(height: 130), SizedBox(height: 12), Skeleton(height: 130)]);
+        if (plans == null) return const Column(children: [Skeleton(height: 140), SizedBox(height: S.m), Skeleton(height: 140)]);
         if (plans.isEmpty) {
-          return const EmptyNote("You haven't planned a night yet. “Plan a night” up top — pick a day, say what you fancy, and let friends (or friends of friends) ask to come.");
+          return const EmptyNote("You haven't planned a night yet. Pick a day, say what you fancy, and let friends (or friends of friends) ask to come.", icon: Ph.calendarPlus);
         }
-        return Column(children: [for (final p in plans) Padding(padding: const EdgeInsets.only(bottom: 12), child: _MyPlanCard(plan: p))]);
+        return Column(children: [
+          for (var i = 0; i < plans.length; i++) ...[
+            if (i > 0) const SizedBox(height: S.m),
+            MyPlanCard(plan: plans[i]),
+          ],
+        ]);
       },
     );
   }
 }
 
-class _MyPlanCard extends StatefulWidget {
+/// A plan I host: its state, who's asking, who's invited, and the host's controls.
+class MyPlanCard extends StatefulWidget {
   final MyPlan plan;
-  const _MyPlanCard({required this.plan});
+  const MyPlanCard({super.key, required this.plan});
   @override
-  State<_MyPlanCard> createState() => _MyPlanCardState();
+  State<MyPlanCard> createState() => _MyPlanCardState();
 }
 
-class _MyPlanCardState extends State<_MyPlanCard> {
+class _MyPlanCardState extends State<MyPlanCard> {
   bool _openReqs = false;
   bool _openGuests = false;
+
+  Future<void> _manage() {
+    final p = widget.plan;
+    final cancelled = p.status == PlanStatus.cancelled;
+    return showActions(context, title: p.title, actions: [
+      if (p.status == PlanStatus.open) SheetAction('Stop taking people', icon: Ph.lock, onTap: () => PlansApi.setStatus(p.id, PlanStatus.closed)),
+      if (p.status == PlanStatus.closed) SheetAction('Reopen', icon: Ph.arrowCounterClockwise, onTap: () => PlansApi.setStatus(p.id, PlanStatus.open)),
+      if (!cancelled) SheetAction('Call it off', icon: Ph.prohibit, onTap: () => PlansApi.setStatus(p.id, PlanStatus.cancelled)),
+      SheetAction('Delete', icon: Ph.trash, destructive: true, onTap: () async {
+        if (await confirm(context, title: 'Delete for good?', body: 'The plan and its requests are removed.', yes: 'Delete')) await PlansApi.delete(p.id);
+      }),
+    ]);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -347,53 +341,68 @@ class _MyPlanCardState extends State<_MyPlanCard> {
     final cancelled = p.status == PlanStatus.cancelled;
     final isPrivate = p.joinPolicy == JoinPolicy.private;
     final isInvite = p.joinPolicy == JoinPolicy.invite;
+    final badge = cancelled ? 'Called off' : (isPrivate ? 'Private' : (p.status == PlanStatus.closed ? 'Closed' : '${p.going} going'));
     return Opacity(
       opacity: cancelled ? .6 : 1,
       child: Glass(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(S.l, S.l, S.xs, S.s),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(p.title, style: T.serif(bd, size: 21, height: 1.15)),
-                const SizedBox(height: 3),
-                Text([_prettyDate(p.date), _prettyTime(p.time), p.city, _policyShort[p.joinPolicy]].whereType<String>().join(' · '), style: T.sans(bd, size: 12, color: bd.faint)),
+                Text(p.title, style: T.serif(bd, size: 22, height: 1.15)),
+                const SizedBox(height: 4),
+                Text([_prettyDate(p.date), _prettyTime(p.time), p.city].whereType<String>().join(' · '), style: T.sans(bd, size: 14, weight: FontWeight.w500, color: bd.muted)),
+                const SizedBox(height: 6),
+                Row(children: [
+                  Icon(_policyIcon[p.joinPolicy], size: 14, color: bd.faint),
+                  const SizedBox(width: 4),
+                  Text('${_policyShort[p.joinPolicy]} · $badge', style: T.caption(bd)),
+                ]),
               ]),
             ),
-            Text(
-              cancelled ? 'cancelled' : (isPrivate ? 'private' : (p.status == PlanStatus.closed ? 'closed' : '${p.going} going')),
-              style: T.sans(bd, size: 12, color: cancelled ? bd.faint : bd.muted),
-            ),
+            IconBtn(Ph.dotsThree, tooltip: 'Manage ${p.title}', color: bd.muted, onTap: _manage),
           ]),
-          if (p.note != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(p.note!, style: T.sans(bd, color: bd.muted, height: 1.55))),
-          if (isPrivate && !cancelled) Padding(padding: const EdgeInsets.only(top: 12), child: Text('Only you can see this — a quiet note on your calendar.', style: T.sans(bd, size: 14, color: bd.faint))),
+          if (p.note != null) Padding(padding: const EdgeInsets.only(top: S.m, right: S.m), child: Text(p.note!, style: T.body(bd, color: bd.muted))),
+          if (isPrivate && !cancelled) Padding(padding: const EdgeInsets.only(top: S.m, right: S.m), child: Text('Only you can see this — a quiet note on your calendar.', style: T.caption(bd))),
           if (isInvite && !cancelled) ...[
-            const SizedBox(height: 10),
-            Align(alignment: Alignment.centerLeft, child: TextAction('Guests ${_openGuests ? '▴' : '▾'}', accent: true, onTap: () => setState(() => _openGuests = !_openGuests))),
-            if (_openGuests) _Guests(planId: p.id),
+            const SizedBox(height: S.xs),
+            _Disclosure(label: 'Guests', open: _openGuests, onTap: () => setState(() => _openGuests = !_openGuests)),
+            if (_openGuests) Padding(padding: const EdgeInsets.only(right: S.m, bottom: S.s), child: _Guests(planId: p.id)),
           ],
           if (!cancelled && !isPrivate) ...[
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextAction('${p.pending > 0 ? '${p.pending} waiting to join' : 'Requests'} ${_openReqs ? '▴' : '▾'}', accent: true, onTap: () => setState(() => _openReqs = !_openReqs)),
-            ),
-            if (_openReqs) _Requests(planId: p.id),
+            _Disclosure(label: p.pending > 0 ? '${p.pending} asking to join' : 'Requests', accent: p.pending > 0, open: _openReqs, onTap: () => setState(() => _openReqs = !_openReqs)),
+            if (_openReqs) Padding(padding: const EdgeInsets.only(right: S.m, bottom: S.s), child: _Requests(planId: p.id)),
           ],
-          const SizedBox(height: 12),
-          Divider(height: 1, color: bd.line),
-          const SizedBox(height: 6),
-          Wrap(spacing: 16, children: [
-            if (p.status == PlanStatus.open) TextAction('Stop taking people', faint: true, onTap: () => PlansApi.setStatus(p.id, PlanStatus.closed)),
-            if (p.status == PlanStatus.closed) TextAction('Reopen', faint: true, onTap: () => PlansApi.setStatus(p.id, PlanStatus.open)),
-            if (!cancelled) TextAction('Call it off', faint: true, onTap: () => PlansApi.setStatus(p.id, PlanStatus.cancelled)),
-            TextAction('Delete', faint: true, onTap: () async {
-              if (await confirm(context, title: 'Delete for good?', body: 'The plan and its requests are removed.', yes: 'Delete')) {
-                await PlansApi.delete(p.id);
-              }
-            }),
-          ]),
         ]),
+      ),
+    );
+  }
+}
+
+/// A "show more" row with a turning caret.
+class _Disclosure extends StatelessWidget {
+  final String label;
+  final bool open;
+  final bool accent;
+  final VoidCallback onTap;
+  const _Disclosure({required this.label, required this.open, required this.onTap, this.accent = false});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Semantics(
+      button: true,
+      expanded: open,
+      child: Pressable(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: S.tap),
+          child: Row(children: [
+            Text(label, style: T.sans(bd, size: 14, weight: FontWeight.w600, color: accent ? bd.accentText : bd.ink)),
+            const SizedBox(width: 4),
+            AnimatedRotation(turns: open ? .5 : 0, duration: Motion.fast, child: Icon(Ph.caretDown, size: 14, color: bd.faint)),
+          ]),
+        ),
       ),
     );
   }
@@ -409,35 +418,33 @@ class _Requests extends StatelessWidget {
       refresh: plansRev,
       load: () => PlansApi.requests(planId),
       builder: (context, reqs, loading) {
-        if (reqs == null) return Text('Loading…', style: T.sans(bd, size: 12, color: bd.faint));
-        if (reqs.isEmpty) return Text('No one has asked yet.', style: T.sans(bd, size: 12, color: bd.faint));
+        if (reqs == null) return const Skeleton(height: 56, radius: rCtl);
+        if (reqs.isEmpty) return Text('No one has asked yet.', style: T.caption(bd));
         final live = reqs.where((r) => r.status == JoinStatus.requested).toList();
         final approved = reqs.where((r) => r.status == JoinStatus.approved).toList();
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          for (final r in live)
-            Glass(
-              radius: rCtl,
-              margin: const EdgeInsets.only(top: 8),
-              padding: const EdgeInsets.all(12),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text.rich(TextSpan(children: [
-                      TextSpan(text: '${r.name} ', style: T.sans(bd)),
-                      TextSpan(text: '@${r.handle}', style: T.sans(bd, size: 12, color: bd.faint)),
-                    ])),
-                    if (r.message != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text('“${r.message}”', style: T.sans(bd, size: 14, color: bd.muted))),
+          if (live.isNotEmpty)
+            Hairlines(children: [
+              for (final r in live)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: S.s),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(r.name, style: T.row(bd)),
+                        Text('@${r.handle}', style: T.caption(bd)),
+                        if (r.message != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text('“${r.message}”', style: T.body(bd, color: bd.muted))),
+                      ]),
+                    ),
+                    TextAction('Approve', accent: true, onTap: () async {
+                      final e = await PlansApi.respondJoin(r.joinId, true);
+                      if (e != null && context.mounted) toast(context, e);
+                    }),
+                    IconBtn(Ph.x, tooltip: 'Decline ${r.name}', size: 18, color: bd.faint, onTap: () => PlansApi.respondJoin(r.joinId, false)),
                   ]),
                 ),
-                TextAction('Approve', accent: true, onTap: () async {
-                  final e = await PlansApi.respondJoin(r.joinId, true);
-                  if (e != null && context.mounted) toast(context, e);
-                }),
-                const SizedBox(width: 10),
-                TextAction('Decline', faint: true, onTap: () => PlansApi.respondJoin(r.joinId, false)),
-              ]),
-            ),
-          if (approved.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text('Going: ${approved.map((r) => r.name).join(', ')}', style: T.sans(bd, size: 12, color: bd.faint))),
+            ]),
+          if (approved.isNotEmpty) Padding(padding: const EdgeInsets.only(top: S.s), child: Text('Going: ${approved.map((r) => r.name).join(', ')}', style: T.caption(bd))),
         ]);
       },
     );
@@ -457,21 +464,21 @@ class _Guests extends StatelessWidget {
         final list = inv ?? const [];
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           if (list.isEmpty)
-            Text('No one invited yet.', style: T.sans(bd, size: 12, color: bd.faint))
+            Text('No one invited yet.', style: T.caption(bd))
           else
-            for (final g in list)
-              Row(children: [
-                Expanded(
-                  child: Text.rich(TextSpan(children: [
-                    TextSpan(text: '${g.name} ', style: T.sans(bd, size: 14)),
-                    TextSpan(text: '@${g.handle}', style: T.sans(bd, size: 12, color: bd.faint)),
-                  ])),
-                ),
-                TextAction('Remove', faint: true, onTap: () => PlansApi.uninvite(planId, g.userId)),
-              ]),
-          const SizedBox(height: 8),
-          Text('Invite someone by name or @handle', style: T.sans(bd, size: 12, color: bd.faint)),
-          const SizedBox(height: 6),
+            Hairlines(children: [
+              for (final g in list)
+                Row(children: [
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(g.name, style: T.row(bd)),
+                      Text('@${g.handle}', style: T.caption(bd)),
+                    ]),
+                  ),
+                  IconBtn(Ph.x, tooltip: 'Uninvite ${g.name}', size: 18, color: bd.faint, onTap: () => PlansApi.uninvite(planId, g.userId)),
+                ]),
+            ]),
+          const SizedBox(height: S.s),
           UserSearch(exclude: list.map((g) => g.userId).toSet(), onPick: (u) async {
             final e = await PlansApi.invite(planId, u.id);
             if (e != null && context.mounted) toast(context, e);
@@ -520,37 +527,38 @@ class _UserSearchState extends State<UserSearch> {
     final bd = context.bd;
     final shown = _results.where((u) => !widget.exclude.contains(u.id)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      GlassField(controller: _q, hint: 'Type a name or @handle', onChanged: _search, caps: TextCapitalization.none),
+      GlassField(controller: _q, hint: 'Invite by name or @handle', icon: Ph.userPlus, onChanged: _search, caps: TextCapitalization.none),
       if (shown.isNotEmpty)
-        Glass(
-          radius: rCtl,
-          margin: const EdgeInsets.only(top: 4),
-          padding: const EdgeInsets.all(4),
-          child: Column(children: [
-            for (final u in shown)
-              InkWell(
-                onTap: () {
-                  widget.onPick(u);
-                  _q.clear();
-                  setState(() => _results = []);
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                  child: Row(children: [
-                    Expanded(child: Text(u.name, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 14, color: bd.muted))),
-                    Text('@${u.handle}', style: T.sans(bd, size: 12, color: bd.faint)),
-                  ]),
+        Padding(
+          padding: const EdgeInsets.only(top: S.xs),
+          child: Glass(
+            radius: rCtl,
+            padding: const EdgeInsets.symmetric(horizontal: S.l),
+            child: Hairlines(children: [
+              for (final u in shown)
+                Pressable(
+                  onTap: () {
+                    widget.onPick(u);
+                    _q.clear();
+                    setState(() => _results = []);
+                  },
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 48),
+                    child: Row(children: [
+                      Expanded(child: Text(u.name, overflow: TextOverflow.ellipsis, style: T.row(bd))),
+                      Text('@${u.handle}', style: T.caption(bd)),
+                    ]),
+                  ),
                 ),
-              ),
-          ]),
+            ]),
+          ),
         ),
     ]);
   }
 }
 
 class _CreatePlan extends StatefulWidget {
-  final VoidCallback onDone;
-  const _CreatePlan({required this.onDone});
+  const _CreatePlan();
   @override
   State<_CreatePlan> createState() => _CreatePlanState();
 }
@@ -560,13 +568,21 @@ class _CreatePlanState extends State<_CreatePlan> {
   final _city = TextEditingController();
   final _note = TextEditingController();
   final _drinks = TextEditingController();
-  final _cap = TextEditingController();
   DateTime? _date;
   TimeOfDay? _time;
+  int? _cap;
   JoinPolicy _policy = JoinPolicy.friends;
   final List<SocialProfile> _invited = [];
   bool _busy = false;
   String? _err;
+
+  @override
+  void dispose() {
+    for (final c in [_title, _city, _note, _drinks]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
 
   Future<void> _submit() async {
     if (_date == null || _title.text.trim().isEmpty) return;
@@ -583,7 +599,7 @@ class _CreatePlanState extends State<_CreatePlan> {
       note: _note.text,
       drinks: _drinks.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList(),
       joinPolicy: _policy,
-      capacity: isPrivate ? null : int.tryParse(_cap.text),
+      capacity: isPrivate ? null : _cap,
     ));
     if (res.error != null) {
       if (mounted) {
@@ -597,8 +613,9 @@ class _CreatePlanState extends State<_CreatePlan> {
     if (_policy == JoinPolicy.invite && _invited.isNotEmpty) {
       await Future.wait(_invited.map((u) => PlansApi.invite(res.id!, u.id)));
     }
-    if (mounted) setState(() => _busy = false);
-    widget.onDone();
+    if (!mounted) return;
+    Navigator.pop(context);
+    toast(context, isPrivate ? 'Saved to your calendar.' : 'Plan made — friends can ask to join.');
   }
 
   @override
@@ -606,88 +623,63 @@ class _CreatePlanState extends State<_CreatePlan> {
     final bd = context.bd;
     final isPrivate = _policy == JoinPolicy.private;
     final now = appNow();
-    return Glass(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Label('Plan a night', color: bd.faint),
-        const SizedBox(height: 12),
-        GlassField(controller: _title, hint: "What's the plan?", onChanged: (_) => setState(() {})),
-        const SizedBox(height: 10),
-        Row(children: [
-          Expanded(
-            child: _date == null
-                ? GestureDetector(
-                    onTap: () async {
-                      final d = await showDatePicker(context: context, initialDate: now, firstDate: DateTime(now.year, now.month, now.day), lastDate: DateTime(now.year + 2));
-                      if (d != null) setState(() => _date = d);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.only(bottom: 8, top: 4),
-                      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: bd.lineStrong))),
-                      child: Text('Pick a date', style: T.sans(bd, color: bd.faint)),
-                    ),
-                  )
-                : DateField(value: _date!, first: DateTime(now.year, now.month, now.day), last: DateTime(now.year + 2), onChanged: (d) => setState(() => _date = d)),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 110,
-            child: GestureDetector(
-              onTap: () async {
-                final t = await showTimePicker(context: context, initialTime: _time ?? const TimeOfDay(hour: 20, minute: 0));
-                if (t != null) setState(() => _time = t);
-              },
-              child: Container(
-                padding: const EdgeInsets.only(bottom: 8, top: 4),
-                decoration: BoxDecoration(border: Border(bottom: BorderSide(color: bd.lineStrong))),
-                child: Text(_time == null ? 'Time (opt.)' : _time!.format(context), style: T.sans(bd, color: _time == null ? bd.faint : bd.ink)),
-              ),
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      LineField(controller: _title, autofocus: true, label: "What's the plan?", hint: 'Mezcal tasting, a quiet pint…', onChanged: (_) => setState(() {})),
+      const SizedBox(height: S.xl),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: DateField(label: 'Day', value: _date, first: DateTime(now.year, now.month, now.day), last: DateTime(now.year + 2, 12, 31), onChanged: (d) => setState(() => _date = d))),
+        const SizedBox(width: S.l),
+        Expanded(child: TimeField(label: 'Time (optional)', value: _time, placeholder: 'Any time', onChanged: (t) => setState(() => _time = t))),
+      ]),
+      const SizedBox(height: S.xl),
+      LineField(controller: _city, label: 'Where (optional)', hint: 'A city or an area', caps: TextCapitalization.words),
+      const SizedBox(height: S.xl),
+      const Label('What do you fancy? (optional)'),
+      const SizedBox(height: S.s),
+      GlassField(controller: _note, hint: 'A line for the people you invite', maxLines: 3),
+      const SizedBox(height: S.m),
+      GlassField(controller: _drinks, hint: 'Drinks, separated by commas', icon: Ph.martini),
+      const SizedBox(height: S.xl),
+      const Label('Who can see it'),
+      const SizedBox(height: S.s),
+      Group(
+        footer: 'No public or stranger option — on purpose.',
+        children: [
+          for (final p in JoinPolicy.values)
+            GroupTile(
+              icon: _policyIcon[p],
+              title: p == JoinPolicy.invite ? 'Specific friends' : joinPolicyLabel[p]!,
+              subtitle: _policyHint[p],
+              trailing: _policy == p ? Icon(PhBold.check, size: 18, color: bd.accentText) : null,
+              onTap: () => setState(() => _policy = p),
             ),
-          ),
-        ]),
-        const SizedBox(height: 10),
-        GlassField(controller: _city, hint: 'City or area (optional)'),
-        const SizedBox(height: 10),
-        GlassField(controller: _note, hint: 'What do you fancy doing? (optional)', maxLines: 3),
-        const SizedBox(height: 10),
-        GlassField(controller: _drinks, hint: 'Drinks, comma-separated (optional)'),
-        const SizedBox(height: 14),
-        Text('Who can see it', style: T.sans(bd, size: 12, color: bd.faint)),
-        const SizedBox(height: 6),
-        Wrap(spacing: 6, runSpacing: 6, children: [
-          for (final p in JoinPolicy.values) BdChip(p == JoinPolicy.invite ? 'Specific friends' : joinPolicyLabel[p]!, active: _policy == p, onTap: () => setState(() => _policy = p)),
-        ]),
-        const SizedBox(height: 6),
-        Text('${_policyHint[_policy]} No public or stranger option — on purpose.', style: T.sans(bd, size: 12, color: bd.faint, height: 1.4)),
-        if (_policy == JoinPolicy.invite) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(rCtl), border: Border.all(color: bd.line)),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text('Invite people by name or @handle', style: T.sans(bd, size: 12, color: bd.faint)),
-              const SizedBox(height: 6),
-              UserSearch(exclude: _invited.map((u) => u.id).toSet(), onPick: (u) => setState(() => _invited.add(u))),
-              if (_invited.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Wrap(spacing: 6, runSpacing: 6, children: [for (final u in _invited) BdChip('${u.name}  ×', active: true, onTap: () => setState(() => _invited.remove(u)))]),
-              ],
+        ],
+      ),
+      if (_policy == JoinPolicy.invite) ...[
+        const SizedBox(height: S.l),
+        UserSearch(exclude: _invited.map((u) => u.id).toSet(), onPick: (u) => setState(() => _invited.add(u))),
+        if (_invited.isNotEmpty) ...[
+          const SizedBox(height: S.xs),
+          Wrap(spacing: S.s, children: [for (final u in _invited) BdChip(u.name, active: true, icon: PhBold.x, onTap: () => setState(() => _invited.remove(u)))]),
+        ],
+      ],
+      if (!isPrivate) ...[
+        const SizedBox(height: S.l),
+        Group(children: [
+          SettingRow(
+            title: 'Max people',
+            hint: 'Optional — leave it off for no limit.',
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              IconBtn(Ph.minus, glass: true, size: 18, tooltip: 'Fewer people', onTap: _cap == null ? null : () => setState(() => _cap = _cap! <= 2 ? null : _cap! - 1)),
+              SizedBox(width: 40, child: Text(_cap == null ? 'Off' : '$_cap', textAlign: TextAlign.center, style: T.sans(bd, size: 16, weight: FontWeight.w600, color: _cap == null ? bd.faint : bd.ink).copyWith(fontFeatures: T.tnum))),
+              IconBtn(Ph.plus, glass: true, size: 18, tooltip: 'More people', onTap: (_cap ?? 0) >= 50 ? null : () => setState(() => _cap = _cap == null ? 4 : _cap! + 1)),
             ]),
           ),
-        ],
-        if (!isPrivate) ...[
-          const SizedBox(height: 10),
-          GlassField(controller: _cap, hint: 'Max people (optional)', keyboard: TextInputType.number),
-        ],
-        if (_err != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(_err!, style: T.sans(bd, size: 14, color: bd.accent))),
-        const SizedBox(height: 16),
-        Row(children: [
-          Expanded(child: InkButton(_busy ? 'Creating…' : (isPrivate ? 'Save to my calendar' : 'Create plan'), uppercase: false, busy: _busy, onTap: _title.text.trim().isEmpty || _date == null ? null : _submit)),
-          const SizedBox(width: 12),
-          TextAction('Cancel', faint: true, onTap: widget.onDone),
         ]),
-      ]),
-    );
+      ],
+      if (_err != null) Padding(padding: const EdgeInsets.only(top: S.m), child: Text(_err!, style: T.sans(bd, size: 14, color: bd.accentText))),
+      const SizedBox(height: S.xxl),
+      BdButton(isPrivate ? 'Save to my calendar' : 'Make the plan', busy: _busy, onTap: _title.text.trim().isEmpty || _date == null ? null : _submit),
+    ]);
   }
 }

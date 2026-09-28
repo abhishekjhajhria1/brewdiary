@@ -25,6 +25,7 @@ abstract final class Ph {
   static const bellRinging = IconData(0xe5e8, fontFamily: 'Phosphor');
   static const bellSlash = IconData(0xe0d4, fontFamily: 'Phosphor');
   static const bookOpen = IconData(0xe0e6, fontFamily: 'Phosphor');
+  static const brandy = IconData(0xe6b4, fontFamily: 'Phosphor');
   static const broom = IconData(0xec54, fontFamily: 'Phosphor');
   static const calendarBlank = IconData(0xe10a, fontFamily: 'Phosphor');
   static const calendarCheck = IconData(0xe712, fontFamily: 'Phosphor');
@@ -37,9 +38,11 @@ abstract final class Ph {
   static const champagne = IconData(0xeaca, fontFamily: 'Phosphor');
   static const chartBar = IconData(0xe150, fontFamily: 'Phosphor');
   static const chatCircle = IconData(0xe168, fontFamily: 'Phosphor');
+  static const chatText = IconData(0xe17a, fontFamily: 'Phosphor');
   static const chatsCircle = IconData(0xe17e, fontFamily: 'Phosphor');
   static const check = IconData(0xe182, fontFamily: 'Phosphor');
   static const checkCircle = IconData(0xe184, fontFamily: 'Phosphor');
+  static const cheers = IconData(0xea4a, fontFamily: 'Phosphor');
   static const cigarette = IconData(0xed90, fontFamily: 'Phosphor');
   static const circle = IconData(0xe18a, fontFamily: 'Phosphor');
   static const clock = IconData(0xe19a, fontFamily: 'Phosphor');
@@ -48,10 +51,12 @@ abstract final class Ph {
   static const compass = IconData(0xe1c8, fontFamily: 'Phosphor');
   static const confetti = IconData(0xe81a, fontFamily: 'Phosphor');
   static const copy = IconData(0xe1ca, fontFamily: 'Phosphor');
+  static const crown = IconData(0xe614, fontFamily: 'Phosphor');
   static const dotsThree = IconData(0xe1fe, fontFamily: 'Phosphor');
   static const dotsThreeVertical = IconData(0xe208, fontFamily: 'Phosphor');
   static const downloadSimple = IconData(0xe20c, fontFamily: 'Phosphor');
   static const drop = IconData(0xe210, fontFamily: 'Phosphor');
+  static const dropHalf = IconData(0xe566, fontFamily: 'Phosphor');
   static const envelopeSimple = IconData(0xe218, fontFamily: 'Phosphor');
   static const eraser = IconData(0xe21e, fontFamily: 'Phosphor');
   static const export = IconData(0xeaf0, fontFamily: 'Phosphor');
@@ -64,6 +69,7 @@ abstract final class Ph {
   static const flag = IconData(0xe244, fontFamily: 'Phosphor');
   static const flame = IconData(0xe624, fontFamily: 'Phosphor');
   static const gearSix = IconData(0xe272, fontFamily: 'Phosphor');
+  static const gift = IconData(0xe276, fontFamily: 'Phosphor');
   static const globe = IconData(0xe288, fontFamily: 'Phosphor');
   static const handHeart = IconData(0xe810, fontFamily: 'Phosphor');
   static const handTap = IconData(0xec90, fontFamily: 'Phosphor');
@@ -91,6 +97,7 @@ abstract final class Ph {
   static const minus = IconData(0xe32a, fontFamily: 'Phosphor');
   static const minusCircle = IconData(0xe32c, fontFamily: 'Phosphor');
   static const money = IconData(0xe588, fontFamily: 'Phosphor');
+  static const monitor = IconData(0xe32e, fontFamily: 'Phosphor');
   static const moon = IconData(0xe330, fontFamily: 'Phosphor');
   static const moonStars = IconData(0xe58e, fontFamily: 'Phosphor');
   static const musicNotes = IconData(0xe340, fontFamily: 'Phosphor');
@@ -121,11 +128,13 @@ abstract final class Ph {
   static const sun = IconData(0xe472, fontFamily: 'Phosphor');
   static const tag = IconData(0xe478, fontFamily: 'Phosphor');
   static const target = IconData(0xe47c, fontFamily: 'Phosphor');
+  static const teaBag = IconData(0xe8e6, fontFamily: 'Phosphor');
   static const ticket = IconData(0xe490, fontFamily: 'Phosphor');
   static const trash = IconData(0xe4a6, fontFamily: 'Phosphor');
   static const trophy = IconData(0xe67e, fontFamily: 'Phosphor');
   static const uploadSimple = IconData(0xe4c0, fontFamily: 'Phosphor');
   static const user = IconData(0xe4c2, fontFamily: 'Phosphor');
+  static const userCheck = IconData(0xeafa, fontFamily: 'Phosphor');
   static const userCircle = IconData(0xe4c4, fontFamily: 'Phosphor');
   static const userMinus = IconData(0xe4ce, fontFamily: 'Phosphor');
   static const userPlus = IconData(0xe4d0, fontFamily: 'Phosphor');
@@ -140,18 +149,21 @@ abstract final class Ph {
 
 /// Filled — the "selected" state of a tab, a cheered heart.
 abstract final class PhFill {
-  static const calendarBlank = IconData(0xe10a, fontFamily: 'PhosphorFill');
-  static const usersThree = IconData(0xe68e, fontFamily: 'PhosphorFill');
-  static const martini = IconData(0xe31c, fontFamily: 'PhosphorFill');
-  static const userCircle = IconData(0xe4c4, fontFamily: 'PhosphorFill');
-  static const heart = IconData(0xe2a8, fontFamily: 'PhosphorFill');
-  static const star = IconData(0xe46a, fontFamily: 'PhosphorFill');
-  static const checkCircle = IconData(0xe184, fontFamily: 'PhosphorFill');
-  static const sparkle = IconData(0xe6a2, fontFamily: 'PhosphorFill');
-  static const flame = IconData(0xe624, fontFamily: 'PhosphorFill');
   static const bell = IconData(0xe0ce, fontFamily: 'PhosphorFill');
+  static const calendarBlank = IconData(0xe10a, fontFamily: 'PhosphorFill');
+  static const checkCircle = IconData(0xe184, fontFamily: 'PhosphorFill');
+  static const cheers = IconData(0xea4a, fontFamily: 'PhosphorFill');
+  static const confetti = IconData(0xe81a, fontFamily: 'PhosphorFill');
+  static const flame = IconData(0xe624, fontFamily: 'PhosphorFill');
+  static const gift = IconData(0xe276, fontFamily: 'PhosphorFill');
   static const handsClapping = IconData(0xe6a0, fontFamily: 'PhosphorFill');
+  static const heart = IconData(0xe2a8, fontFamily: 'PhosphorFill');
   static const mapPin = IconData(0xe316, fontFamily: 'PhosphorFill');
+  static const martini = IconData(0xe31c, fontFamily: 'PhosphorFill');
+  static const sparkle = IconData(0xe6a2, fontFamily: 'PhosphorFill');
+  static const star = IconData(0xe46a, fontFamily: 'PhosphorFill');
+  static const userCircle = IconData(0xe4c4, fontFamily: 'PhosphorFill');
+  static const usersThree = IconData(0xe68e, fontFamily: 'PhosphorFill');
 }
 
 /// Bold — small glyphs that must read at a glance (send, check).

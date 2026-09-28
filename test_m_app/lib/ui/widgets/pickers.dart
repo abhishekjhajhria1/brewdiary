@@ -174,3 +174,51 @@ class PickerField extends StatelessWidget {
     ]);
   }
 }
+
+/// A date field that opens the house date wheels ("Today" when it's today).
+class DateField extends StatelessWidget {
+  final DateTime? value;
+  final ValueChanged<DateTime> onChanged;
+  final DateTime? first;
+  final DateTime? last;
+  final String? label;
+  final String placeholder;
+  const DateField({super.key, required this.value, required this.onChanged, this.first, this.last, this.label, this.placeholder = 'Pick a date'});
+  @override
+  Widget build(BuildContext context) {
+    final v = value;
+    return PickerField(
+      label: label,
+      value: v == null ? placeholder : (toKey(v) == todayKey() ? 'Today' : writtenDate(v)),
+      placeholder: v == null,
+      icon: Ph.calendarBlank,
+      onTap: () async {
+        final picked = await pickDate(context, initial: v ?? appNow(), first: first, last: last, title: label ?? 'Pick a date');
+        if (picked != null) onChanged(picked);
+      },
+    );
+  }
+}
+
+/// A time field that opens the house time wheel.
+class TimeField extends StatelessWidget {
+  final TimeOfDay? value;
+  final ValueChanged<TimeOfDay> onChanged;
+  final String? label;
+  final String placeholder;
+  const TimeField({super.key, required this.value, required this.onChanged, this.label, this.placeholder = 'Pick a time'});
+  @override
+  Widget build(BuildContext context) {
+    final v = value;
+    return PickerField(
+      label: label,
+      value: v == null ? placeholder : v.format(context),
+      placeholder: v == null,
+      icon: Ph.clock,
+      onTap: () async {
+        final picked = await pickTime(context, initial: v ?? const TimeOfDay(hour: 20, minute: 0), title: label ?? 'Pick a time');
+        if (picked != null) onChanged(picked);
+      },
+    );
+  }
+}
