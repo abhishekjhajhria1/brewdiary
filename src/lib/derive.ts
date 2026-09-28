@@ -371,3 +371,53 @@ export function tasteProfile(allEntries: Entry[], days = 180): TasteProfile {
     basedOn: entries.length,
   };
 }
+
+// ── the taste passport ───────────────────────────────────────────────────────
+// Stamps for VARIETY, never volume: places been, kinds tried, families met, dry
+// nights kept. Ten nights at one bar is one stamp; a dry night is a stamp too.
+export interface PassportStamp {
+  place: string;
+  /** The first night you logged there. */
+  date: string;
+}
+export interface Passport {
+  /** Most recent first-visits first (max `n`). */
+  stamps: PassportStamp[];
+  places: number;
+  /** Kinds tried, out of the eight drink kinds. */
+  kinds: number;
+  families: number;
+  dryNights: number;
+  /** The first day in the diary, or null for an empty one. */
+  since: string | null;
+}
+
+export function passport(entries: Entry[], n = 6): Passport {
+  const first = new Map<string, { place: string; date: string }>();
+  const kinds = new Set<DrinkType>();
+  const families = new Set<string>();
+  let since: string | null = null;
+  for (const e of entries) {
+    if (!since || e.date < since) since = e.date;
+    const place = e.venue?.trim();
+    if (place) {
+      const k = place.toLowerCase();
+      const prev = first.get(k);
+      if (!prev || e.date < prev.date) first.set(k, { place: prev?.place ?? place, date: e.date });
+    }
+    if (isDryDay(e)) continue;
+    const c = canonicalize(e.drink);
+    const t = e.type ?? c.type;
+    if (t) kinds.add(t);
+    families.add(c.matched ? c.family : e.drink.trim().toLowerCase());
+  }
+  const stamps = [...first.values()].sort((a, b) => b.date.localeCompare(a.date) || a.place.localeCompare(b.place));
+  return {
+    stamps: stamps.slice(0, n),
+    places: stamps.length,
+    kinds: kinds.size,
+    families: families.size,
+    dryNights: dryDates(entries).size,
+    since,
+  };
+}

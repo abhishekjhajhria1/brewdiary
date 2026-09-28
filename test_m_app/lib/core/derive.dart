@@ -359,3 +359,45 @@ TasteProfile tasteProfile(List<Entry> allEntries, [int days = 180]) {
     basedOn: entries.length,
   );
 }
+
+// ── the taste passport ───────────────────────────────────────────────────────
+// Stamps for VARIETY, never volume: places been, kinds tried, families met, dry
+// nights kept. Ten nights at one bar is one stamp; a dry night is a stamp too.
+class PassportStamp {
+  final String place;
+  final String date; // the first night you logged there
+  const PassportStamp(this.place, this.date);
+}
+
+class Passport {
+  final List<PassportStamp> stamps;
+  final int places;
+  final int kinds;
+  final int families;
+  final int dryNights;
+  final String? since;
+  const Passport({required this.stamps, required this.places, required this.kinds, required this.families, required this.dryNights, required this.since});
+}
+
+Passport passport(List<Entry> entries, [int n = 6]) {
+  final first = <String, PassportStamp>{};
+  final kinds = <DrinkType>{};
+  final families = <String>{};
+  String? since;
+  for (final e in entries) {
+    if (since == null || e.date.compareTo(since) < 0) since = e.date;
+    final place = e.venue?.trim();
+    if (place != null && place.isNotEmpty) {
+      final k = place.toLowerCase();
+      final prev = first[k];
+      if (prev == null || e.date.compareTo(prev.date) < 0) first[k] = PassportStamp(prev?.place ?? place, e.date);
+    }
+    if (isDryDay(e)) continue;
+    final c = canonicalize(e.drink);
+    final t = e.type ?? c.type;
+    if (t != null) kinds.add(t);
+    families.add(c.matched ? c.family : e.drink.trim().toLowerCase());
+  }
+  final stamps = first.values.toList()..sort((a, b) => b.date != a.date ? b.date.compareTo(a.date) : a.place.compareTo(b.place));
+  return Passport(stamps: stamps.take(n).toList(), places: stamps.length, kinds: kinds.length, families: families.length, dryNights: dryDates(entries).length, since: since);
+}

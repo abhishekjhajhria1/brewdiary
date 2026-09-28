@@ -11,6 +11,7 @@ import {
   recentDrinks,
   stats,
   tasteProfile,
+  passport,
   friendPicks,
 } from "@/lib/derive";
 
@@ -205,5 +206,45 @@ describe("tasteProfile (the taste card, derived on the device)", () => {
 
   it("an empty diary is an empty card", () => {
     expect(tasteProfile([])).toEqual({ favourites: [], kinds: [], moods: [], noAlcoholShare: 0, basedOn: 0 });
+  });
+});
+
+describe("passport (stamps for variety, never volume)", () => {
+  const e = (drink: string, date: string, venue?: string, type?: Entry["type"]): Entry => ({
+    id: Math.random().toString(36),
+    date,
+    createdAt: `${date}T20:00:00Z`,
+    drink,
+    venue,
+    type,
+  });
+
+  it("one stamp per place, dated by the first visit, newest first", () => {
+    const p = passport([
+      e("Negroni", "2026-09-01", "Soka"),
+      e("Negroni", "2026-09-10", "soka "),
+      e("Negroni", "2026-09-12", "Soka"),
+      e("IPA", "2026-08-20", "Toit", "beer"),
+      e("Flat white", "2026-09-05", "Blue Tokai", "coffee"),
+    ]);
+    expect(p.stamps).toEqual([
+      { place: "Blue Tokai", date: "2026-09-05" },
+      { place: "Soka", date: "2026-09-01" },
+      { place: "Toit", date: "2026-08-20" },
+    ]);
+    expect(p.places).toBe(3);
+    expect(p.kinds).toBe(3);
+    expect(p.families).toBe(3);
+    expect(p.since).toBe("2026-08-20");
+  });
+
+  it("a dry night is a stamp of its own, not a kind", () => {
+    const p = passport([e("dry day", "2026-09-02", undefined, "none"), e("dry day", "2026-09-03", undefined, "none")]);
+    expect(p.dryNights).toBe(2);
+    expect(p.kinds).toBe(0);
+  });
+
+  it("an empty diary is an empty passport", () => {
+    expect(passport([])).toEqual({ stamps: [], places: 0, kinds: 0, families: 0, dryNights: 0, since: null });
   });
 });

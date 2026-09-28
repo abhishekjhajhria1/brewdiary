@@ -143,8 +143,8 @@ class _YouScreenState extends State<YouScreen> {
             Group(children: [
               GroupTile(
                 icon: Ph.identificationBadge,
-                title: 'Your taste card',
-                subtitle: 'What you\'re into, to show a bartender. Stays on your phone.',
+                title: 'Your taste passport',
+                subtitle: 'Stamps for everywhere you\'ve been, and what you\'re into.',
                 chevron: true,
                 onTap: () => showTasteCard(context),
               ),

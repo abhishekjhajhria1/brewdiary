@@ -226,7 +226,11 @@ void main() {
     await _boot(t);
     await _push(t, const TasteCardScreen());
     await _shot(t, 'o4_taste_card');
+    await t.ensureVisible(find.byType(BdToggle).first);
+    await t.pumpAndSettle();
     await t.tap(find.byType(BdToggle).first);
+    await t.pumpAndSettle();
+    await t.drag(find.byType(Scrollable).hitTestable().first, const Offset(0, 2000));
     await t.pumpAndSettle();
     await _shot(t, 'o5_taste_card_dry');
   });

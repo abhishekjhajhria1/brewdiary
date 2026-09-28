@@ -97,7 +97,7 @@ class MenuViewState extends State<MenuView> {
 
     return SubPage(
       title: menu.venueName,
-      actions: [IconBtn(Ph.identificationBadge, tooltip: 'Show my taste card', onTap: () => showTasteCard(context))],
+      actions: [IconBtn(Ph.identificationBadge, tooltip: 'Show my taste passport', onTap: () => showTasteCard(context))],
       subtitle: [if (menu.venueCity != null) menu.venueCity!, menu.isStore ? 'On the shelf' : 'The menu'].join(' · '),
       child: menu.sections.isEmpty
           ? const EmptyNote("The menu isn't up yet — ask at the bar.", icon: Ph.notebook)

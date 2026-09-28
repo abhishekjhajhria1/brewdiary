@@ -390,4 +390,30 @@ void main() {
       expect([p.favourites, p.kinds, p.moods, p.noAlcoholShare, p.basedOn], [isEmpty, isEmpty, isEmpty, 0, 0]);
     });
   });
+
+  group('passport (parity with tests/derive.test.ts)', () {
+    Entry e(String drink, String date, [String? venue, DrinkType? type]) => Entry(id: 'p${_seq++}', date: date, createdAt: '${date}T20:00:00Z', drink: drink, venue: venue, type: type);
+
+    test('one stamp per place, dated by the first visit, newest first', () {
+      final p = passport([
+        e('Negroni', '2026-09-01', 'Soka'),
+        e('Negroni', '2026-09-10', 'soka '),
+        e('Negroni', '2026-09-12', 'Soka'),
+        e('IPA', '2026-08-20', 'Toit', DrinkType.beer),
+        e('Flat white', '2026-09-05', 'Blue Tokai', DrinkType.coffee),
+      ]);
+      expect(p.stamps.map((s) => (s.place, s.date)), [('Blue Tokai', '2026-09-05'), ('Soka', '2026-09-01'), ('Toit', '2026-08-20')]);
+      expect([p.places, p.kinds, p.families, p.since], [3, 3, 3, '2026-08-20']);
+    });
+
+    test('a dry night is a stamp of its own, not a kind', () {
+      final p = passport([e('dry day', '2026-09-02', null, DrinkType.none), e('dry day', '2026-09-03', null, DrinkType.none)]);
+      expect([p.dryNights, p.kinds], [2, 0]);
+    });
+
+    test('an empty diary is an empty passport', () {
+      final p = passport([]);
+      expect([p.stamps, p.places, p.kinds, p.families, p.dryNights, p.since], [isEmpty, 0, 0, 0, 0, null]);
+    });
+  });
 }

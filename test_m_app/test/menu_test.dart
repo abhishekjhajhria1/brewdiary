@@ -54,9 +54,13 @@ void main() {
     navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const TasteCardScreen()));
     await t.pumpAndSettle();
     expect(find.text('INTO'), findsOneWidget);
+    await t.ensureVisible(find.bySemanticsLabel('Show Into'));
+    await t.pumpAndSettle();
     await t.tap(find.bySemanticsLabel('Show Into'));
     await t.pumpAndSettle();
     expect(find.text('INTO'), findsNothing);
+    await t.ensureVisible(find.bySemanticsLabel('Nothing with alcohol tonight'));
+    await t.pumpAndSettle();
     await t.tap(find.bySemanticsLabel('Nothing with alcohol tonight'));
     await t.pumpAndSettle();
     expect(find.text('NOTHING WITH ALCOHOL TONIGHT'), findsOneWidget);
