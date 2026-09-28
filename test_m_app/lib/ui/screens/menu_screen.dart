@@ -15,6 +15,7 @@ import '../../data/menus.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
+import 'taste_card.dart';
 
 class MenuScreen extends StatelessWidget {
   final String slug;
@@ -96,6 +97,7 @@ class MenuViewState extends State<MenuView> {
 
     return SubPage(
       title: menu.venueName,
+      actions: [IconBtn(Ph.identificationBadge, tooltip: 'Show my taste card', onTap: () => showTasteCard(context))],
       subtitle: [if (menu.venueCity != null) menu.venueCity!, menu.isStore ? 'On the shelf' : 'The menu'].join(' · '),
       child: menu.sections.isEmpty
           ? const EmptyNote("The menu isn't up yet — ask at the bar.", icon: Ph.notebook)

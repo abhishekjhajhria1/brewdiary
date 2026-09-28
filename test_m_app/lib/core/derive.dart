@@ -308,3 +308,54 @@ YearReview yearReview(List<Entry> allEntries) {
     busiestMonth: topMonth != null ? monthNames[topMonth!] : null,
   );
 }
+
+// ── the taste card ───────────────────────────────────────────────────────────
+// What you're into, in a few words — for showing a bartender ON YOUR SCREEN.
+// Derived on the phone from the diary and never sent anywhere.
+class TasteProfile {
+  /// Drink families you come back to, most first (max 4).
+  final List<String> favourites;
+
+  /// The kinds you usually drink, most first (max 3).
+  final List<DrinkType> kinds;
+
+  /// Your most-used mood words (max 3).
+  final List<String> moods;
+
+  /// Share of your drinks with no alcohol, 0..1.
+  final double noAlcoholShare;
+
+  /// How many drinks the card is drawn from.
+  final int basedOn;
+  const TasteProfile({required this.favourites, required this.kinds, required this.moods, required this.noAlcoholShare, required this.basedOn});
+}
+
+/// The taste card from the last [days] of the diary (default ~6 months).
+TasteProfile tasteProfile(List<Entry> allEntries, [int days = 180]) {
+  final cutoff = toKey(addDays(parseKey(todayKey()), -days));
+  final entries = drinkEntries(allEntries).where((e) => e.date.compareTo(cutoff) >= 0).toList();
+  final fam = <String, int>{};
+  final kind = <DrinkType, int>{};
+  var soft = 0;
+  for (final e in entries) {
+    final c = canonicalize(e.drink);
+    final f = c.matched ? c.family : e.drink.trim();
+    if (f.isNotEmpty) fam[f] = (fam[f] ?? 0) + 1;
+    final t = e.type ?? c.type;
+    if (t != null && t != DrinkType.none) kind[t] = (kind[t] ?? 0) + 1;
+    if (!isAlcoholic(e.drink, e.type)) soft++;
+  }
+  List<K> top<K>(Map<K, int> m, int n, String Function(K) label) {
+    final l = m.entries.toList()..sort((a, b) => b.value != a.value ? b.value.compareTo(a.value) : label(a.key).compareTo(label(b.key)));
+    return l.take(n).map((x) => x.key).toList();
+  }
+
+  return TasteProfile(
+    // A favourite is something you've had at least twice — once is a visit, not a taste.
+    favourites: top({for (final x in fam.entries) if (x.value >= 2) x.key: x.value}, 4, (k) => k),
+    kinds: top(kind, 3, (k) => k.name),
+    moods: lexicon(entries).take(3).map((m) => m.word).toList(),
+    noAlcoholShare: entries.isEmpty ? 0 : soft / entries.length,
+    basedOn: entries.length,
+  );
+}

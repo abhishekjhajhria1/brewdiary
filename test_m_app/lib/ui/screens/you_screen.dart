@@ -21,6 +21,7 @@ import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
 import '../widgets/pickers.dart';
 import 'settings_screen.dart';
+import 'taste_card.dart';
 
 class YouScreen extends StatefulWidget {
   /// Source of the suggested to-try pick; tests seed it for stable screenshots.
@@ -134,6 +135,16 @@ class _YouScreenState extends State<YouScreen> {
             const _Pantry(),
             const SizedBox(height: S.m),
             _JourneyTile(entries: entries),
+            const SizedBox(height: S.m),
+            Group(children: [
+              GroupTile(
+                icon: Ph.identificationBadge,
+                title: 'Your taste card',
+                subtitle: 'What you\'re into, to show a bartender. Stays on your phone.',
+                chevron: true,
+                onTap: () => showTasteCard(context),
+              ),
+            ]),
             SectionHeader('History', trailing: Text('${filtered.length}', style: T.caption(bd).copyWith(fontFeatures: T.tnum))),
             GlassField(
               controller: _query,

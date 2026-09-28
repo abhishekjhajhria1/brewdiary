@@ -13,6 +13,7 @@ import 'package:brewdiary/data/plans.dart';
 import 'package:brewdiary/ui/screens/menu_screen.dart';
 import 'package:brewdiary/ui/screens/party_screens.dart';
 import 'package:brewdiary/ui/screens/plans_section.dart';
+import 'package:brewdiary/ui/screens/taste_card.dart';
 import 'package:brewdiary/ui/screens/split_screen.dart';
 import 'package:brewdiary/ui/screens/together_screen.dart';
 import 'package:brewdiary/ui/theme.dart';
@@ -218,6 +219,15 @@ void main() {
     await t.tap(find.byType(TableMenuCard));
     await t.pumpAndSettle();
     await _shot(t, 'o3_table_sheet');
+  });
+
+  _tourTest('taste card', (t) async {
+    await _boot(t);
+    await _push(t, const TasteCardScreen());
+    await _shot(t, 'o4_taste_card');
+    await t.tap(find.byType(BdToggle).first);
+    await t.pumpAndSettle();
+    await _shot(t, 'o5_taste_card_dry');
   });
 
   _tourTest('light theme social', (t) async {

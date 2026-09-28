@@ -4,6 +4,8 @@ import 'package:brewdiary/app.dart';
 import 'package:brewdiary/core/date.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/ui/screens/menu_screen.dart';
+import 'package:brewdiary/ui/screens/taste_card.dart';
+import 'package:brewdiary/ui/widgets/common.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -45,5 +47,19 @@ void main() {
     navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const MenuScreen(slug: 'soka')));
     await t.pumpAndSettle();
     expect(find.textContaining("isn't connected"), findsOneWidget);
+  });
+
+  testWidgets('the taste card: from the diary, lines can be hidden, and a dry night goes first', (t) async {
+    await bootApp(t, prefs: const {'brewdiary.age.v2': 'ok', 'brewdiary.country.v1': 'IN'}, signedIn: true);
+    navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const TasteCardScreen()));
+    await t.pumpAndSettle();
+    expect(find.text('INTO'), findsOneWidget);
+    await t.tap(find.bySemanticsLabel('Show Into'));
+    await t.pumpAndSettle();
+    expect(find.text('INTO'), findsNothing);
+    await t.tap(find.bySemanticsLabel('Nothing with alcohol tonight'));
+    await t.pumpAndSettle();
+    expect(find.text('NOTHING WITH ALCOHOL TONIGHT'), findsOneWidget);
+    expect(find.byType(BdToggle), findsWidgets);
   });
 }

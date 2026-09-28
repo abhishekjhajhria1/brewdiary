@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Entry } from "@/lib/types";
-import { toKey, addDays } from "@/lib/date";
+import { toKey, addDays, parseKey, todayKey } from "@/lib/date";
 import {
   countsByDate,
   intensityLevel,
@@ -10,6 +10,7 @@ import {
   lexicon,
   recentDrinks,
   stats,
+  tasteProfile,
   friendPicks,
 } from "@/lib/derive";
 
@@ -165,5 +166,44 @@ describe("stats", () => {
     const s = stats([entry({ drink: "Negroni" }), entry({ drink: "negroni" }), entry({ drink: "Cortado" })]);
     expect(s.total).toBe(3);
     expect(s.kinds).toBe(2); // negroni (case-insensitive) + cortado
+  });
+});
+
+describe("tasteProfile (the taste card, derived on the device)", () => {
+  const t = todayKey();
+  const e = (drink: string, type?: Entry["type"], mood?: string, date = t): Entry => ({
+    id: Math.random().toString(36),
+    date,
+    createdAt: `${date}T20:00:00Z`,
+    drink,
+    type,
+    mood,
+  });
+
+  it("favourites are families you came back to, most first", () => {
+    const p = tasteProfile([
+      e("Negroni"), e("Boulevardier"), e("negroni"),
+      e("IPA", "beer"), e("Hazy IPA", "beer"),
+      e("Pinot Noir"), // once is a visit, not a taste
+    ]);
+    expect(p.favourites).toEqual(["Negroni", "IPA"]);
+    expect(p.kinds[0]).toBe("cocktail");
+    expect(p.basedOn).toBe(6);
+  });
+
+  it("counts alcohol-free drinks, ignores dry days, and forgets the old diary", () => {
+    const old = toKey(addDays(parseKey(t), -400));
+    const p = tasteProfile([
+      e("Flat white", "coffee", "cozy"), e("Flat white", "coffee", "cozy"), e("Negroni", undefined, "bright"),
+      e("dry day", "none"), e("Negroni", undefined, undefined, old),
+    ]);
+    expect(p.basedOn).toBe(3);
+    expect(p.noAlcoholShare).toBeCloseTo(2 / 3);
+    expect(p.moods).toEqual(["cozy", "bright"]);
+    expect(p.favourites).toEqual(["Flat White"]);
+  });
+
+  it("an empty diary is an empty card", () => {
+    expect(tasteProfile([])).toEqual({ favourites: [], kinds: [], moods: [], noAlcoholShare: 0, basedOn: 0 });
   });
 });

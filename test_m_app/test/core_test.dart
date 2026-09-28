@@ -361,4 +361,33 @@ void main() {
       expect(ageFrom(DateTime(2000, 6, 15), DateTime(2026, 6, 15)), 26);
     });
   });
+
+  group('tasteProfile (parity with tests/derive.test.ts)', () {
+    final t = todayKey();
+    Entry e(String drink, [DrinkType? type, String? mood, String? date]) => entry(drink: drink, type: type, mood: mood, date: date ?? t);
+
+    test('favourites are families you came back to, most first', () {
+      final p = tasteProfile([e('Negroni'), e('Boulevardier'), e('negroni'), e('IPA', DrinkType.beer), e('Hazy IPA', DrinkType.beer), e('Pinot Noir')]);
+      expect(p.favourites, ['Negroni', 'IPA']);
+      expect(p.kinds.first, DrinkType.cocktail);
+      expect(p.basedOn, 6);
+    });
+
+    test('counts alcohol-free drinks, ignores dry days, and forgets the old diary', () {
+      final old = toKey(addDays(parseKey(t), -400));
+      final p = tasteProfile([
+        e('Flat white', DrinkType.coffee, 'cozy'), e('Flat white', DrinkType.coffee, 'cozy'), e('Negroni', null, 'bright'),
+        e('dry day', DrinkType.none), e('Negroni', null, null, old),
+      ]);
+      expect(p.basedOn, 3);
+      expect(p.noAlcoholShare, closeTo(2 / 3, 1e-9));
+      expect(p.moods, ['cozy', 'bright']);
+      expect(p.favourites, ['Flat White']);
+    });
+
+    test('an empty diary is an empty card', () {
+      final p = tasteProfile([]);
+      expect([p.favourites, p.kinds, p.moods, p.noAlcoholShare, p.basedOn], [isEmpty, isEmpty, isEmpty, 0, 0]);
+    });
+  });
 }
