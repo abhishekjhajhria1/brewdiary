@@ -16,6 +16,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/date.dart';
 import '../core/derive.dart';
+import '../core/money.dart';
 import '../core/types.dart';
 import '../data/base.dart';
 import '../data/entries.dart';
@@ -44,9 +45,34 @@ class HomeWidget {
       final dir = await getApplicationSupportDirectory();
       await File('${dir.path}/$fileName').writeAsBytes(png, flush: true);
       await _channel.invokeMethod('refresh');
+      // The quick-log widget shows today's water and cigarettes.
+      final today = todayKey();
+      int count(String drink) => entryStore.entries.where((e) => e.date == today && e.drink.trim().toLowerCase() == drink).length;
+      await _channel.invokeMethod('quick', {'water': count('water'), 'cigarettes': count('cigarette')});
     } catch (e) {
       logDebug(e);
     }
+  }
+
+  static String? _lastSplit;
+
+  /// The Split widget: called when the Split page has your balances. Redraws
+  /// only when they changed.
+  static void noteSplit({required double owed, required double owe, required String currency}) {
+    if (kIsWeb || !Platform.isAndroid) return;
+    final key = '$owed|$owe|$currency';
+    if (key == _lastSplit) return;
+    _lastSplit = key;
+    () async {
+      try {
+        final png = await renderSplitCard(owed: owed, owe: owe, currency: currency);
+        final dir = await getApplicationSupportDirectory();
+        await File('${dir.path}/split_widget.png').writeAsBytes(png, flush: true);
+        await _channel.invokeMethod('split');
+      } catch (e) {
+        logDebug(e);
+      }
+    }();
   }
 }
 
@@ -103,6 +129,36 @@ Future<Uint8List> renderMosaicCard(List<Entry> entries, DateTime now, {double sc
     }
   }
 
+  final img = await rec.endRecording().toImage((w * scale).round(), (h * scale).round());
+  final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+  return bytes!.buffer.asUint8List();
+}
+
+/// The Split widget's picture: what you're owed and what you owe. Your own
+/// balance, on your own home screen.
+Future<Uint8List> renderSplitCard({required double owed, required double owe, required String currency, double scale = 3}) async {
+  const bd = BD.darkTokens;
+  const w = 240.0, h = 100.0, pad = 16.0;
+  final rec = ui.PictureRecorder();
+  final c = Canvas(rec)..scale(scale);
+  final card = RRect.fromRectAndRadius(const Rect.fromLTWH(0, 0, w, h), const Radius.circular(22));
+  c.drawRRect(card, Paint()..color = const Color(0xF2121319));
+  c.drawRRect(card.deflate(.4), Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = .8
+    ..color = bd.glassBorder);
+  void text(String s, Offset at, double size, Color color, {String family = T.sansFamily, FontWeight weight = FontWeight.w400, double width = w / 2 - pad}) {
+    final p = ui.ParagraphBuilder(ui.ParagraphStyle(maxLines: 1, ellipsis: '…'))
+      ..pushStyle(ui.TextStyle(color: color, fontSize: size, fontFamily: family, fontWeight: weight))
+      ..addText(s);
+    c.drawParagraph(p.build()..layout(ui.ParagraphConstraints(width: width)), at);
+  }
+
+  text('SPLIT', const Offset(pad, pad - 2), 9.5, bd.muted, weight: FontWeight.w600, width: w);
+  text("You're owed", const Offset(pad, 34), 11, bd.muted);
+  text(formatMoney(owed, currency, true), const Offset(pad, 50), 22, owed > 0 ? bd.accent : bd.ink, family: T.serifFamily);
+  text('You owe', const Offset(w / 2 + 4, 34), 11, bd.muted);
+  text(formatMoney(owe, currency, true), const Offset(w / 2 + 4, 50), 22, bd.ink, family: T.serifFamily);
   final img = await rec.endRecording().toImage((w * scale).round(), (h * scale).round());
   final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
   return bytes!.buffer.asUint8List();

@@ -8,6 +8,7 @@ import 'dart:math';
 import 'package:brewdiary/app.dart';
 import 'package:brewdiary/core/date.dart';
 import 'package:brewdiary/ui/screens/you_screen.dart';
+import 'package:brewdiary/ui/screens/morning_after.dart';
 import 'package:brewdiary/ui/screens/tonight_sheet.dart';
 import 'package:brewdiary/ui/widgets/common.dart';
 import 'package:brewdiary/ui/widgets/log_sheet.dart';
@@ -256,6 +257,15 @@ void main() {
     showTonight(navigatorKey.currentContext!);
     await t.pumpAndSettle();
     await _shot(t, 'm2_tonight_sheet');
+  });
+
+  _tourTest('morning after', (t) async {
+    await _boot(t);
+    navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const MorningAfterScreen()));
+    await t.pumpAndSettle();
+    await _shot(t, 'm3_morning_after');
+    await _scroll(t, 700);
+    await _shot(t, 'm4_morning_after_help');
   });
 
   _tourTest('light theme', (t) async {

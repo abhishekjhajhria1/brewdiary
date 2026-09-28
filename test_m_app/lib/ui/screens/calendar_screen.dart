@@ -17,6 +17,7 @@ import '../widgets/moments.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
 import 'discover_screen.dart';
+import 'morning_after.dart';
 import 'tonight_sheet.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -119,6 +120,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
         YearMosaic(year: now.year, counts: counts, onSelect: (k) => _open(k, planDays)),
       if (entries.isEmpty) const EmptyNote('Tap a day to log your first drink — a coffee counts.', icon: Ph.handTap),
       const SizedBox(height: S.xxl),
+      if (morningAfterWorthOffering(now)) ...[
+        Glass(
+          onTap: () => showMorningAfter(context),
+          semanticLabel: 'The morning after: a few things that help',
+          padding: const EdgeInsets.fromLTRB(S.l, S.l, S.m, S.l),
+          child: Row(children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: bd.accent.withValues(alpha: .16)),
+              child: Icon(Ph.drop, size: 20, color: bd.accentText),
+            ),
+            const SizedBox(width: S.m),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Morning.', style: T.row(bd)),
+                const SizedBox(height: 2),
+                Text('Water first — and a few kind things for the day after.', style: T.caption(bd)),
+              ]),
+            ),
+            Icon(Ph.caretRight, size: 16, color: bd.faint),
+          ]),
+        ),
+        const SizedBox(height: S.m),
+      ],
       if (tonightWorthOffering(now)) ...[
         Glass(
           onTap: () => showTonight(context),

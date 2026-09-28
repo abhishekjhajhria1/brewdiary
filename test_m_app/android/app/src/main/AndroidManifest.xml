@@ -65,6 +65,18 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/mosaic_widget_info"/>
         </receiver>
+        <receiver android:name=".QuickLogWidget" android:exported="false" android:label="@string/quick_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/quick_log_widget_info"/>
+        </receiver>
+        <receiver android:name=".SplitWidget" android:exported="false" android:label="@string/split_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/split_widget_info"/>
+        </receiver>
         <!-- flutter_local_notifications: fire scheduled reminders, and re-arm them after reboot. -->
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">

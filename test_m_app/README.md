@@ -101,7 +101,10 @@ states that break layouts: scrolled, keyboard up, small phone, large text, table
 | **Table menus** (new, web + app) | ✅ tap the venue's NFC tag (or scan its QR) → the menu opens in the app, with picks from your diary worked out on the phone and "Log it" per drink. Venues build the menu and write tags from the bar dashboard (Menu tab). Needs migration `042_menus.sql` |
 | **Taste card** (mobile) | ✅ what you're into, worked out on the phone from your diary, to hold up for a bartender; hide any line; "Nothing with alcohol tonight" goes first in big type. Never sent to a venue |
 | **Tonight** (mobile) | ✅ opt-in water-break nudges for one night; getting home: Uber (Ola, Rapido in India), directions home, send a friend a map link of where you are, call someone |
-| **Home-screen widget** (Android) | ✅ this month's mosaic on the home screen, redrawn when the diary changes. iOS needs a WidgetKit extension added in Xcode (not in this repo yet) |
+| **Home-screen widgets** (Android) | ✅ this month's mosaic; quick log (+ water, + cigarette, with today's counts); your Split balance. iOS needs a WidgetKit extension added in Xcode (not in this repo yet) |
+| **Photo studio** (mobile) | ✅ 11 overlays for a photo from the night (Classic, Mosaic, Big date, Nights kept, Mood, The party, Place, Ticket, Polaroid, Stamp, Film) — never a drink count |
+| **Taste passport** (mobile) | ✅ stamps for places, kinds, drinks met and dry nights; share it as an image if you choose |
+| **Morning after** (mobile) | ✅ opt-in morning check-in and a care page: water, electrolytes, food, rest, painkiller caution, and when to call 112 |
 | **Nightly reminder** | ✅ **real scheduled notifications** (the website's toggle never fired one): skips evenings you've already logged, and tapping one opens today's log sheet |
 | Small moments (mobile only) | ✅ the day you log blooms; an empty diary's today beckons; a quiet sheet at 7 / 30 / 100 / 365 nights in a row (dry nights count); Ninkasi's typing dots; a plain "couldn't reach brewdiary" with a retry instead of a misleading empty list |
 | Live-camera presence check | ❌ not ported yet (MediaPipe on the web; needs ML Kit on mobile) |

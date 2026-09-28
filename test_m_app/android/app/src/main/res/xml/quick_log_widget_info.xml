@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="50dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/quick_log_widget"
+    android:previewLayout="@layout/quick_log_widget"
+    android:description="@string/quick_widget_description"
+    android:widgetCategory="home_screen" />

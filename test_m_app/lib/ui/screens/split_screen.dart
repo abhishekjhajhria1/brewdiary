@@ -11,6 +11,7 @@ import '../../data/base.dart';
 import '../../data/friends.dart';
 import '../../data/settings.dart';
 import '../../data/split.dart';
+import '../home_widget.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
@@ -37,6 +38,7 @@ class SplitScreen extends StatelessWidget {
         final balances = me == null ? <String, double>{} : computeBalances(expenses, settlements, me.id);
         final owed = balances.values.where((v) => v > 0).fold<double>(0, (a, b) => a + b);
         final owe = balances.values.where((v) => v < 0).fold<double>(0, (a, b) => a - b);
+        if (data != null) HomeWidget.noteSplit(owed: owed, owe: owe, currency: PlaceStore.instance.currency);
         final canAdd = friends.isNotEmpty && me != null;
         void add() => showBdSheet(context, title: 'Split a tab', builder: (_) => _AddExpense(meId: me!.id, friends: friends));
 

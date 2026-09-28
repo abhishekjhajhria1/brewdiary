@@ -95,6 +95,18 @@ class _TonightSheetState extends State<TonightSheet> {
             hint: r.pacing ? 'On until ${TimeOfDay.fromDateTime(r.pacingUntil!).format(context)}.' : 'Every 45 minutes, five times, then it stops.',
             trailing: BdToggle(on: r.pacing, label: 'Water-break nudges', onChanged: _togglePace),
           ),
+          SettingRow(
+            title: 'Morning check-in',
+            hint: r.morningAt != null ? 'Tomorrow at 9:30 — water first, and a few kind things.' : 'One note tomorrow morning, with what actually helps.',
+            trailing: BdToggle(
+              on: r.morningAt != null,
+              label: 'Morning check-in',
+              onChanged: (v) async {
+                final ok = await r.setMorningCheck(v);
+                if (!ok && context.mounted) toast(context, 'Notifications are off for brewdiary — allow them in your phone settings.');
+              },
+            ),
+          ),
         ]),
         const SizedBox(height: S.xl),
         const Label('Getting home'),

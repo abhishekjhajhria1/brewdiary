@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Quick log: two big taps. Counts are today's, pushed by the app. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/mosaic_widget_bg"
+    android:orientation="horizontal"
+    android:padding="10dp">
+
+    <LinearLayout
+        android:id="@+id/quick_water"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:layout_marginEnd="5dp"
+        android:background="@drawable/quick_tile_bg"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:contentDescription="@string/quick_water_label">
+        <TextView android:id="@+id/quick_water_count" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0" android:textColor="#E6A64B" android:textSize="26sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/quick_water" android:textColor="#F0EBE2" android:textSize="13sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/quick_cig"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:layout_marginStart="5dp"
+        android:background="@drawable/quick_tile_bg"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:contentDescription="@string/quick_cig_label">
+        <TextView android:id="@+id/quick_cig_count" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0" android:textColor="#E6A64B" android:textSize="26sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/quick_cig" android:textColor="#F0EBE2" android:textSize="13sp" />
+    </LinearLayout>
+</LinearLayout>

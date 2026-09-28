@@ -7,6 +7,7 @@ import 'package:brewdiary/core/derive.dart';
 import 'package:brewdiary/core/types.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/data/reminder.dart';
+import 'package:brewdiary/ui/screens/morning_after.dart';
 import 'package:brewdiary/ui/screens/tonight_sheet.dart';
 import 'package:brewdiary/ui/theme.dart';
 import 'package:brewdiary/ui/widgets/common.dart';
@@ -153,6 +154,28 @@ void main() {
       expect(tonightWorthOffering(DateTime(2026, 9, 28, 21)), isTrue);
       expect(tonightWorthOffering(DateTime(2026, 9, 28, 10)), isFalse);
       expect(tonightWorthOffering(DateTime(2026, 9, 29, 1)), isTrue, reason: 'after midnight still counts last night');
+    });
+  });
+
+  group('morning after', () {
+    test('the check-in lands at 9:30 the next morning', () {
+      expect(ReminderStore.nextMorning(DateTime(2026, 9, 28, 23)), DateTime(2026, 9, 29, 9, 30));
+      expect(ReminderStore.nextMorning(DateTime(2026, 9, 29, 1, 30)), DateTime(2026, 9, 29, 9, 30), reason: 'after midnight: this morning');
+    });
+
+    testWidgets('offered the morning after a drink with alcohol, and it can make today dry', (tester) async {
+      await bootApp(tester, prefs: _placed);
+      entryStore.resetAll();
+      entryStore.addEntry(date: '2026-09-27', drink: 'Negroni');
+      expect(morningAfterWorthOffering(DateTime(2026, 9, 28, 9)), isTrue);
+      expect(morningAfterWorthOffering(DateTime(2026, 9, 28, 15)), isFalse);
+      navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const MorningAfterScreen()));
+      await tester.pumpAndSettle();
+      expect(find.text('Get help now if'), findsOneWidget, reason: 'when to get help is always there');
+      await tester.tap(find.text('Dry today'));
+      await tester.pump();
+      expect(entryStore.entries.any((e) => e.date == todayKey() && e.type == DrinkType.none), isTrue);
+      await tester.pump(const Duration(seconds: 4));
     });
   });
 }

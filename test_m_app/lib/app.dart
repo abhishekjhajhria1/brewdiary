@@ -15,14 +15,17 @@ import 'core/date.dart';
 import 'core/menus.dart';
 import 'data/auth.dart';
 import 'data/base.dart';
+import 'data/entries.dart';
 import 'data/reminder.dart';
 import 'data/settings.dart';
 import 'ui/screens/bartender_screen.dart';
 import 'ui/screens/calendar_screen.dart';
 import 'ui/screens/landing_screen.dart';
 import 'ui/screens/menu_screen.dart';
+import 'ui/screens/morning_after.dart';
 import 'ui/screens/party_screens.dart';
 import 'ui/screens/profile_screen.dart';
+import 'ui/screens/split_screen.dart';
 import 'ui/screens/together_intro.dart';
 import 'ui/screens/together_screen.dart';
 import 'ui/screens/you_screen.dart';
@@ -112,12 +115,15 @@ class _ShellState extends State<Shell> {
     super.initState();
     if (Shell.deepLinks) _listenForLinks();
     ReminderStore.instance.openToday.addListener(_openToday);
+    ReminderStore.instance.openMorning.addListener(_openMorning);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openMorning());
     WidgetsBinding.instance.addPostFrameCallback((_) => _openToday());
   }
 
   @override
   void dispose() {
     ReminderStore.instance.openToday.removeListener(_openToday);
+    ReminderStore.instance.openMorning.removeListener(_openMorning);
     _links?.cancel();
     for (final c in _scrollers.values) {
       c.dispose();
@@ -146,7 +152,17 @@ class _ShellState extends State<Shell> {
     openLog(ctx, todayKey(), cheer: auth.isAuthed);
   }
 
+  /// The morning check-in was tapped: the morning-after page.
+  void _openMorning() {
+    final pending = ReminderStore.instance.openMorning;
+    if (!pending.value || navigatorKey.currentState == null || !mounted) return;
+    pending.value = false;
+    navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const MorningAfterScreen()));
+  }
+
   void _route(Uri uri) {
+    // Home-screen widgets open brewdiary://quick/<water|cigarette> and brewdiary://split.
+    if (uri.scheme == 'brewdiary') return _widgetLink(uri);
     final seg = uri.pathSegments.where((s) => s.isNotEmpty).toList();
     if (seg.length < 2) return;
     final nav = navigatorKey.currentState;
@@ -162,6 +178,24 @@ class _ShellState extends State<Shell> {
         // A table's NFC tag or QR (bwdy.site/m/<slug>) — the venue's menu.
         final slug = menuSlugFrom(uri);
         if (slug != null) nav.push(MaterialPageRoute(builder: (_) => MenuScreen(slug: slug)));
+    }
+  }
+
+  void _widgetLink(Uri uri) {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) return;
+    if (uri.host == 'quick') {
+      final what = uri.pathSegments.firstOrNull;
+      final def = extras.where((d) => d.entryDrink.toLowerCase() == what).firstOrNull;
+      if (def == null) return;
+      entryStore.addEntry(date: todayKey(), drink: def.entryDrink, type: def.entryType);
+      toast(ctx, 'Logged one ${def.unit} for today.');
+    } else if (uri.host == 'split') {
+      if (auth.isAuthed && db != null) {
+        navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const SplitScreen()));
+      } else {
+        toast(ctx, 'Split needs you signed in to the brewdiary cloud.');
+      }
     }
   }
 

@@ -42,6 +42,9 @@ class ReminderStore extends ChangeNotifier {
   /// opening today's log sheet, and clears it.
   final openToday = ValueNotifier<bool>(false);
 
+  /// Set when the morning check-in is tapped; the shell opens the morning-after page.
+  final openMorning = ValueNotifier<bool>(false);
+
   bool get on => Prefs.getString(_key) == 'on';
 
   TimeOfDay get time {
@@ -66,7 +69,11 @@ class ReminderStore extends ChangeNotifier {
       ),
       // A pacing nudge just opens the app; the nightly reminder opens today's sheet.
       onDidReceiveNotificationResponse: (r) {
-        if (r.payload != _pacePayload) openToday.value = true;
+        if (r.payload == _morningPayload) {
+          openMorning.value = true;
+        } else if (r.payload != _pacePayload) {
+          openToday.value = true;
+        }
       },
     );
     _ready = true;
@@ -84,7 +91,14 @@ class ReminderStore extends ChangeNotifier {
     try {
       await _init();
       final launch = await _plugin.getNotificationAppLaunchDetails();
-      if ((launch?.didNotificationLaunchApp ?? false) && launch?.notificationResponse?.payload != _pacePayload) openToday.value = true;
+      final payload = launch?.notificationResponse?.payload;
+      if (launch?.didNotificationLaunchApp ?? false) {
+        if (payload == _morningPayload) {
+          openMorning.value = true;
+        } else if (payload != _pacePayload) {
+          openToday.value = true;
+        }
+      }
       await _schedule();
     } catch (e) {
       logDebug(e);
@@ -250,6 +264,55 @@ class ReminderStore extends ChangeNotifier {
   Future<void> _cancelPacing() async {
     for (var i = 0; i < _paceMax; i++) {
       await _plugin.cancel(id: _paceBase + i);
+    }
+  }
+
+  // ── the morning check-in: one gentle note the morning after a night out ────
+  static const _morningId = 7400;
+  static const _morningKey = 'brewdiary.morning.at';
+  static const _morningPayload = 'morning';
+
+  /// When tomorrow's check-in is set for, or null.
+  DateTime? get morningAt {
+    final t = DateTime.tryParse(Prefs.getString(_morningKey) ?? '');
+    return t != null && t.isAfter(DateTime.now()) ? t : null;
+  }
+
+  /// 9:30 the next morning (after midnight: this morning, if it's still ahead).
+  static DateTime nextMorning(DateTime now) {
+    final today = DateTime(now.year, now.month, now.day, 9, 30);
+    return now.hour < 5 && today.isAfter(now) ? today : today.add(const Duration(days: 1));
+  }
+
+  Future<bool> setMorningCheck(bool on) async {
+    try {
+      await _init();
+      await _plugin.cancel(id: _morningId);
+      if (!on) {
+        await Prefs.remove(_morningKey);
+        notifyListeners();
+        return true;
+      }
+      if (!await _requestPermission()) return false;
+      final at = nextMorning(DateTime.now());
+      await _plugin.zonedSchedule(
+        id: _morningId,
+        scheduledDate: tz.TZDateTime.from(at, tz.local),
+        title: 'Morning.',
+        body: 'Water first. A few kind things for the day after — tap to see them.',
+        payload: _morningPayload,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails('morning', 'Morning check-in', channelDescription: 'One note the morning after a night out, if you ask for it.', importance: Importance.defaultImportance),
+          iOS: DarwinNotificationDetails(),
+        ),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      );
+      await Prefs.setString(_morningKey, at.toIso8601String());
+      notifyListeners();
+      return true;
+    } catch (e) {
+      logDebug(e);
+      return false;
     }
   }
 }
