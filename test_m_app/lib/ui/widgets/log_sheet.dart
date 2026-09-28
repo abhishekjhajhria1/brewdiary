@@ -20,6 +20,7 @@ import '../../data/entries.dart';
 import '../../data/parties.dart';
 import '../theme.dart';
 import 'common.dart';
+import '../screens/photo_studio.dart';
 import 'share_card.dart';
 
 Future<void> showLogSheet(
@@ -519,7 +520,8 @@ class _LogSheetState extends State<LogSheet> {
     return showActions(context, title: e.drink, actions: [
       SheetAction('Edit', icon: Ph.pencilSimple, onTap: () => _loadForEdit(e)),
       if (signedIn) SheetAction(_shareFor == e.id ? 'Hide sharing' : 'Share with friends…', icon: Ph.usersThree, onTap: () => setState(() => _shareFor = _shareFor == e.id ? null : e.id)),
-      SheetAction('Share as an image', icon: Ph.image, onTap: () => showShareCard(context, e)),
+      SheetAction('Share with a photo', icon: Ph.camera, onTap: () => showPhotoStudio(context, NightStory.fromEntry(e), photo: e.photos?.firstOrNull?.url)),
+      SheetAction('Share as a card', icon: Ph.image, onTap: () => showShareCard(context, e)),
       SheetAction('Remove', icon: Ph.trash, destructive: true, onTap: () => _requestRemove(e)),
     ]);
   }

@@ -15,6 +15,7 @@ import '../../data/parties.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
+import 'photo_studio.dart';
 import 'tonight_sheet.dart';
 import '../widgets/share_card.dart';
 import '../widgets/social.dart';
@@ -85,6 +86,13 @@ class PartyBody extends StatelessWidget {
         Align(alignment: Alignment.centerLeft, child: TextAction('Directions to ${party.venue}', icon: Ph.mapPin, onTap: () => openMaps(party.venue!))),
       if (party.date == todayKey())
         Align(alignment: Alignment.centerLeft, child: TextAction('Pace yourself · getting home', icon: Ph.moonStars, onTap: () => showTonight(context))),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextAction('Share the night with a photo', icon: Ph.camera, onTap: () {
+          final photo = detail.entries.expand((e) => e.photoUrls).firstOrNull;
+          showPhotoStudio(context, NightStory(dateKey: party.date, title: party.name, venue: party.venue, withPeople: approved.where((g) => g.id != me).length), photo: photo);
+        }),
+      ),
 
       if (mine && pending.isNotEmpty) ...[
         SectionHeader('Asking to join', trailing: Text('${pending.length}', style: T.caption(bd))),

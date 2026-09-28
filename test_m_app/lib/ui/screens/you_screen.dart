@@ -20,6 +20,7 @@ import '../widgets/moments.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
 import '../widgets/pickers.dart';
+import 'photo_studio.dart';
 import 'settings_screen.dart';
 import 'taste_card.dart';
 
@@ -102,7 +103,10 @@ class _YouScreenState extends State<YouScreen> {
               Padding(padding: const EdgeInsets.only(top: S.xs), child: Text('Tap a word to find the nights you used it.', style: T.caption(bd))),
             ],
             if (photos.isNotEmpty) ...[
-              const SectionHeader('Photos'),
+              SectionHeader('Photos', action: 'Make a card', onAction: () {
+                final latest = entries.where((e) => e.photos?.isNotEmpty ?? false).reduce((a, b) => a.date.compareTo(b.date) >= 0 ? a : b);
+                showPhotoStudio(context, NightStory.fromEntry(latest), photo: latest.photos!.first.url);
+              }),
               GridView.count(
                 crossAxisCount: 4,
                 shrinkWrap: true,
