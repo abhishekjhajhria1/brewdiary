@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     });
   }
 
-  const user = await getServerUser();
+  const user = await getServerUser(req);
   if (!user) return new Response("Unauthorized", { status: 401 });
   if (aiDbEnabled) await forgetUser(user.id);
   return new Response(JSON.stringify({ ok: true }), {
