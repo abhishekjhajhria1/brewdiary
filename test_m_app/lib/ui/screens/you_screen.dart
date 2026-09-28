@@ -74,7 +74,7 @@ class _YouScreenState extends State<YouScreen> {
 
         return ScrollPage(
           title: 'You',
-          subtitle: s.longest > 0 ? 'Your longest run: ${s.longest} ${s.longest == 1 ? 'night' : 'nights'}.' : 'Your numbers fill in as you log.',
+          titleNote: '${s.longest} night best',
           onRefresh: entryStore.reload,
           children: [
             StreakStrip(stats: s),

@@ -17,17 +17,13 @@ class PartiesSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bd = context.bd;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SizedBox(height: S.l),
-      Text('One night, one room — everything guests share lands here.', style: T.bodyMuted(bd)),
-      const SizedBox(height: S.m),
-      Row(children: [
-        Expanded(child: BdButton('Host a night', kind: BtnKind.secondary, icon: Ph.confetti, height: 44, onTap: () => showBdSheet(context, title: 'Host a night', builder: (_) => _HostParty(onHosted: (id) => _open(context, id))))),
-        const SizedBox(width: S.s),
-        Expanded(child: BdButton('Join with code', kind: BtnKind.secondary, icon: Ph.ticket, height: 44, onTap: () => showBdSheet(context, title: 'Join a party', builder: (_) => _JoinParty(onJoined: (id) => _open(context, id))))),
+      RoomIntro('One night, one room — everything guests share lands here.', actions: [
+        TextAction('Host one', onTap: () => showBdSheet(context, title: 'Host a night', builder: (_) => _HostParty(onHosted: (id) => _open(context, id)))),
+        TextAction('Join with code', onTap: () => showBdSheet(context, title: 'Join a party', builder: (_) => _JoinParty(onJoined: (id) => _open(context, id)))),
       ]),
-      const SizedBox(height: S.l),
+      const SizedBox(height: S.m),
       Loader<List<Party>>(
         retry: true,
         refresh: partiesRev,
@@ -35,7 +31,7 @@ class PartiesSection extends StatelessWidget {
         builder: (context, parties, loading) {
           if (parties == null) return const Skeleton(height: 112);
           if (parties.isEmpty) {
-            return const EmptyNote('Host a night or join one with a code — everyone logs, and the party page becomes the recap.', icon: Ph.confetti);
+            return const EmptyNote('Host a night or join one with a code — everyone logs, the party page becomes the recap.');
           }
           final today = todayKey();
           final upcoming = parties.where((p) => p.date.compareTo(today) >= 0).toList();

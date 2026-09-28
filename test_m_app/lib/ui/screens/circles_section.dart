@@ -18,17 +18,13 @@ class CirclesSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bd = context.bd;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SizedBox(height: S.l),
-      Text('Private rooms — a few friends, one shared mosaic.', style: T.bodyMuted(bd)),
-      const SizedBox(height: S.m),
-      Row(children: [
-        Expanded(child: BdButton('New circle', kind: BtnKind.secondary, icon: Ph.plus, height: 44, onTap: () => showBdSheet(context, title: 'New circle', builder: (_) => const _CircleForm(join: false)))),
-        const SizedBox(width: S.s),
-        Expanded(child: BdButton('Join with code', kind: BtnKind.secondary, icon: Ph.ticket, height: 44, onTap: () => showBdSheet(context, title: 'Join a circle', builder: (_) => const _CircleForm(join: true)))),
+      RoomIntro('Private rooms — a few friends, one shared mosaic.', actions: [
+        TextAction('New', onTap: () => showBdSheet(context, title: 'New circle', builder: (_) => const _CircleForm(join: false))),
+        TextAction('Join with code', onTap: () => showBdSheet(context, title: 'Join a circle', builder: (_) => const _CircleForm(join: true))),
       ]),
-      const SizedBox(height: S.l),
+      const SizedBox(height: S.m),
       Loader<List<Circle>>(
         retry: true,
         refresh: circlesRev,

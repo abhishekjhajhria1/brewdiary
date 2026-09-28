@@ -31,7 +31,7 @@ enum _Room { feed, plans, circles, parties, board }
 
 const _roomLabel = {_Room.feed: 'Feed', _Room.plans: 'Plans', _Room.circles: 'Circles', _Room.parties: 'Parties', _Room.board: 'Board'};
 
-Future<void> showAddFriend(BuildContext context) => showBdSheet(context, title: 'Add a friend', builder: (_) => const _AddFriendSheet());
+Future<void> showAddFriend(BuildContext context) => showBdSheet(context, title: 'Add a friend', builder: (_) => const FriendSearch(autofocus: true));
 
 class TogetherScreen extends StatefulWidget {
   const TogetherScreen({super.key});
@@ -66,49 +66,62 @@ class _TogetherScreenState extends State<TogetherScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ScrollPage(
-      title: 'Together',
-      subtitle: 'Your calendar stays yours and quiet. This is the other room — what friends are pouring.',
-      actions: [
-        IconBtn(Ph.userPlus, tooltip: 'Add a friend', onTap: () => showAddFriend(context)),
-        IconBtn(Ph.receipt, tooltip: 'Split a tab', onTap: _openSplit),
-      ],
-      onRefresh: _refresh,
-      children: [
-        Loader<(List<SocialProfile>, bool)>(
-          retry: true,
-          refresh: Listenable.merge([friendsRev, profileRev]),
-          load: () async {
-            final r = await Future.wait<Object>([FriendsApi.friends(), PointsApi.competeVisible()]);
-            return (r[0] as List<SocialProfile>, r[1] as bool);
-          },
-          builder: (context, data, loading) {
-            final friends = data?.$1 ?? const <SocialProfile>[];
-            final compete = data?.$2 ?? false;
-            final rooms = [_Room.feed, _Room.plans, _Room.circles, _Room.parties, if (compete) _Room.board];
-            final room = rooms.contains(_room) ? _room : _Room.feed;
-            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Segmented<_Room>(
-                options: [for (final r in rooms) (r, _roomLabel[r]!)],
-                value: room,
-                onChanged: (r) => setState(() => _room = r),
+    // Laid out like the website's Together: the title with the friend count, the
+    // rooms as tabs, and Split as a quiet link at the foot.
+    return Loader<(List<SocialProfile>, bool)>(
+      retry: true,
+      refresh: Listenable.merge([friendsRev, profileRev]),
+      load: () async {
+        final r = await Future.wait<Object>([FriendsApi.friends(), PointsApi.competeVisible()]);
+        return (r[0] as List<SocialProfile>, r[1] as bool);
+      },
+      failed: (context, retry) => ScrollPage(title: 'Together', children: [LoadError(onRetry: retry)]),
+      builder: (context, data, loading) {
+        final bd = context.bd;
+        final friends = data?.$1 ?? const <SocialProfile>[];
+        final compete = data?.$2 ?? false;
+        final rooms = [_Room.feed, _Room.plans, _Room.circles, _Room.parties, if (compete) _Room.board];
+        final room = rooms.contains(_room) ? _room : _Room.feed;
+        return ScrollPage(
+          title: 'Together',
+          titleNote: data == null ? null : '${friends.length} ${friends.length == 1 ? 'friend' : 'friends'}',
+          subtitle: 'Your calendar stays yours and quiet. This is the other room — what friends are pouring.',
+          onRefresh: _refresh,
+          children: [
+            Segmented<_Room>(
+              options: [for (final r in rooms) (r, _roomLabel[r]!)],
+              value: room,
+              onChanged: (r) => setState(() => _room = r),
+            ),
+            const SizedBox(height: S.xs),
+            switch (room) {
+              _Room.feed => _Feed(friends: friends, loadingFriends: data == null),
+              _Room.plans => const PlansSection(),
+              _Room.circles => const CirclesSection(),
+              _Room.parties => const PartiesSection(),
+              _Room.board => const _FriendsBoard(),
+            },
+            const SizedBox(height: S.x3),
+            // The website's foot: a hairline, a sentence, and "Split →".
+            Semantics(
+              button: true,
+              label: 'Split a tab or a round with friends',
+              excludeSemantics: true,
+              child: Pressable(
+                onTap: _openSplit,
+                child: Container(
+                  padding: const EdgeInsets.only(top: S.l, bottom: S.m),
+                  decoration: BoxDecoration(border: Border(top: BorderSide(color: bd.line, width: .8))),
+                  child: Row(children: [
+                    Expanded(child: Text('Split a tab or a round with friends', style: T.body(bd, color: bd.muted))),
+                    Text('Split →', style: T.sans(bd, size: 14, weight: FontWeight.w600, color: bd.accentText)),
+                  ]),
+                ),
               ),
-              const SizedBox(height: S.xs),
-              switch (room) {
-                _Room.feed => _Feed(friends: friends, loadingFriends: data == null),
-                _Room.plans => const PlansSection(),
-                _Room.circles => const CirclesSection(),
-                _Room.parties => const PartiesSection(),
-                _Room.board => const _FriendsBoard(),
-              },
-              const SizedBox(height: S.section),
-              Group(children: [
-                GroupTile(icon: Ph.receipt, title: 'Split a tab', subtitle: 'Who paid, who owes — settled at the table.', chevron: true, onTap: _openSplit),
-              ]),
-            ]);
-          },
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -121,6 +134,7 @@ class _Feed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bd = context.bd;
     return Loader<List<FeedEntry>>(
       retry: true,
       refresh: friendsRev,
@@ -128,17 +142,20 @@ class _Feed extends StatelessWidget {
       builder: (context, feed, loading) {
         final items = feed ?? const <FeedEntry>[];
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const _Requests(),
-          if (friends.isNotEmpty) _People(friends: friends),
+          const SizedBox(height: S.l),
+          _People(friends: friends),
           _FriendPicks(feed: items),
           if (loadingFriends || (loading && feed == null))
-            const Padding(padding: EdgeInsets.only(top: S.xxl), child: Column(children: [Skeleton(height: 132), SizedBox(height: S.m), Skeleton(height: 132)]))
+            const Padding(padding: EdgeInsets.only(top: S.xxl), child: Column(children: [Skeleton(height: 112), SizedBox(height: S.m), Skeleton(height: 112)]))
           else if (friends.isEmpty)
-            EmptyNote("Add a friend by their handle to see what they're pouring.", icon: Ph.usersThree, action: 'Find a friend', onAction: () => showAddFriend(context))
+            Padding(padding: const EdgeInsets.only(top: S.x3), child: Text("Add a friend by their handle to see what they're pouring.", textAlign: TextAlign.center, style: T.body(bd, color: bd.faint)))
           else if (items.isEmpty)
-            const EmptyNote('Quiet so far — nothing shared to friends yet. Share an entry from your diary and it lands here.', icon: Ph.cheers)
+            Padding(
+              padding: const EdgeInsets.only(top: S.x3),
+              child: Text('Quiet so far — nothing shared to friends yet. Share an entry from your diary and it lands here.', textAlign: TextAlign.center, style: T.body(bd, color: bd.faint)),
+            )
           else ...[
-            const SectionHeader('Lately'),
+            const SizedBox(height: S.xxl),
             for (var i = 0; i < items.length; i++) ...[
               if (i > 0) const SizedBox(height: S.m),
               FeedCard(item: items[i]),
@@ -147,6 +164,76 @@ class _Feed extends StatelessWidget {
         ]);
       },
     );
+  }
+}
+
+/// Friend requests, the row of friends ending in "+ Add", and the search —
+/// which, with no friends yet, is simply open (the website's People section).
+class _People extends StatefulWidget {
+  final List<SocialProfile> friends;
+  const _People({required this.friends});
+  @override
+  State<_People> createState() => _PeopleState();
+}
+
+class _PeopleState extends State<_People> {
+  bool _adding = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final friends = widget.friends;
+    final searchOpen = _adding || friends.isEmpty;
+    Widget face({required Widget child, required String name, required VoidCallback onTap, required String semantics, bool accent = false}) => Semantics(
+          button: true,
+          label: semantics,
+          excludeSemantics: true,
+          child: Pressable(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.only(right: S.l),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [bd.glassTop, bd.glass]),
+                    border: Border.all(color: bd.glassBorder, width: .8),
+                  ),
+                  child: child,
+                ),
+                const SizedBox(height: S.s),
+                Text(name, maxLines: 1, style: T.caption(bd, color: accent ? bd.accentText : bd.muted)),
+              ]),
+            ),
+          ),
+        );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const _Requests(),
+      if (friends.isNotEmpty)
+        SizedBox(
+          height: 78,
+          child: ListView(scrollDirection: Axis.horizontal, children: [
+            for (final f in friends)
+              face(
+                child: Text(f.initial, style: T.serif(bd, size: 20)),
+                name: f.name,
+                semantics: '${f.name}, @${f.handle}',
+                onTap: () => showBdSheet(context, builder: (_) => _FriendSheet(friend: f)),
+              ),
+            face(
+              child: Text('+', style: T.sans(bd, size: 20, color: _adding ? bd.accentText : bd.muted)),
+              name: _adding ? 'Close' : 'Add',
+              accent: _adding,
+              semantics: _adding ? 'Close the search' : 'Add a friend',
+              onTap: () => setState(() => _adding = !_adding),
+            ),
+          ]),
+        ),
+      if (searchOpen) Padding(padding: const EdgeInsets.only(top: S.m), child: FriendSearch(autofocus: _adding)),
+    ]);
   }
 }
 
@@ -160,92 +247,48 @@ class _Requests extends StatelessWidget {
       load: FriendsApi.requests,
       builder: (context, reqs, _) {
         if (reqs == null || reqs.isEmpty) return const SizedBox.shrink();
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          SectionHeader('Friend requests', trailing: Text('${reqs.length}', style: T.caption(bd))),
-          Group(children: [
+        return Padding(
+          padding: const EdgeInsets.only(bottom: S.xl),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const SectionHeader('Friend requests', padding: EdgeInsets.only(bottom: S.m)),
             for (final r in reqs)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: S.s),
-                child: Row(children: [
-                  Initial(r.profile.initial, size: 40),
-                  const SizedBox(width: S.m),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(r.profile.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.row(bd)),
-                      Text('@${r.profile.handle}', style: T.caption(bd)),
-                    ]),
-                  ),
-                  TextAction('Accept', accent: true, onTap: () => FriendsApi.accept(r.friendshipId)),
-                  IconBtn(Ph.x, tooltip: 'Ignore ${r.profile.name}', size: 18, color: bd.faint, onTap: () => FriendsApi.decline(r.friendshipId)),
-                ]),
+                padding: const EdgeInsets.only(bottom: S.s),
+                child: Glass(
+                  padding: const EdgeInsets.fromLTRB(S.l, 2, 4, 2),
+                  child: Row(children: [
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(children: [
+                          TextSpan(text: r.profile.name, style: T.row(bd)),
+                          TextSpan(text: '  @${r.profile.handle}', style: T.row(bd, color: bd.faint)),
+                        ]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    TextAction('Accept', accent: true, onTap: () => FriendsApi.accept(r.friendshipId)),
+                    TextAction('Ignore', faint: true, onTap: () => FriendsApi.decline(r.friendshipId)),
+                  ]),
+                ),
               ),
           ]),
-        ]);
+        );
       },
     );
   }
 }
 
-/// Your friends as a row of faces — tap one to peek at their mosaic.
-class _People extends StatelessWidget {
-  final List<SocialProfile> friends;
-  const _People({required this.friends});
-
+/// Find people by name or @handle and send a request — inline in the feed (open
+/// on its own when you have no friends yet) or in the "Add a friend" sheet.
+class FriendSearch extends StatefulWidget {
+  final bool autofocus;
+  const FriendSearch({super.key, this.autofocus = false});
   @override
-  Widget build(BuildContext context) {
-    final bd = context.bd;
-    Widget person({required Widget face, required String name, required VoidCallback onTap, required String semantics}) => Semantics(
-          button: true,
-          label: semantics,
-          excludeSemantics: true,
-          child: Pressable(
-            onTap: onTap,
-            child: SizedBox(
-              width: 68,
-              child: Column(children: [
-                face,
-                const SizedBox(height: 6),
-                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: T.caption(bd, color: bd.muted)),
-              ]),
-            ),
-          ),
-        );
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      SectionHeader('Friends', trailing: Text('${friends.length}', style: T.caption(bd))),
-      SizedBox(
-        height: 84,
-        child: ListView(scrollDirection: Axis.horizontal, children: [
-          person(
-            face: Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: bd.lineStrong, width: 1)),
-              child: Icon(Ph.userPlus, size: 22, color: bd.accentText),
-            ),
-            name: 'Add',
-            semantics: 'Add a friend',
-            onTap: () => showAddFriend(context),
-          ),
-          for (final f in friends)
-            person(
-              face: Initial(f.initial, size: 52),
-              name: f.name,
-              semantics: '${f.name}, @${f.handle}',
-              onTap: () => showBdSheet(context, builder: (_) => _FriendSheet(friend: f)),
-            ),
-        ]),
-      ),
-    ]);
-  }
+  State<FriendSearch> createState() => _FriendSearchState();
 }
 
-class _AddFriendSheet extends StatefulWidget {
-  const _AddFriendSheet();
-  @override
-  State<_AddFriendSheet> createState() => _AddFriendSheetState();
-}
-
-class _AddFriendSheetState extends State<_AddFriendSheet> {
+class _FriendSearchState extends State<FriendSearch> {
   final _query = TextEditingController();
   List<SocialProfile> _results = [];
   final Set<String> _requested = {};
@@ -299,25 +342,32 @@ class _AddFriendSheetState extends State<_AddFriendSheet> {
       builder: (context, friends, _) {
         final friendIds = (friends ?? const <SocialProfile>[]).map((f) => f.id).toSet();
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          GlassField(controller: _query, hint: 'A name or @handle', icon: Ph.magnifyingGlass, autofocus: true, caps: TextCapitalization.none, action: TextInputAction.search, onChanged: _onQuery),
-          const SizedBox(height: S.m),
-          if (!typed)
-            Text('Friends see what you choose to share — never your whole diary. They can peek at your mosaic, never your scores.', style: T.caption(bd))
-          else if (_searching && _results.isEmpty)
-            const Skeleton(height: 56)
-          else if (_results.isEmpty)
-            const EmptyNote('No one by that name or handle.')
-          else
-            Group(children: [
+          GlassField(controller: _query, hint: 'Add a friend by name or @handle', icon: Ph.magnifyingGlass, autofocus: widget.autofocus, caps: TextCapitalization.none, action: TextInputAction.search, onChanged: _onQuery),
+          if (typed) ...[
+            const SizedBox(height: S.s),
+            if (_searching && _results.isEmpty)
+              Padding(padding: const EdgeInsets.all(S.xs), child: Text('Searching…', style: T.body(bd, color: bd.faint)))
+            else if (_results.isEmpty)
+              Padding(padding: const EdgeInsets.all(S.xs), child: Text('No one by that name or handle.', style: T.body(bd, color: bd.faint)))
+            else
               for (final p in _results)
-                GroupTile(
-                  title: p.name,
-                  subtitle: '@${p.handle}',
-                  trailing: friendIds.contains(p.id)
-                      ? Text('Friends', style: T.caption(bd))
-                      : (_requested.contains(p.id) ? Text('Requested', style: T.caption(bd, color: bd.accentText)) : TextAction('Add', accent: true, icon: Ph.userPlus, onTap: () => _add(p.id))),
-                ),
-            ]),
+                Row(children: [
+                  const SizedBox(width: S.xs),
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(children: [
+                        TextSpan(text: p.name, style: T.row(bd)),
+                        TextSpan(text: '  @${p.handle}', style: T.row(bd, color: bd.faint)),
+                      ]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  friendIds.contains(p.id)
+                      ? TextAction('Friends', faint: true)
+                      : (_requested.contains(p.id) ? TextAction('Requested', faint: true) : TextAction('Add', accent: true, onTap: () => _add(p.id))),
+                ]),
+          ],
         ]);
       },
     );
@@ -325,29 +375,52 @@ class _AddFriendSheetState extends State<_AddFriendSheet> {
 }
 
 /// "To try, from friends" — drinks friends pour that you haven't logged.
-class _FriendPicks extends StatelessWidget {
+class _FriendPicks extends StatefulWidget {
   final List<FeedEntry> feed;
   const _FriendPicks({required this.feed});
   @override
+  State<_FriendPicks> createState() => _FriendPicksState();
+}
+
+class _FriendPicksState extends State<_FriendPicks> {
+  final Set<String> _added = {};
+  @override
   Widget build(BuildContext context) {
+    final bd = context.bd;
     return Watch(
       to: [entryStore, wishlist],
       builder: (context) {
         final picks = friendPicks(
-          feed.map((f) => (drink: f.drink, author: f.author.id)).toList(),
+          widget.feed.map((f) => (drink: f.drink, author: f.author.id)).toList(),
           entryStore.entries.map((e) => e.drink).toList(),
-          wishlist.items.map((w) => w.drink).toList(),
+          wishlist.items.map((w) => w.drink).where((d) => !_added.contains(d.toLowerCase())).toList(),
           4,
         );
         if (picks.isEmpty) return const SizedBox.shrink();
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const SectionHeader('To try, from friends'),
-          Wrap(spacing: S.s, children: [
+          const SectionHeader('To try, from friends', padding: EdgeInsets.only(top: S.xxl, bottom: S.m)),
+          Wrap(spacing: S.s, runSpacing: S.s, children: [
             for (final d in picks)
-              BdChip(d, icon: Ph.plus, onTap: () {
-                wishlist.add(d);
-                toast(context, 'Saved $d to your to-try list');
-              }),
+              Pressable(
+                onTap: _added.contains(d.toLowerCase())
+                    ? () {}
+                    : () {
+                        wishlist.add(d);
+                        setState(() => _added.add(d.toLowerCase()));
+                      },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [bd.glassTop, bd.glass]),
+                    borderRadius: BorderRadius.circular(rCtl),
+                    border: Border.all(color: bd.glassBorder, width: .8),
+                  ),
+                  child: Text.rich(TextSpan(children: [
+                    TextSpan(text: '$d ', style: T.sans(bd, size: 14, color: _added.contains(d.toLowerCase()) ? bd.faint : bd.ink)),
+                    TextSpan(text: _added.contains(d.toLowerCase()) ? '✓' : '+', style: T.sans(bd, size: 14, color: _added.contains(d.toLowerCase()) ? bd.faint : bd.accentText)),
+                  ])),
+                ),
+              ),
           ]),
         ]);
       },
@@ -355,7 +428,8 @@ class _FriendPicks extends StatelessWidget {
   }
 }
 
-/// One shared pour in the feed: who, what, the mood, cheers and comments.
+/// One shared pour — the website's card: who and when, the drink in serif with
+/// its mood, the note and place, then plain words for cheers, comments, to try.
 class FeedCard extends StatefulWidget {
   final FeedEntry item;
   const FeedCard({super.key, required this.item});
@@ -385,35 +459,48 @@ class _FeedCardState extends State<FeedCard> {
   Widget build(BuildContext context) {
     final bd = context.bd;
     final item = widget.item;
-    return Glass(
-      padding: const EdgeInsets.fromLTRB(S.l, S.m, S.s, S.xs),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Semantics(
+    Widget action(String text, {bool active = false, VoidCallback? onTap, String? semantics}) => Semantics(
           button: true,
-          label: "${item.author.name}'s mosaic",
+          label: semantics ?? text,
+          excludeSemantics: true,
           child: Pressable(
-            onTap: () => showBdSheet(context, builder: (_) => _FriendSheet(friend: item.author)),
-            child: Row(children: [
-              Initial(item.author.initial, size: 34),
-              const SizedBox(width: S.m),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(item.author.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 15, weight: FontWeight.w600)),
-                  Text('${timeOfDayLabel(item.createdAt)} · ${shortDay(item.date)}', style: T.caption(bd)),
-                ]),
+            onTap: onTap ?? () {},
+            enabled: onTap != null,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: S.tap),
+              child: Padding(
+                padding: const EdgeInsets.only(right: S.l),
+                child: Center(
+                  widthFactor: 1,
+                  child: Text(text, style: T.sans(bd, size: 14, weight: active ? FontWeight.w600 : FontWeight.w400, color: active ? bd.accentText : bd.muted).copyWith(fontFeatures: T.tnum)),
+                ),
               ),
-            ]),
+            ),
           ),
-        ),
-        const SizedBox(height: S.m),
-        Padding(
-          padding: const EdgeInsets.only(right: S.s),
-          child: Text.rich(TextSpan(children: [
-            TextSpan(text: item.drink, style: T.serif(bd, size: 25, height: 1.15)),
-            if (item.mood != null) TextSpan(text: '  ${item.mood}', style: T.serif(bd, size: 19, italic: true, color: bd.muted, height: 1.15)),
-          ])),
-        ),
-        if (item.note != null) Padding(padding: const EdgeInsets.only(top: 6, right: S.s), child: Text(item.note!, style: T.body(bd, color: bd.muted))),
+        );
+    return Glass(
+      padding: const EdgeInsets.fromLTRB(S.l, S.l, S.l, S.xs),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+          Expanded(
+            child: Semantics(
+              button: true,
+              label: "${item.author.name}'s mosaic",
+              excludeSemantics: true,
+              child: GestureDetector(
+                onTap: () => showBdSheet(context, builder: (_) => _FriendSheet(friend: item.author)),
+                child: Text(item.author.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 15)),
+              ),
+            ),
+          ),
+          Text('${timeOfDayLabel(item.createdAt).toLowerCase()} · ${shortDay(item.date)}', style: T.caption(bd).copyWith(fontFeatures: T.tnum)),
+        ]),
+        const SizedBox(height: 6),
+        Text.rich(TextSpan(children: [
+          TextSpan(text: item.drink, style: T.serif(bd, size: 25, height: 1.15)),
+          if (item.mood != null) TextSpan(text: ' · ${item.mood}', style: T.serif(bd, size: 20, italic: true, color: bd.muted, height: 1.15)),
+        ])),
+        if (item.note != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(item.note!, style: T.body(bd, color: bd.muted))),
         if (item.venue != null)
           Align(
             alignment: Alignment.centerLeft,
@@ -421,103 +508,67 @@ class _FeedCardState extends State<FeedCard> {
               link: true,
               label: 'Open ${item.venue} in Maps',
               excludeSemantics: true,
-              child: Pressable(
+              child: GestureDetector(
                 onTap: () => openMaps(item.venue!),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Ph.mapPin, size: 14, color: bd.faint),
-                    const SizedBox(width: 4),
-                    Flexible(child: Text(item.venue!, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.caption(bd).copyWith(decoration: TextDecoration.underline, decorationColor: bd.line))),
-                  ]),
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(item.venue!, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.caption(bd).copyWith(decoration: TextDecoration.underline, decorationColor: bd.line)),
                 ),
               ),
             ),
           ),
         const SizedBox(height: S.xs),
         Row(children: [
-          _CardAction(
-            icon: item.cheered ? PhFill.cheers : Ph.cheers,
-            label: item.cheers > 0 ? '${item.cheers}' : 'Cheers',
-            semantics: item.cheered ? 'Cheered, ${item.cheers}' : 'Cheers',
+          action(
+            item.cheered ? 'Cheered${item.cheers > 0 ? ' ${item.cheers}' : ''}' : 'Cheers${item.cheers > 0 ? ' ${item.cheers}' : ''}',
             active: item.cheered,
             onTap: () => FriendsApi.toggleCheers(item.id, item.cheered),
           ),
-          _CardAction(
-            icon: Ph.chatCircle,
-            label: item.comments.isNotEmpty ? '${item.comments.length}' : 'Comment',
-            semantics: item.comments.isNotEmpty ? '${item.comments.length} comments' : 'Comment',
-            active: _showComments,
-            onTap: () => setState(() => _showComments = !_showComments),
-          ),
+          action(item.comments.isNotEmpty ? 'Comments ${item.comments.length}' : 'Comment', onTap: () => setState(() => _showComments = !_showComments)),
           const Spacer(),
-          _CardAction(
-            icon: _saved ? PhBold.check : Ph.plus,
-            label: _saved ? 'On your list' : 'To try',
-            semantics: _saved ? 'On your to-try list' : 'Add to your to-try list',
-            active: _saved,
-            onTap: _saved
-                ? null
-                : () {
-                    wishlist.add(item.drink);
-                    setState(() => _saved = true);
-                  },
-          ),
+          action(_saved ? 'On your list ✓' : 'To try', active: false, semantics: _saved ? 'On your to-try list' : 'Save to your to-try list', onTap: _saved
+              ? null
+              : () {
+                  wishlist.add(item.drink);
+                  setState(() => _saved = true);
+                }),
         ]),
         if (_showComments)
-          Padding(
-            padding: const EdgeInsets.only(right: S.s, bottom: S.s),
+          Container(
+            margin: const EdgeInsets.only(top: S.xs, bottom: S.m),
+            padding: const EdgeInsets.only(left: S.l),
+            decoration: BoxDecoration(border: Border(left: BorderSide(color: bd.line, width: 1))),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Divider(height: S.l, thickness: .8, color: bd.line),
               for (final c in item.comments)
                 Padding(
                   padding: const EdgeInsets.only(bottom: S.s),
                   child: Text.rich(TextSpan(children: [
-                    TextSpan(text: '${c.authorName}  ', style: T.sans(bd, size: 14, weight: FontWeight.w600)),
+                    TextSpan(text: '${c.authorName} ', style: T.sans(bd, size: 14)),
                     TextSpan(text: c.body, style: T.sans(bd, size: 14, color: bd.muted, height: 1.45)),
                   ])),
                 ),
               Row(children: [
-                Expanded(child: GlassField(controller: _draft, hint: 'Add a comment', action: TextInputAction.send, onChanged: (_) => setState(() {}), onSubmitted: (_) => _post())),
-                IconBtn(Ph.paperPlaneTilt, tooltip: 'Post comment', color: bd.accentText, onTap: _draft.text.trim().isEmpty ? null : _post),
+                Expanded(
+                  child: TextField(
+                    controller: _draft,
+                    onChanged: (_) => setState(() {}),
+                    onSubmitted: (_) => _post(),
+                    textInputAction: TextInputAction.send,
+                    style: T.sans(bd, size: 14),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: 'Add a comment…',
+                      hintStyle: T.sans(bd, size: 14, color: bd.faint),
+                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: bd.lineStrong)),
+                      focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: bd.ink)),
+                    ),
+                  ),
+                ),
+                TextAction('POST', faint: _draft.text.trim().isEmpty, size: 12, onTap: _draft.text.trim().isEmpty ? null : _post),
               ]),
             ]),
           ),
       ]),
-    );
-  }
-}
-
-class _CardAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String semantics;
-  final bool active;
-  final VoidCallback? onTap;
-  const _CardAction({required this.icon, required this.label, required this.semantics, this.active = false, this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    final bd = context.bd;
-    final color = active ? bd.accentText : bd.muted;
-    return Semantics(
-      button: true,
-      label: semantics,
-      excludeSemantics: true,
-      child: Pressable(
-        onTap: onTap ?? () {},
-        enabled: onTap != null,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: S.tap, minWidth: S.tap),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: S.s),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(icon, size: 20, color: color),
-              const SizedBox(width: 6),
-              Text(label, style: T.sans(bd, size: 14, weight: FontWeight.w500, color: color).copyWith(fontFeatures: T.tnum)),
-            ]),
-          ),
-        ),
-      ),
     );
   }
 }

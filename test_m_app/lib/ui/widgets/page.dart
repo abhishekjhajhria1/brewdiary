@@ -65,6 +65,10 @@ class ScrollPage extends StatefulWidget {
 
   /// Optional line under the large title.
   final String? subtitle;
+
+  /// A small note at the right of the large title ("3 FRIENDS", "14 NIGHT BEST"),
+  /// with a hairline under the pair — the website's page header.
+  final String? titleNote;
   final List<Widget> actions;
   final bool back;
   final bool tabBar;
@@ -77,6 +81,7 @@ class ScrollPage extends StatefulWidget {
     this.title,
     this.barTitle,
     this.subtitle,
+    this.titleNote,
     this.actions = const [],
     this.back = false,
     this.tabBar = true,
@@ -120,7 +125,17 @@ class _ScrollPageState extends State<ScrollPage> {
           padding: EdgeInsets.fromLTRB(side, hasLarge ? S.s : S.xs, side, bottomClearance(context, tabBar: widget.tabBar)),
           sliver: SliverList.list(children: [
             if (hasLarge) ...[
-              Semantics(header: true, child: Text(widget.title!, style: T.largeTitle(bd), maxLines: 2, overflow: TextOverflow.ellipsis)),
+              if (widget.titleNote == null)
+                Semantics(header: true, child: Text(widget.title!, style: T.largeTitle(bd), maxLines: 2, overflow: TextOverflow.ellipsis))
+              else
+                Container(
+                  padding: const EdgeInsets.only(bottom: S.m),
+                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: bd.line, width: .8))),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    Expanded(child: Semantics(header: true, child: Text(widget.title!, style: T.largeTitle(bd), maxLines: 1, overflow: TextOverflow.ellipsis))),
+                    Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(widget.titleNote!.toUpperCase(), style: T.section(bd))),
+                  ]),
+                ),
               if (widget.subtitle != null) Padding(padding: const EdgeInsets.only(top: S.s), child: Text(widget.subtitle!, style: T.bodyMuted(bd))),
               const SizedBox(height: S.xxl),
             ],

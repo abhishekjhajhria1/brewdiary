@@ -269,14 +269,14 @@ class Segmented<V> extends StatelessWidget {
             curve: Motion.curve,
             padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 6),
             alignment: Alignment.center,
+            // The website's tabs: spaced capitals; the chosen one filled in ink.
             decoration: BoxDecoration(
-              color: selected ? (bd.dark ? const Color(0x2EFFFFFF) : Colors.white) : Colors.transparent,
-              borderRadius: BorderRadius.circular(rCtl - 3),
-              border: Border.all(color: selected ? bd.glassBorder : Colors.transparent, width: .8),
+              color: selected ? bd.ink : Colors.transparent,
+              borderRadius: BorderRadius.circular(rCtl - 4),
             ),
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(o.$2, maxLines: 1, style: T.sans(bd, size: 13.5, weight: selected ? FontWeight.w600 : FontWeight.w500, color: selected ? bd.ink : bd.muted)),
+              child: Text(o.$2.toUpperCase(), maxLines: 1, style: T.sans(bd, size: 11, spacing: 11 * .14, weight: FontWeight.w500, color: selected ? bd.base : bd.faint)),
             ),
           ),
         ),
@@ -284,15 +284,15 @@ class Segmented<V> extends StatelessWidget {
     }
 
     return SizedBox(
-      height: S.tap,
+      height: compact ? S.tap : 50,
       child: Center(
         child: Container(
-          height: compact ? 32 : 40,
-          padding: const EdgeInsets.all(3),
+          height: compact ? 34 : 46,
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: bd.ink.withValues(alpha: bd.dark ? .07 : .06),
+            gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [bd.glassTop, bd.glass]),
             borderRadius: BorderRadius.circular(rCtl),
-            border: Border.all(color: bd.line, width: .8),
+            border: Border.all(color: bd.glassBorder, width: .8),
           ),
           child: Row(mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max, children: [
             for (final o in options) compact ? segment(o) : Expanded(child: segment(o)),
@@ -818,7 +818,9 @@ class _SkeletonState extends State<Skeleton> with SingleTickerProviderStateMixin
   }
 }
 
-/// Composed empty state: optional icon, a line of copy, an optional action.
+/// Composed empty state, as the website draws it: a quiet centred line of faint
+/// copy and an optional action. [icon] is accepted for older call sites but not
+/// drawn — the web never puts a glyph above an empty list.
 class EmptyNote extends StatelessWidget {
   final String text;
   final IconData? icon;
@@ -831,11 +833,30 @@ class EmptyNote extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: S.x3, horizontal: S.l),
       child: Column(children: [
-        if (icon != null) ...[Icon(icon, size: 28, color: bd.faint), const SizedBox(height: S.m)],
-        Text(text, textAlign: TextAlign.center, style: T.sans(bd, size: 14.5, color: bd.muted, height: 1.55)),
+        Text(text, textAlign: TextAlign.center, style: T.sans(bd, size: 14, color: bd.faint, height: 1.6)),
         if (action != null) ...[const SizedBox(height: S.s), TextAction(action!, accent: true, onTap: onAction)],
       ]),
     );
+  }
+}
+
+/// The website's room header: a faint line of what this room is, with quiet text
+/// actions on the right. Wraps under the line when the phone is narrow or the
+/// text is large.
+class RoomIntro extends StatelessWidget {
+  final String text;
+  final List<Widget> actions;
+  const RoomIntro(this.text, {super.key, required this.actions});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final line = Text(text, style: T.sans(bd, size: 14, color: bd.faint, height: 1.5));
+    final acts = Row(mainAxisSize: MainAxisSize.min, children: actions);
+    return LayoutBuilder(builder: (context, c) {
+      final narrow = c.maxWidth < 340 || MediaQuery.textScalerOf(context).scale(14) > 17;
+      if (narrow) return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [line, Transform.translate(offset: const Offset(-6, 0), child: acts)]);
+      return Row(children: [Expanded(child: line), const SizedBox(width: S.s), acts]);
+    });
   }
 }
 

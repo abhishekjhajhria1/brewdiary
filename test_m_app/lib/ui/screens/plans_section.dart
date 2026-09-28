@@ -324,17 +324,29 @@ class _MyPlanCardState extends State<MyPlanCard> {
   bool _openReqs = false;
   bool _openGuests = false;
 
-  Future<void> _manage() {
+  bool _confirmDelete = false;
+
+  /// The host's controls, as a row of quiet text actions under a hairline (web parity).
+  Widget _controls(BuildContext context) {
+    final bd = context.bd;
     final p = widget.plan;
     final cancelled = p.status == PlanStatus.cancelled;
-    return showActions(context, title: p.title, actions: [
-      if (p.status == PlanStatus.open) SheetAction('Stop taking people', icon: Ph.lock, onTap: () => PlansApi.setStatus(p.id, PlanStatus.closed)),
-      if (p.status == PlanStatus.closed) SheetAction('Reopen', icon: Ph.arrowCounterClockwise, onTap: () => PlansApi.setStatus(p.id, PlanStatus.open)),
-      if (!cancelled) SheetAction('Call it off', icon: Ph.prohibit, onTap: () => PlansApi.setStatus(p.id, PlanStatus.cancelled)),
-      SheetAction('Delete', icon: Ph.trash, destructive: true, onTap: () async {
-        if (await confirm(context, title: 'Delete for good?', body: 'The plan and its requests are removed.', yes: 'Delete')) await PlansApi.delete(p.id);
-      }),
-    ]);
+    return Container(
+      margin: const EdgeInsets.only(top: S.s, right: S.m),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: bd.line, width: .8))),
+      child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: _confirmDelete
+          ? [
+              Padding(padding: const EdgeInsets.only(right: S.xs), child: Text('Delete for good?', style: T.sans(bd, size: 14, color: bd.muted))),
+              TextAction('Delete', accent: true, onTap: () => PlansApi.delete(p.id)),
+              TextAction('Keep', faint: true, onTap: () => setState(() => _confirmDelete = false)),
+            ]
+          : [
+              if (p.status == PlanStatus.open) TextAction('Stop taking people', faint: true, onTap: () => PlansApi.setStatus(p.id, PlanStatus.closed)),
+              if (p.status == PlanStatus.closed) TextAction('Reopen', faint: true, onTap: () => PlansApi.setStatus(p.id, PlanStatus.open)),
+              if (!cancelled) TextAction('Call it off', faint: true, onTap: () => PlansApi.setStatus(p.id, PlanStatus.cancelled)),
+              TextAction('Delete', faint: true, onTap: () => setState(() => _confirmDelete = true)),
+            ]),
+    );
   }
 
   @override
@@ -360,11 +372,14 @@ class _MyPlanCardState extends State<MyPlanCard> {
                 Row(children: [
                   Icon(_policyIcon[p.joinPolicy], size: 14, color: bd.faint),
                   const SizedBox(width: 4),
-                  Text('${_policyShort[p.joinPolicy]} · $badge', style: T.caption(bd)),
+                  Text(_policyShort[p.joinPolicy]!, style: T.caption(bd)),
                 ]),
               ]),
             ),
-            IconBtn(Ph.dotsThree, tooltip: 'Manage ${p.title}', color: bd.muted, onTap: _manage),
+            Padding(
+              padding: const EdgeInsets.only(right: S.m),
+              child: Text(badge, style: T.sans(bd, size: 12, color: cancelled ? bd.faint : bd.muted)),
+            ),
           ]),
           if (p.note != null) Padding(padding: const EdgeInsets.only(top: S.m, right: S.m), child: Text(p.note!, style: T.body(bd, color: bd.muted))),
           if (isPrivate && !cancelled) Padding(padding: const EdgeInsets.only(top: S.m, right: S.m), child: Text('Only you can see this — a quiet note on your calendar.', style: T.caption(bd))),
@@ -381,6 +396,7 @@ class _MyPlanCardState extends State<MyPlanCard> {
             _Disclosure(label: p.pending > 0 ? '${p.pending} asking to join' : 'Requests', accent: p.pending > 0, open: _openReqs, onTap: () => setState(() => _openReqs = !_openReqs)),
             if (_openReqs) Padding(padding: const EdgeInsets.only(right: S.m, bottom: S.s), child: _Requests(planId: p.id)),
           ],
+          _controls(context),
         ]),
       ),
     );
