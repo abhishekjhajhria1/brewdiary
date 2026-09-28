@@ -7,6 +7,7 @@ import 'package:brewdiary/core/derive.dart';
 import 'package:brewdiary/core/types.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/data/reminder.dart';
+import 'package:brewdiary/ui/screens/tonight_sheet.dart';
 import 'package:brewdiary/ui/theme.dart';
 import 'package:brewdiary/ui/widgets/common.dart';
 import 'package:brewdiary/ui/widgets/moments.dart';
@@ -126,5 +127,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(calls, 2);
     expect(find.text('got 2'), findsOneWidget);
+  });
+
+  group('tonight', () {
+    test('pacing: five nudges, 45 minutes apart, starting one interval from now', () {
+      final now = DateTime(2026, 9, 28, 21);
+      final t = ReminderStore.paceTimes(now);
+      expect(t.length, 5);
+      expect(t.first, DateTime(2026, 9, 28, 21, 45));
+      expect(t.last, DateTime(2026, 9, 29, 0, 45));
+      expect(ReminderStore.paceTimes(now, count: 99).length, 8, reason: 'capped');
+    });
+
+    test('ride links follow where you are', () {
+      expect(rideLinks('IN').map((r) => r.$1), ['Book an Uber', 'Book an Ola', 'Book a Rapido', 'Find a taxi nearby']);
+      expect(rideLinks('GB').map((r) => r.$1), ['Book an Uber', 'Find a taxi nearby']);
+    });
+
+    testWidgets('offered on an evening with a drink logged, not in the morning or on a coffee day', (tester) async {
+      await bootApp(tester, prefs: _placed);
+      entryStore.resetAll();
+      entryStore.addEntry(date: todayKey(), drink: 'Flat white', type: DrinkType.coffee);
+      expect(tonightWorthOffering(DateTime(2026, 9, 28, 21)), isFalse);
+      entryStore.addEntry(date: todayKey(), drink: 'Negroni');
+      expect(tonightWorthOffering(DateTime(2026, 9, 28, 21)), isTrue);
+      expect(tonightWorthOffering(DateTime(2026, 9, 28, 10)), isFalse);
+      expect(tonightWorthOffering(DateTime(2026, 9, 29, 1)), isTrue, reason: 'after midnight still counts last night');
+    });
   });
 }

@@ -8,6 +8,7 @@ import 'dart:math';
 import 'package:brewdiary/app.dart';
 import 'package:brewdiary/core/date.dart';
 import 'package:brewdiary/ui/screens/you_screen.dart';
+import 'package:brewdiary/ui/screens/tonight_sheet.dart';
 import 'package:brewdiary/ui/widgets/common.dart';
 import 'package:brewdiary/ui/widgets/log_sheet.dart';
 import 'package:brewdiary/ui/widgets/moments.dart';
@@ -246,6 +247,15 @@ void main() {
     showLogSheet(navigatorKey.currentContext!, dateKey: todayKey(), recentDrinks: const ['Negroni', 'Flat white'], recentMoods: const ['cozy']);
     await t.pumpAndSettle(const Duration(milliseconds: 500));
     await _shot(t, 'l4_tablet_log_sheet');
+  });
+
+  _tourTest('tonight sheet', (t) async {
+    await _boot(t);
+    await _scroll(t, 480);
+    await _shot(t, 'm1_tonight_card');
+    showTonight(navigatorKey.currentContext!);
+    await t.pumpAndSettle();
+    await _shot(t, 'm2_tonight_sheet');
   });
 
   _tourTest('light theme', (t) async {

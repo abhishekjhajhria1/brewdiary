@@ -17,6 +17,7 @@ import '../widgets/moments.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
 import 'discover_screen.dart';
+import 'tonight_sheet.dart';
 
 class CalendarScreen extends StatefulWidget {
   final VoidCallback onOpenNinkasi;
@@ -118,6 +119,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
         YearMosaic(year: now.year, counts: counts, onSelect: (k) => _open(k, planDays)),
       if (entries.isEmpty) const EmptyNote('Tap a day to log your first drink — a coffee counts.', icon: Ph.handTap),
       const SizedBox(height: S.xxl),
+      if (tonightWorthOffering(now)) ...[
+        Glass(
+          onTap: () => showTonight(context),
+          semanticLabel: 'Out tonight? Pace yourself and get home safe',
+          padding: const EdgeInsets.fromLTRB(S.l, S.l, S.m, S.l),
+          child: Row(children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: bd.accent.withValues(alpha: .16)),
+              child: Icon(Ph.moonStars, size: 20, color: bd.accentText),
+            ),
+            const SizedBox(width: S.m),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Out tonight?', style: T.row(bd)),
+                const SizedBox(height: 2),
+                Text('Water-break nudges, and a ride or a friend when it\'s time.', style: T.caption(bd)),
+              ]),
+            ),
+            Icon(Ph.caretRight, size: 16, color: bd.faint),
+          ]),
+        ),
+        const SizedBox(height: S.m),
+      ],
       StreakStrip(stats: s),
       if (!month) ...[const SizedBox(height: S.m), const AchievementTile()],
       if (month && ExtrasStore.instance.enabledCounters.isNotEmpty) ...[

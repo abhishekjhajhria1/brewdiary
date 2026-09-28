@@ -64,7 +64,10 @@ class ReminderStore extends ChangeNotifier {
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
         iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false),
       ),
-      onDidReceiveNotificationResponse: (_) => openToday.value = true,
+      // A pacing nudge just opens the app; the nightly reminder opens today's sheet.
+      onDidReceiveNotificationResponse: (r) {
+        if (r.payload != _pacePayload) openToday.value = true;
+      },
     );
     _ready = true;
   }
@@ -81,7 +84,7 @@ class ReminderStore extends ChangeNotifier {
     try {
       await _init();
       final launch = await _plugin.getNotificationAppLaunchDetails();
-      if (launch?.didNotificationLaunchApp ?? false) openToday.value = true;
+      if ((launch?.didNotificationLaunchApp ?? false) && launch?.notificationResponse?.payload != _pacePayload) openToday.value = true;
       await _schedule();
     } catch (e) {
       logDebug(e);
@@ -175,5 +178,78 @@ class ReminderStore extends ChangeNotifier {
     await Prefs.setString(_timeKey, '${t.hour}:${t.minute}');
     notifyListeners();
     if (on) await _schedule(force: true);
+  }
+
+  // ── pacing: a few water-break nudges for one night ─────────────────────────
+  // Opt-in, per night, and it only ever says "slow down": a glass of water between
+  // rounds. It never counts drinks and never suggests another.
+  static const _paceBase = 7300;
+  static const _paceMax = 8;
+  static const _paceKey = 'brewdiary.pace.until';
+  static const _pacePayload = 'pace';
+  static const paceMessages = [
+    'Water break? A glass between rounds keeps the night a good one.',
+    'Pace check — no rush. Water first, then decide.',
+    'How are you feeling? A glass of water now is a good call.',
+    'Halfway-ish. Water, a snack, and you\'re set.',
+    'Last nudge from me: water before the next one, and a plan for getting home.',
+  ];
+
+  /// When tonight's nudges run out, or null if pacing is off.
+  DateTime? get pacingUntil {
+    final raw = Prefs.getString(_paceKey);
+    final t = raw == null ? null : DateTime.tryParse(raw);
+    return t != null && t.isAfter(DateTime.now()) ? t : null;
+  }
+
+  bool get pacing => pacingUntil != null;
+
+  /// The nudge times: every [every], [count] times, starting one interval from now.
+  static List<DateTime> paceTimes(DateTime now, {Duration every = const Duration(minutes: 45), int count = 5}) =>
+      [for (var i = 1; i <= count.clamp(1, _paceMax); i++) now.add(every * i)];
+
+  /// Turn tonight's nudges on (asks permission first). False if refused.
+  Future<bool> startPacing({Duration every = const Duration(minutes: 45), int count = 5}) async {
+    try {
+      await _init();
+      if (!await _requestPermission()) return false;
+      await _cancelPacing();
+      final times = paceTimes(DateTime.now(), every: every, count: count);
+      for (var i = 0; i < times.length; i++) {
+        await _plugin.zonedSchedule(
+          id: _paceBase + i,
+          scheduledDate: tz.TZDateTime.from(times[i], tz.local),
+          title: 'brewdiary',
+          body: paceMessages[i % paceMessages.length],
+          payload: _pacePayload,
+          notificationDetails: const NotificationDetails(
+            android: AndroidNotificationDetails('pace', 'Pace the night', channelDescription: 'Water-break nudges you switch on for one night.', importance: Importance.defaultImportance),
+            iOS: DarwinNotificationDetails(),
+          ),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        );
+      }
+      await Prefs.setString(_paceKey, times.last.toIso8601String());
+      notifyListeners();
+      return true;
+    } catch (e) {
+      logDebug(e);
+      return false;
+    }
+  }
+
+  Future<void> stopPacing() async {
+    await Prefs.remove(_paceKey);
+    notifyListeners();
+    try {
+      await _init();
+      await _cancelPacing();
+    } catch (_) {}
+  }
+
+  Future<void> _cancelPacing() async {
+    for (var i = 0; i < _paceMax; i++) {
+      await _plugin.cancel(id: _paceBase + i);
+    }
   }
 }

@@ -15,6 +15,7 @@ import '../../data/parties.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
+import 'tonight_sheet.dart';
 import '../widgets/share_card.dart';
 import '../widgets/social.dart';
 
@@ -82,6 +83,8 @@ class PartyBody extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (party.venue != null)
         Align(alignment: Alignment.centerLeft, child: TextAction('Directions to ${party.venue}', icon: Ph.mapPin, onTap: () => openMaps(party.venue!))),
+      if (party.date == todayKey())
+        Align(alignment: Alignment.centerLeft, child: TextAction('Pace yourself · getting home', icon: Ph.moonStars, onTap: () => showTonight(context))),
 
       if (mine && pending.isNotEmpty) ...[
         SectionHeader('Asking to join', trailing: Text('${pending.length}', style: T.caption(bd))),
