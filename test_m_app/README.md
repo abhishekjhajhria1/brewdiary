@@ -125,6 +125,8 @@ states that break layouts: scrolled, keyboard up, small phone, large text, table
    (password reset emails open the website's reset page).
 4. **Run `supabase/042_menus.sql`** (the maintainer runs migrations), then
    `npm run db:audit` — it checks a menu can never carry an offer or appear in Discover.
+5. **Run `supabase/043_challenge_kinds.sql`** for the new circle challenges (nights kept,
+   dry nights, new drinks, new places, water nights), then `npm run db:audit`.
 
 ## Layout
 

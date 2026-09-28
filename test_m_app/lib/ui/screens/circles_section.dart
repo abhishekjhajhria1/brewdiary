@@ -219,7 +219,7 @@ class _NewChallengeState extends State<_NewChallenge> {
   bool _competition = false;
   final _title = TextEditingController();
   final _rule = TextEditingController();
-  ChallengeKind _kind = ChallengeKind.longestStreak;
+  ChallengeKind _kind = ChallengeKind.daysKept;
   int _nights = 7;
   bool _busy = false;
 
@@ -246,6 +246,18 @@ class _NewChallengeState extends State<_NewChallenge> {
   Widget build(BuildContext context) {
     final bd = context.bd;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const Label('Start from'),
+      const SizedBox(height: S.xs),
+      Wrap(spacing: S.s, runSpacing: S.s, children: [
+        for (final p in challengePresets)
+          BdChip(p.title, active: _title.text == p.title, onTap: () => setState(() {
+                _competition = p.kind.isFreeform;
+                if (!p.kind.isFreeform) _kind = p.kind;
+                _title.text = p.title;
+                _nights = p.days;
+              })),
+      ]),
+      const SizedBox(height: S.xl),
       Segmented<bool>(options: const [(false, 'Challenge'), (true, 'Competition')], value: _competition, onChanged: (v) => setState(() => _competition = v)),
       const SizedBox(height: S.s),
       Text(_competition ? 'You set the rule and pick the winner.' : 'Scored automatically from what people log — counts only.', style: T.caption(bd)),
@@ -255,7 +267,7 @@ class _NewChallengeState extends State<_NewChallenge> {
       if (!_competition) ...[
         const Label('Scored by'),
         const SizedBox(height: S.xs),
-        Wrap(spacing: S.s, children: [for (final k in scoredKinds) BdChip(k.label, active: _kind == k, onTap: () => setState(() => _kind = k))]),
+        Wrap(spacing: S.s, runSpacing: S.s, children: [for (final k in scoredKinds) BdChip(k.label, active: _kind == k, onTap: () => setState(() => _kind = k))]),
       ] else ...[
         const Label('The rule'),
         const SizedBox(height: S.s),

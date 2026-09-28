@@ -26,6 +26,7 @@ import {
   KIND_LABEL,
   KIND_UNIT,
   SCORED_KINDS,
+  CHALLENGE_PRESETS,
   type Challenge,
   type ChallengeKind,
 } from "@/lib/challenges";
@@ -299,7 +300,7 @@ function CircleChallenges({ circleId }: { circleId: string }) {
   const [mode, setMode] = useState<"challenge" | "competition">("challenge");
   const [title, setTitle] = useState("");
   const [rule, setRule] = useState("");
-  const [kind, setKind] = useState<ChallengeKind>("longest_streak");
+  const [kind, setKind] = useState<ChallengeKind>("days_kept");
   const [nights, setNights] = useState<number>(7);
   const [busy, setBusy] = useState(false);
 
@@ -338,6 +339,24 @@ function CircleChallenges({ circleId }: { circleId: string }) {
 
       {creating && (
         <div className="mb-3 space-y-3 border-y border-line py-3">
+          {/* one-tap starting points — all for variety or consistency */}
+          <div className="flex flex-wrap gap-1.5">
+            {CHALLENGE_PRESETS.map((p) => (
+              <Chip
+                key={p.title}
+                active={title === p.title}
+                onClick={() => {
+                  setMode(p.kind === "freeform" ? "competition" : "challenge");
+                  if (p.kind !== "freeform") setKind(p.kind);
+                  setTitle(p.title);
+                  setNights(p.days);
+                }}
+              >
+                {p.title}
+              </Chip>
+            ))}
+          </div>
+
           {/* auto-scored challenge, or a free-form competition you judge yourself */}
           <div className="flex gap-1.5">
             <Chip active={mode === "challenge"} onClick={() => setMode("challenge")}>

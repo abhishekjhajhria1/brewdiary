@@ -423,6 +423,19 @@ try {
     console.log("  ~ venue_menu (042) not applied — skipping");
   }
 
+  // ── more challenges (043): counts only, inside the circle ─────────────────
+  const cb2 = await one(`
+    select pg_get_functiondef(p.oid) d from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname='public' and p.proname='challenge_board_v2'`);
+  if (cb2) {
+    ok("challenge_board_v2(): gated on circle membership", /is_circle_member/.test(cb2.d));
+    ok("challenge_board_v2(): returns counts, never a drink name or place",
+      !/returns table[^)]*\b(drink|venue)\b\s+text/i.test(cb2.d));
+  } else {
+    console.log("  ~ challenge_board_v2 (043) not applied — skipping");
+  }
+
   console.log("\n── orphans / drift ──────────────────────────────────");
   const badCurrency = await one(`
     select count(*)::int n from public.venues v

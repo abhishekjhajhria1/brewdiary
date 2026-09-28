@@ -7,24 +7,98 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 
-// The three auto-scored kinds + 'freeform' = a manually-judged competition.
-export type ChallengeKind = "most_logged" | "most_kinds" | "longest_streak" | "freeform";
+// Auto-scored kinds + 'freeform' = a manually-judged competition. The 043 kinds
+// (days_kept … hydration) are for variety or consistency — none can be won by
+// drinking more — and read challenge_board_v2().
+export type ChallengeKind =
+  | "most_logged"
+  | "most_kinds"
+  | "longest_streak"
+  | "freeform"
+  | "days_kept"
+  | "dry_nights"
+  | "new_drinks"
+  | "new_places"
+  | "hydration";
 
-/** The auto-scored kinds offered when creating a plain challenge. */
-export const SCORED_KINDS: ChallengeKind[] = ["most_logged", "most_kinds", "longest_streak"];
+/** Kinds scored by challenge_board_v2() (migration 043). */
+export const V2_KINDS: ChallengeKind[] = ["days_kept", "dry_nights", "new_drinks", "new_places", "hydration"];
+
+/** The auto-scored kinds offered when creating a plain challenge, gentlest first.
+ *  "Most logged" is last: it counts every entry, so it's the one a round can win. */
+export const SCORED_KINDS: ChallengeKind[] = [
+  "days_kept",
+  "new_drinks",
+  "new_places",
+  "dry_nights",
+  "hydration",
+  "most_kinds",
+  "longest_streak",
+  "most_logged",
+];
 
 export const KIND_LABEL: Record<ChallengeKind, string> = {
   most_logged: "Most logged",
   most_kinds: "Most kinds",
   longest_streak: "Longest run",
   freeform: "Competition",
+  days_kept: "Nights kept",
+  dry_nights: "Dry nights",
+  new_drinks: "New drinks",
+  new_places: "New places",
+  hydration: "Water nights",
 };
 export const KIND_UNIT: Record<ChallengeKind, string> = {
   most_logged: "logged",
   most_kinds: "kinds",
   longest_streak: "nights running",
   freeform: "",
+  days_kept: "nights kept",
+  dry_nights: "dry nights",
+  new_drinks: "new drinks",
+  new_places: "new places",
+  hydration: "water nights",
 };
+
+/** One-tap starting points for a circle challenge. */
+export interface ChallengePreset {
+  kind: ChallengeKind;
+  title: string;
+  days: number;
+  blurb: string;
+}
+export const CHALLENGE_PRESETS: ChallengePreset[] = [
+  { kind: "dry_nights", title: "Dry week", days: 7, blurb: "Most dry nights in seven days." },
+  { kind: "new_drinks", title: "Five new pours", days: 14, blurb: "Drinks none of you have logged before." },
+  { kind: "new_places", title: "New places month", days: 30, blurb: "Somewhere you've never logged." },
+  { kind: "hydration", title: "Water every night", days: 7, blurb: "A water logged each night." },
+  { kind: "days_kept", title: "Keep the diary", days: 30, blurb: "Write every night — dry ones count." },
+  { kind: "freeform", title: "Best homebrew", days: 14, blurb: "A rule you write, a winner you pick." },
+];
+
+/** The value a board row scores for a kind (v2 rows carry their own counts). */
+export function scoreRow(kind: ChallengeKind, r: Record<string, unknown>): number {
+  switch (kind) {
+    case "most_logged":
+      return Number(r.total ?? 0);
+    case "most_kinds":
+      return Number(r.kinds ?? 0);
+    case "longest_streak":
+      return longestRun((r.dates as string[]) ?? []);
+    case "days_kept":
+      return Number(r.days_kept ?? 0);
+    case "dry_nights":
+      return Number(r.dry_nights ?? 0);
+    case "new_drinks":
+      return Number(r.new_drinks ?? 0);
+    case "new_places":
+      return Number(r.new_places ?? 0);
+    case "hydration":
+      return Number(r.water_days ?? 0);
+    default:
+      return 0; // freeform — not auto-scored; ordered by name instead
+  }
+}
 
 export function isFreeform(kind: ChallengeKind): boolean {
   return kind === "freeform";
@@ -150,20 +224,14 @@ export function useChallengeBoard(challenge: Challenge | null): { board: BoardRo
     let active = true;
     setLoading(true);
     (async () => {
-      const { data } = await supabase!.rpc("challenge_board", { cid: id });
+      const fn = V2_KINDS.includes(kind) ? "challenge_board_v2" : "challenge_board";
+      const { data } = await supabase!.rpc(fn, { cid: id });
       if (!active) return;
-      const rows: BoardRow[] = ((data as Record<string, unknown>[]) ?? []).map((r) => {
-        const dates = (r.dates as string[]) ?? [];
-        const value =
-          kind === "most_logged"
-            ? (r.total as number)
-            : kind === "most_kinds"
-              ? (r.kinds as number)
-              : kind === "longest_streak"
-                ? longestRun(dates)
-                : 0; // freeform — not auto-scored; ordered by name instead
-        return { userId: r.user_id as string, name: r.display_name as string, value };
-      });
+      const rows: BoardRow[] = ((data as Record<string, unknown>[]) ?? []).map((r) => ({
+        userId: r.user_id as string,
+        name: r.display_name as string,
+        value: scoreRow(kind, r),
+      }));
       rows.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
       setBoard(rows);
       setLoading(false);

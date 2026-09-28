@@ -181,17 +181,54 @@ class CirclesApi {
 }
 
 // ── challenges ───────────────────────────────────────────────────────────────
-enum ChallengeKind { mostLogged, mostKinds, longestStreak, freeform }
+// The 043 kinds (daysKept … hydration) are for variety or consistency — none can
+// be won by drinking more — and read challenge_board_v2(). Parity: src/lib/challenges.ts.
+enum ChallengeKind { mostLogged, mostKinds, longestStreak, freeform, daysKept, dryNights, newDrinks, newPlaces, hydration }
 
 extension ChallengeKindX on ChallengeKind {
-  String get db => const ['most_logged', 'most_kinds', 'longest_streak', 'freeform'][index];
-  String get label => const ['Most logged', 'Most kinds', 'Longest run', 'Competition'][index];
-  String get unit => const ['logged', 'kinds', 'nights running', ''][index];
+  String get db => const ['most_logged', 'most_kinds', 'longest_streak', 'freeform', 'days_kept', 'dry_nights', 'new_drinks', 'new_places', 'hydration'][index];
+  String get label => const ['Most logged', 'Most kinds', 'Longest run', 'Competition', 'Nights kept', 'Dry nights', 'New drinks', 'New places', 'Water nights'][index];
+  String get unit => const ['logged', 'kinds', 'nights running', '', 'nights kept', 'dry nights', 'new drinks', 'new places', 'water nights'][index];
   bool get isFreeform => this == ChallengeKind.freeform;
+  bool get isV2 => index >= ChallengeKind.daysKept.index;
   static ChallengeKind parse(String? s) => ChallengeKind.values.firstWhere((k) => k.db == s, orElse: () => ChallengeKind.mostLogged);
 }
 
-const scoredKinds = [ChallengeKind.mostLogged, ChallengeKind.mostKinds, ChallengeKind.longestStreak];
+/// Offered when creating a plain challenge, gentlest first. "Most logged" is last:
+/// it counts every entry, so it's the one a round can win.
+const scoredKinds = [
+  ChallengeKind.daysKept,
+  ChallengeKind.newDrinks,
+  ChallengeKind.newPlaces,
+  ChallengeKind.dryNights,
+  ChallengeKind.hydration,
+  ChallengeKind.mostKinds,
+  ChallengeKind.longestStreak,
+  ChallengeKind.mostLogged,
+];
+
+/// One-tap starting points for a circle challenge.
+const challengePresets = <({ChallengeKind kind, String title, int days, String blurb})>[
+  (kind: ChallengeKind.dryNights, title: 'Dry week', days: 7, blurb: 'Most dry nights in seven days.'),
+  (kind: ChallengeKind.newDrinks, title: 'Five new pours', days: 14, blurb: 'Drinks none of you have logged before.'),
+  (kind: ChallengeKind.newPlaces, title: 'New places month', days: 30, blurb: "Somewhere you've never logged."),
+  (kind: ChallengeKind.hydration, title: 'Water every night', days: 7, blurb: 'A water logged each night.'),
+  (kind: ChallengeKind.daysKept, title: 'Keep the diary', days: 30, blurb: 'Write every night — dry ones count.'),
+  (kind: ChallengeKind.freeform, title: 'Best homebrew', days: 14, blurb: 'A rule you write, a winner you pick.'),
+];
+
+/// The value a board row scores for a kind (v2 rows carry their own counts).
+int scoreRow(ChallengeKind kind, Map<String, dynamic> r) => switch (kind) {
+      ChallengeKind.mostLogged => asInt(r['total']),
+      ChallengeKind.mostKinds => asInt(r['kinds']),
+      ChallengeKind.longestStreak => longestRun(asStrings(r['dates'])),
+      ChallengeKind.daysKept => asInt(r['days_kept']),
+      ChallengeKind.dryNights => asInt(r['dry_nights']),
+      ChallengeKind.newDrinks => asInt(r['new_drinks']),
+      ChallengeKind.newPlaces => asInt(r['new_places']),
+      ChallengeKind.hydration => asInt(r['water_days']),
+      ChallengeKind.freeform => 0,
+    };
 
 class Challenge {
   final String id;
@@ -253,16 +290,8 @@ class ChallengesApi {
   static Future<List<BoardRow>> board(Challenge ch) async {
     final c = db;
     if (c == null) return [];
-    final data = await c.rpc('challenge_board', params: {'cid': ch.id});
-    final list = rows(data).map((r) {
-      final value = switch (ch.kind) {
-        ChallengeKind.mostLogged => asInt(r['total']),
-        ChallengeKind.mostKinds => asInt(r['kinds']),
-        ChallengeKind.longestStreak => longestRun(asStrings(r['dates'])),
-        ChallengeKind.freeform => 0,
-      };
-      return BoardRow(r['user_id'] as String, (r['display_name'] as String?) ?? 'member', value);
-    }).toList()
+    final data = await c.rpc(ch.kind.isV2 ? 'challenge_board_v2' : 'challenge_board', params: {'cid': ch.id});
+    final list = rows(data).map((r) => BoardRow(r['user_id'] as String, (r['display_name'] as String?) ?? 'member', scoreRow(ch.kind, r))).toList()
       ..sort((a, b) {
         final v = b.value.compareTo(a.value);
         return v != 0 ? v : a.name.compareTo(b.name);
