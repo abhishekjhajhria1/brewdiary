@@ -623,6 +623,40 @@ try {
     ok("every retail rule and dry day cites its source", unsourced && Number(unsourced.n) === 0);
   }
 
+  // ── service (051): the floor, tabs, stations, the bill, the table link ──────
+  if (!fns.includes("close_tab")) {
+    console.log("  ~ service (051) not applied — skipping");
+  } else {
+    console.log("\n── service: tabs, stations, bills, the table link (051) ──");
+    const w = await all(`select tablename, cmd from pg_policies where schemaname = 'public'
+      and tablename in ('tabs', 'order_lines', 'tab_payments', 'order_requests', 'table_calls') and cmd <> 'SELECT'`);
+    ok("tabs, lines, payments, requests, calls: no client write policy (functions only)", w.length === 0, `— ${w.map((x) => `${x.tablename}:${x.cmd}`).join(", ")}`);
+    const al = await one(`select pg_get_functiondef('public.add_order_lines(uuid,jsonb,text)'::regprocedure) d`);
+    ok("add_order_lines(): orders.take; name, price and station copied from the menu; 86'd refused",
+      al && /'orders\.take'/.test(al.d) && /m\.price/.test(al.d) && /m\.station/.test(al.d) && /not m\.available/.test(al.d));
+    const ct = await one(`select pg_get_functiondef('public.close_tab(uuid,jsonb,numeric)'::regprocedure) d`);
+    ok("close_tab(): payments.take; the subtotal is the non-void lines, kept as a snapshot", ct && /'payments\.take'/.test(ct.d) && /status <> 'void'/.test(ct.d) && /subtotal = sub/.test(ct.d));
+    const vl = await one(`select pg_get_functiondef('public.void_line(uuid,text)'::regprocedure) d`);
+    ok("void_line(): a reason always; your own fresh line, or a supervisor", vl && /char_length\(trim\(coalesce\(reason/.test(vl.d) && /orders\.void_own/.test(vl.d) && /orders\.approve/.test(vl.d));
+    const sl = await one(`select pg_get_functiondef('public.set_line_status(uuid,text)'::regprocedure) d`);
+    ok("set_line_status(): the bar moves bar tickets, the kitchen kitchen tickets, forward only", sl && /station\.bar/.test(sl.d) && /station\.kitchen/.test(sl.d) && /rank_to <= rank_from/.test(sl.d));
+    const ro = await one(`select pg_get_functiondef('public.request_order(text,uuid,jsonb,text)'::regprocedure) d`);
+    ok("request_order(): signed in, the venue switched it on, rate-limited — a request, never lines",
+      ro && /auth\.uid\(\) is null/.test(ro.d) && /v\.table_service/.test(ro.d) && /interval '20 seconds'/.test(ro.d) && !/insert into public\.order_lines/.test(ro.d));
+    const si = await one(`select pg_get_functiondef('public.service_inbox(uuid)'::regprocedure) d`);
+    ok("service_inbox(): never returns who asked", si && !/returns table \([^)]*requested_by/.test(si.d) && !/select[^;]*r\.requested_by/.test(si.d));
+    const rq = await all(`select policyname, qual from pg_policies where schemaname = 'public' and tablename in ('order_requests', 'table_calls')`);
+    ok("a guest reads only their own requests and calls", rq.length === 2 && rq.every((p) => /requested_by = auth\.uid\(\)/.test(p.qual)));
+    const wf = await one(`select pg_get_functiondef('public.waitlist_forget()'::regprocedure) d`);
+    ok("the waitlist forgets names within a day", wf && /interval '20 hours'/.test(wf.d));
+    const ts = await one(`select column_default d from information_schema.columns where table_schema = 'public' and table_name = 'venues' and column_name = 'table_service'`);
+    ok("ordering from the table is off until a venue switches it on", ts && ts.d === "false");
+    const al2 = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'venue_menu_items_allergens_check'`);
+    ok("menu allergens are the EU's 14", al2 && ["gluten", "crustaceans", "sesame", "lupin", "molluscs"].every((a) => al2.d.includes(a)));
+    const tabCols = (await all(`select column_name c from information_schema.columns where table_schema = 'public' and table_name in ('tabs', 'order_lines')`)).map((r) => r.c);
+    ok("tabs and lines hold no guest: no user column", !tabCols.some((c) => /guest_id|user_id|subject/.test(c)), `— ${tabCols.join(", ")}`);
+  }
+
   // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
   // pinned to search_path=public that calls one unqualified works on a laptop and fails
   // in production. None may.

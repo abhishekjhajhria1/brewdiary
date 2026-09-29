@@ -1415,6 +1415,139 @@ try {
     const kg = await as(owner, `select public.ring_sale($1, $2, $3::jsonb, 'cash', false) total`, [sweets, randomUUID(), JSON.stringify([{ product: kaju, qty: 250 }])]);
     ok("sold by weight: 250 g of ₹1,200/kg kaju katli = ₹300", Number(kg.rows[0].total) === 300);
   }
+
+  // ── 21. service (051): tables, tabs, the bar and kitchen, the bill, the guest's link ─
+  if ((await db.query(`select to_regprocedure('public.close_tab(uuid,jsonb,numeric)') f`)).rows[0].f) {
+    console.log("\n── 21. service: tables, tabs, stations, bills, the table link (051) ──");
+    const t = Date.now();
+    const waiter = await mkUser("Waiter", `vf-waiter-${t}`);
+    const chef = await mkUser("Chef", `vf-chef-${t}`);
+    const hostess = await mkUser("Host", `vf-hostess-${t}`);
+    const bistro = randomUUID();
+    await as(owner, `insert into public.venues (id, name, slug, created_by, kind, serves_alcohol, country) values ($1,'Verify Bistro',$2,$3,'restaurant',true,'IN')`, [bistro, `vf-bistro-${t}`, owner]);
+    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [bistro, owner]);
+    for (const [uid, role] of [[waiter, "server"], [chef, "kitchen"], [hostess, "host"], [barman, "bartender"]]) {
+      await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,$3)`, [bistro, uid, role]);
+    }
+    await db.query(`update public.venues set verified = true where id = $1`, [bistro]);
+
+    const item = async (name, kind, price, extra = {}) => {
+      const id = randomUUID();
+      const cols = { id, venue_id: bistro, name, kind, price, no_alcohol: ["soft", "food", "coffee", "tea"].includes(kind), ...extra };
+      const k = Object.keys(cols);
+      await as(owner, `insert into public.venue_menu_items (${k.join(",")}) values (${k.map((_, i) => `$${i + 1}`).join(",")})`, k.map((x) => cols[x]));
+      return id;
+    };
+    const paneer = await item("Paneer Tikka", "food", 320, { diet: "veg", allergens: ["milk"] });
+    const soda = await item("Masala Soda", "soft", 90);
+    const negroni = await item("Negroni", "cocktail", 450);
+    const lager = await item("Craft Lager", "beer", 300);
+    ok("food goes to the kitchen by itself", (await db.query(`select station from public.venue_menu_items where id = $1`, [paneer])).rows[0].station === "kitchen");
+    ok("an allergen off the EU list is refused",
+      await refused(() => as(owner, `update public.venue_menu_items set allergens = '{glitter}' where id = $1`, [paneer])));
+    const pub = (await anon(`select * from public.venue_menu($1)`, [`vf-bistro-${t}`])).rows;
+    ok("the public menu carries the veg mark and allergens", pub.some((r) => r.name === "Paneer Tikka" && r.diet === "veg" && r.allergens.includes("milk")));
+
+    const area = randomUUID();
+    const t1 = randomUUID();
+    await as(owner, `insert into public.venue_areas (id, venue_id, name) values ($1,$2,'Patio')`, [area, bistro]);
+    await as(owner, `insert into public.venue_tables (id, venue_id, area_id, label, seats) values ($1,$2,$3,'T1',4)`, [t1, bistro, area]);
+    ok("a server can't add tables (settings.edit)",
+      await refused(() => as(waiter, `insert into public.venue_tables (venue_id, label) values ($1,'T9')`, [bistro])));
+    ok("a table's code can't be edited by hand",
+      await refused(() => as(owner, `update public.venue_tables set code = 'abcdefgh' where id = $1`, [t1])));
+    const code0 = (await db.query(`select code from public.venue_tables where id = $1`, [t1])).rows[0].code;
+    const code = (await as(owner, `select public.rotate_table_code($1) c`, [t1])).rows[0].c;
+    ok("rotating a table's code retires the old tag", code !== code0 && (await anon(`select * from public.table_info($1)`, [code0])).rows.length === 0);
+    const counterShop = (await db.query(`select id from public.venues where kind = 'sweet_shop' and created_by = $1 limit 1`, [owner])).rows[0]?.id;
+    if (counterShop) {
+      ok("a counter (sweet shop) has no tables",
+        await refused(() => as(owner, `insert into public.venue_tables (venue_id, label) values ($1,'T1')`, [counterShop])));
+    }
+
+    const tab = randomUUID();
+    await as(waiter, `select public.open_tab($1,$2,$3,null,3)`, [bistro, tab, t1]);
+    await as(waiter, `select public.open_tab($1,$2,$3,null,3)`, [bistro, tab, t1]);
+    ok("opening the same tab twice (a retry) makes one tab", (await db.query(`select count(*)::int n from public.tabs where id = $1`, [tab])).rows[0].n === 1);
+    ok("a chef can't open tabs", await refused(() => as(chef, `select public.open_tab($1,$2,$3,null,2)`, [bistro, randomUUID(), t1])));
+    const n = (await as(waiter, `select public.add_order_lines($1, $2::jsonb) n`, [tab, JSON.stringify([{ item: paneer, qty: 2, note: "less spicy" }, { item: negroni, qty: 1, seat: 2 }, { item: soda, qty: 1 }])])).rows[0].n;
+    ok("a server takes an order; each line priced by the server", n === 3);
+    const lines = (await db.query(`select * from public.order_lines where tab_id = $1`, [tab])).rows;
+    const lineOf = (name) => lines.find((l) => l.name === name);
+    ok("the paneer goes to the kitchen, the negroni to the bar", lineOf("Paneer Tikka").station === "kitchen" && lineOf("Negroni").station === "bar");
+    await as(owner, `update public.venue_menu_items set price = 999 where id = $1`, [paneer]);
+    ok("a later menu edit never rewrites an open tab", Number((await db.query(`select unit_price from public.order_lines where id = $1`, [lineOf("Paneer Tikka").id])).rows[0].unit_price) === 320);
+    await as(owner, `update public.venue_menu_items set available = false where id = $1`, [negroni]);
+    ok("an 86'd item can't be ordered", await refused(() => as(waiter, `select public.add_order_lines($1, $2::jsonb)`, [tab, JSON.stringify([{ item: negroni, qty: 1 }])])));
+
+    const move = (who, line, to) => as(who, `select public.set_line_status($1,$2)`, [line, to]);
+    await move(chef, lineOf("Paneer Tikka").id, "preparing");
+    await move(chef, lineOf("Paneer Tikka").id, "ready");
+    ok("the kitchen moves its own tickets", true);
+    ok("the kitchen can't touch the bar's", await refused(() => move(chef, lineOf("Negroni").id, "ready")));
+    await move(barman, lineOf("Negroni").id, "ready");
+    await move(waiter, lineOf("Paneer Tikka").id, "served");
+    await move(waiter, lineOf("Negroni").id, "served");
+    ok("a served line can't go back", await refused(() => move(chef, lineOf("Paneer Tikka").id, "preparing")));
+    ok("a void needs a reason", await refused(() => as(waiter, `select public.void_line($1,'')`, [lineOf("Masala Soda").id])));
+    await as(waiter, `select public.void_line($1,'rang it twice')`, [lineOf("Masala Soda").id]);
+    ok("a server voids their own fresh line", (await db.query(`select status from public.order_lines where id = $1`, [lineOf("Masala Soda").id])).rows[0].status === "void");
+    ok("…but not a served one (a supervisor's call)", await refused(() => as(waiter, `select public.void_line($1,'sent back')`, [lineOf("Negroni").id])));
+
+    ok("the kitchen can't settle a bill", await refused(() => as(chef, `select public.close_tab($1, '[]'::jsonb)`, [tab])));
+    const sub = Number((await as(waiter, `select public.close_tab($1, $2::jsonb, 50) s`, [tab, JSON.stringify([{ method: "UPI", amount: 700 }, { method: "cash", amount: 390 }])])).rows[0].s);
+    ok("the bill: 2 × ₹320 + ₹450 (the void doesn't count) = ₹1,090", sub === 1090);
+    ok("staff decide how it's paid — any method, any split, recorded as said",
+      (await db.query(`select string_agg(method || ':' || amount, ',' order by method) m from public.tab_payments where tab_id = $1`, [tab])).rows[0].m === "UPI:700.00,cash:390.00");
+    ok("a closed tab takes no more orders", await refused(() => as(waiter, `select public.add_order_lines($1, $2::jsonb)`, [tab, JSON.stringify([{ item: soda, qty: 1 }])])));
+    ok("nobody writes a line directly (functions only)",
+      await refused(() => as(owner, `insert into public.order_lines (tab_id, venue_id, name, qty, station) values ($1,$2,'free drink',1,'bar')`, [tab, bistro])));
+    ok("a guest sees no tabs", (await as(anita, `select count(*)::int n from public.tabs where venue_id = $1`, [bistro])).rows[0].n === 0);
+
+    // The guest's side: the table's link.
+    const info = (await anon(`select * from public.table_info($1)`, [code])).rows[0];
+    ok("the table's link opens its venue and table, signed out", info && info.table_label === "T1" && info.venue_slug === `vf-bistro-${t}`);
+    ok("ordering from the table is off until the venue switches it on",
+      await refused(() => as(anita, `select public.request_order($1,$2,$3::jsonb)`, [code, randomUUID(), JSON.stringify([{ item: soda, qty: 1 }])])));
+    await as(owner, `update public.venues set table_service = true where id = $1`, [bistro]);
+    ok("a signed-out visitor can't order", await refused(() => anon(`select public.request_order($1,$2,$3::jsonb)`, [code, randomUUID(), JSON.stringify([{ item: soda, qty: 1 }])])));
+    const req = randomUUID();
+    await as(anita, `select public.request_order($1,$2,$3::jsonb,'no ice please')`, [code, req, JSON.stringify([{ item: lager, qty: 2 }, { item: soda, qty: 1 }])]);
+    ok("a guest can send an order from the table", (await as(anita, `select status from public.order_requests where id = $1`, [req])).rows[0]?.status === "pending");
+    ok("…not two in twenty seconds", await refused(() => as(anita, `select public.request_order($1,$2,$3::jsonb)`, [code, randomUUID(), JSON.stringify([{ item: soda, qty: 1 }])])));
+    ok("another guest can't see it", (await as(rohan, `select count(*)::int n from public.order_requests where id = $1`, [req])).rows[0].n === 0);
+    const inbox = (await as(waiter, `select * from public.service_inbox($1)`, [bistro])).rows;
+    const got = inbox.find((r) => r.id === req);
+    ok("staff see the order in the inbox: the table, what, and that it has alcohol (check ID)", got && got.table_label === "T1" && got.has_alcohol === true);
+    ok("…and never who asked", got && !Object.keys(got).some((k) => /requested|user|guest/.test(k)));
+    const tab2 = randomUUID();
+    await as(waiter, `select public.accept_request($1,$2)`, [req, tab2]);
+    const glines = (await db.query(`select name, qty, unit_price, source from public.order_lines where tab_id = $1 order by name`, [tab2])).rows;
+    ok("accepted: it becomes lines on a new tab, priced by the server", glines.length === 2 && glines.every((l) => l.source === "guest") && Number(glines[0].unit_price) === 300);
+    ok("the guest sees it was accepted", (await as(anita, `select status from public.order_requests where id = $1`, [req])).rows[0].status === "accepted");
+    const req2 = randomUUID();
+    await as(rohan, `select public.request_order($1,$2,$3::jsonb)`, [code, req2, JSON.stringify([{ item: soda, qty: 1 }])]);
+    await as(waiter, `select public.decline_request($1,'kitchen closed')`, [req2]);
+    ok("a request can be declined, with a reason the guest sees", (await as(rohan, `select status, decline_reason from public.order_requests where id = $1`, [req2])).rows[0].decline_reason === "kitchen closed");
+
+    await as(anita, `select public.call_table_staff($1,'bill')`, [code]);
+    await as(anita, `select public.call_table_staff($1,'bill')`, [code]);
+    const calls = (await as(waiter, `select * from public.service_inbox($1) where item_kind = 'call'`, [bistro])).rows;
+    ok("\"bill please\" reaches the floor once, however often it's tapped", calls.length === 1 && calls[0].call_kind === "bill" && calls[0].table_label === "T1");
+    await as(waiter, `select public.resolve_call($1)`, [calls[0].id]);
+    ok("…and clears when handled", (await as(waiter, `select count(*)::int n from public.service_inbox($1) where item_kind = 'call'`, [bistro])).rows[0].n === 0);
+
+    await db.query(`insert into public.waitlist (id, venue_id, name, party, created_at) values ($1,$2,'Yesterday',2, now() - interval '2 days')`, [randomUUID(), bistro]);
+    await as(hostess, `insert into public.waitlist (id, venue_id, name, party, quoted_min) values ($1,$2,'Priya',4,15)`, [randomUUID(), bistro]);
+    const wl = (await as(hostess, `select name from public.waitlist where venue_id = $1`, [bistro])).rows.map((r) => r.name);
+    ok("the host keeps a waitlist, and yesterday's names are gone", wl.includes("Priya") && !wl.includes("Yesterday"));
+    ok("a chef can't add to the waitlist", await refused(() => as(chef, `insert into public.waitlist (id, venue_id, name, party) values ($1,$2,'x',2)`, [randomUUID(), bistro])));
+
+    const board = (await as(owner, `select public.service_board($1) b`, [bistro])).rows[0].b;
+    ok("the live board: open tabs, sales, the payment mix — business numbers only",
+      board.open_tabs === 1 && Number(board.sales) === 1090 && Number(board.tips) === 50 && board.methods.upi !== undefined && board.methods.cash !== undefined, JSON.stringify(board));
+    ok("a server doesn't see the live board", await refused(() => as(waiter, `select public.service_board($1)`, [bistro])));
+  }
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);
