@@ -1330,6 +1330,91 @@ try {
     ok("a stranger can't read a venue's area", await refused(() => as(stranger, `select * from public.venue_area_signals($1, 14)`, [vA])));
     ok("nobody reads the table directly", (await as(owner, `select count(*)::int n from public.area_signals`)).rows[0].n === 0);
   }
+
+  // ── 20. the counter (050): products, stock, sales, and the liquor-store rules ──
+  if ((await db.query(`select to_regprocedure('public.ring_sale(uuid,uuid,jsonb,text,boolean)') f`)).rows[0].f) {
+    console.log("\n── 20. the counter: stock, sales, and the law on a bottle (050) ──");
+    const t = Date.now();
+    const shop = randomUUID();
+    await as(owner, `insert into public.venues (id, name, slug, created_by, kind, country, region) values ($1,'Verify Bottle Shop',$2,$3,'store','IN','KA')`,
+      [shop, `vf-bottles-${t}`, owner]);
+    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [shop, owner]);
+    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'bartender')`, [shop, barman]);
+    await db.query(`update public.venues set verified = true where id = $1`, [shop]);
+
+    const whisky = randomUUID();
+    const soda = randomUUID();
+    await as(owner, `insert into public.shop_products (id, venue_id, name, brand, category, size, unit, price, mrp) values ($1,$2,'Single malt','Amrut','spirit',750,'ml',1500,1600)`, [whisky, shop]);
+    await as(owner, `insert into public.shop_products (id, venue_id, name, category, price) values ($1,$2,'Soda','soft',20)`, [soda, shop]);
+    ok("a liquor store lists a bottle with its MRP", true);
+    ok("a price above the printed MRP can't be saved",
+      await refused(() => as(owner, `update public.shop_products set price = 1700 where id = $1`, [whisky])));
+    ok("a bartender can't edit the shelf (menu.edit)",
+      await refused(() => as(barman, `insert into public.shop_products (venue_id, name, category, price) values ($1,'x','soft',1)`, [shop])));
+
+    await as(barman, `select public.receive_stock($1, 10)`, [whisky]);
+    await as(barman, `select public.receive_stock($1, 50)`, [soda]);
+    ok("a bartender can't adjust stock without a manager",
+      await refused(() => as(barman, `select public.adjust_stock($1, -1, 'adjust', 'miscount')`, [whisky])));
+    ok("an adjustment needs a note", await refused(() => as(owner, `select public.adjust_stock($1, -1, 'adjust', '')`, [whisky])));
+    await as(owner, `select public.adjust_stock($1, -1, 'waste', 'broken bottle')`, [whisky]);
+    const onHand = async (pid) => Number((await as(owner, `select on_hand from public.shop_stock($1) where product_id = $2`, [shop, pid])).rows[0].on_hand);
+    ok("stock on hand is the ledger's sum (10 in, 1 broken → 9)", (await onHand(whisky)) === 9);
+
+    const ring = (who, lines, idChecked = false, sale = randomUUID()) =>
+      as(who, `select public.ring_sale($1, $2, $3::jsonb, 'upi', $4) total`, [shop, sale, JSON.stringify(lines), idChecked]);
+    const sodaSale = randomUUID();
+    const r1 = await ring(barman, [{ product: soda, qty: 2 }], false, sodaSale);
+    ok("anything that isn't alcohol rings up anywhere (2 sodas = ₹40, priced by the server)", Number(r1.rows[0].total) === 40);
+    const again = await ring(barman, [{ product: soda, qty: 2 }], false, sodaSale);
+    ok("a retry of the same sale doesn't ring twice", Number(again.rows[0].total) === 40 && (await onHand(soda)) === 48);
+
+    ok("NO retail rule for the state → no alcohol sale (deny-by-default)",
+      await refused(() => ring(barman, [{ product: whisky, qty: 1 }], true)));
+    const status0 = (await as(barman, `select * from public.store_sale_status($1)`, [shop])).rows[0];
+    ok("the till says why before anyone tries", status0.researched === false && /haven't researched/.test(status0.reason));
+
+    await db.query(`insert into public.retail_alcohol_rules (country, region, tz, sale_start, sale_end, max_ml_per_sale, source)
+                    values ('IN','KA','Asia/Kolkata','00:00','23:59:59.999',2250,'verify harness — not a real rule')`);
+    ok("…without an ID check, still no", await refused(() => ring(barman, [{ product: whisky, qty: 1 }], false)));
+    const r2 = await ring(barman, [{ product: whisky, qty: 1 }], true);
+    ok("with the state researched and ID checked, the bottle rings up at its price", Number(r2.rows[0].total) === 1500);
+    ok("over the per-sale limit (4 × 750 ml > 2250 ml) is refused",
+      await refused(() => ring(barman, [{ product: whisky, qty: 4 }], true)));
+
+    await db.query(`insert into public.dry_days (country, region, day, reason, source)
+                    values ('IN','', (now() at time zone 'Asia/Kolkata')::date, 'a verify dry day', 'verify harness')`);
+    ok("a dry day stops alcohol all day", await refused(() => ring(barman, [{ product: whisky, qty: 1 }], true)));
+    ok("…but the soda still sells", !(await refused(() => ring(barman, [{ product: soda, qty: 1 }]))));
+    const status1 = (await as(barman, `select * from public.store_sale_status($1)`, [shop])).rows[0];
+    ok("the till shows the dry day", status1.allowed_now === false && /Dry day/.test(status1.reason));
+    await db.query(`delete from public.dry_days where reason = 'a verify dry day'`);
+    await db.query(`update public.retail_alcohol_rules set sale_start = '00:00', sale_end = '00:00' where country = 'IN' and region = 'KA'`);
+    ok("outside legal sale hours is refused", await refused(() => ring(barman, [{ product: whisky, qty: 1 }], true)));
+
+    ok("a guest can't ring a sale", await refused(() => ring(anita, [{ product: soda, qty: 1 }])));
+    ok("nobody writes a sale directly (no client policy)",
+      await refused(() => as(owner, `insert into public.shop_sales (id, venue_id, paid_by, total) values ($1,$2,'cash',0)`, [randomUUID(), shop])));
+    ok("a guest sees none of the shop's stock", (await as(anita, `select count(*)::int n from public.stock_moves where venue_id = $1`, [shop])).rows[0].n === 0);
+    ok("sale lines carry the server's price", (await db.query(`select bool_and(unit_price = 1500) ok from public.shop_sale_lines where product_id = $1`, [whisky])).rows[0].ok === true);
+
+    const reg = (await as(owner, `select * from public.excise_register($1, (now() at time zone 'Asia/Kolkata')::date, (now() at time zone 'Asia/Kolkata')::date)`, [shop])).rows;
+    const w = reg.find((r) => r.product_id === whisky);
+    ok("the excise register reads the ledger, on the state's clock (received 10, sold 1, other −1, closing 8)",
+      w && Number(w.received) === 10 && Number(w.sold) === 1 && Number(w.other) === -1 && Number(w.closing) === 8, JSON.stringify(w));
+    ok("the register lists only alcohol", !reg.some((r) => r.product_id === soda));
+    ok("a bartender can't read the register", await refused(() => as(barman, `select * from public.excise_register($1, current_date, current_date)`, [shop])));
+
+    const sweets = randomUUID();
+    await as(owner, `insert into public.venues (id, name, slug, created_by, kind, country) values ($1,'Verify Sweets',$2,$3,'sweet_shop','IN')`, [sweets, `vf-sweets-${t}`, owner]);
+    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [sweets, owner]);
+    ok("a sweet shop can't list whisky",
+      await refused(() => as(owner, `insert into public.shop_products (venue_id, name, category, size, unit, price) values ($1,'Whisky','spirit',750,'ml',900)`, [sweets])));
+    const kaju = randomUUID();
+    await as(owner, `insert into public.shop_products (id, venue_id, name, category, unit, sold_by, price) values ($1,$2,'Kaju katli','sweet','g','weight',1200)`, [kaju, sweets]);
+    const kg = await as(owner, `select public.ring_sale($1, $2, $3::jsonb, 'cash', false) total`, [sweets, randomUUID(), JSON.stringify([{ product: kaju, qty: 250 }])]);
+    ok("sold by weight: 250 g of ₹1,200/kg kaju katli = ₹300", Number(kg.rows[0].total) === 300);
+  }
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

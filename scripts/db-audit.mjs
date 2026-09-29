@@ -592,6 +592,37 @@ try {
       rd && /is_venue_staff\(vid, auth\.uid\(\)\)/.test(rd.d) && /not v\.verified/.test(rd.d) && /s\.area = left\(v\.geohash, 4\)/.test(rd.d) && /expires_at > now\(\)/.test(rd.d));
   }
 
+  // ── the counter (050): stock, sales, and the law on a bottle ────────────────
+  if (!fns.includes("ring_sale")) {
+    console.log("  ~ the counter (050) not applied — skipping");
+  } else {
+    console.log("\n── the counter: stock, sales, and the law on a bottle (050) ──");
+    const writes = await all(`select tablename, cmd from pg_policies where schemaname = 'public'
+      and tablename in ('stock_moves', 'shop_sales', 'shop_sale_lines') and cmd <> 'SELECT'`);
+    ok("stock_moves, shop_sales, shop_sale_lines: no client write policy (functions only)", writes.length === 0,
+      `— ${writes.map((w) => `${w.tablename}:${w.cmd}`).join(", ")}`);
+    const rs = await one(`select pg_get_functiondef('public.ring_sale(uuid,uuid,jsonb,text,boolean)'::regprocedure) d`);
+    ok("ring_sale(): needs payments.take", rs && /venue_can\(vid, auth\.uid\(\), 'payments\.take'\)/.test(rs.d));
+    ok("ring_sale(): the SERVER prices every line (p.price), never the till", rs && /p\.price \* q/.test(rs.d) && !/l->>'price'/.test(rs.d));
+    ok("ring_sale(): alcohol needs a researched state, open hours, an ID check and the per-sale limit",
+      rs && /store_sale_status/.test(rs.d) && /not st\.researched or not st\.allowed_now/.test(rs.d) && /check ID first/.test(rs.d) && /max_ml/.test(rs.d));
+    const ss = await one(`select pg_get_functiondef('public.store_sale_status(uuid)'::regprocedure) d`);
+    ok("store_sale_status(): no retail rule → no alcohol (deny-by-default), dry days stop it all day",
+      ss && /r\.country is null/.test(ss.d) && /dry_days/.test(ss.d));
+    const mrp = await all(`select pg_get_constraintdef(oid) d from pg_constraint where conrelid = 'public.shop_products'::regclass`);
+    ok("shop_products: a price can never exceed the MRP", mrp.some((c) => /price <= mrp/.test(c.d)));
+    const pg2 = await one(`select pg_get_functiondef('public.shop_products_guard()'::regprocedure) d`);
+    ok("a shop that sells no alcohol can't list any", pg2 && /venue_legal_class/.test(pg2.d) && /no_alcohol/.test(pg2.d));
+    const saleCols = (await all(`select column_name c from information_schema.columns where table_schema = 'public' and table_name = 'shop_sales'`)).map((r) => r.c);
+    ok("shop_sales: no guest column — the till sells to \"a customer\"", saleCols.length > 0 && !saleCols.some((c) => /guest|customer|subject|user_id/.test(c)), `— ${saleCols.join(", ")}`);
+    ok("shop_sales: an alcohol sale can't exist without an ID check", (await all(`select pg_get_constraintdef(oid) d from pg_constraint where conrelid = 'public.shop_sales'::regclass`)).some((c) => /has_alcohol/.test(c.d) && /id_checked/.test(c.d)));
+    const ruleWrites = await all(`select tablename from pg_policies where schemaname = 'public' and tablename in ('retail_alcohol_rules', 'dry_days') and cmd <> 'SELECT'`);
+    ok("retail rules and dry days are written out-of-band only", ruleWrites.length === 0);
+    const unsourced = await one(`select (select count(*) from public.retail_alcohol_rules where char_length(trim(source)) < 5)
+      + (select count(*) from public.dry_days where char_length(trim(source)) < 5) n`);
+    ok("every retail rule and dry day cites its source", unsourced && Number(unsourced.n) === 0);
+  }
+
   // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
   // pinned to search_path=public that calls one unqualified works on a laptop and fails
   // in production. None may.

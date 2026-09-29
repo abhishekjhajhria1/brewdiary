@@ -40,6 +40,12 @@ class DemoBackend implements Backend {
   final Set<String> _punched = {}; // venueId|guestId|day
   final Map<String, Set<String>> _vibes = {}; // roomId|guestId → reasons
 
+  // The counter (050): a shelf, a stock ledger, suppliers and sales per venue.
+  final Map<String, List<ShopProduct>> _products = {};
+  final List<({String venueId, String productId, int qty, String reason, DateTime at})> _moves = [];
+  final Map<String, List<ShopSupplier>> _suppliers = {};
+  final Map<String, double> _sales = {}; // saleId → total (a retry returns it)
+
   static final _people = [
     const ProfileHit(id: 'g-anita', handle: 'anita', name: 'Anita'),
     const ProfileHit(id: 'g-rohan', handle: 'rohan', name: 'Rohan'),
@@ -94,7 +100,47 @@ class DemoBackend implements Backend {
       verified: true,
       myRole: StaffRole.manager,
     );
-    _venues.addAll([bar, sweets]);
+    const cellar = Venue(
+      id: 'demo-cellar',
+      name: 'Cellar Door Wines',
+      slug: 'cellar-door',
+      createdBy: 'demo-me',
+      city: 'Bengaluru',
+      kind: VenueKind.store,
+      servesAlcohol: true,
+      country: 'IN',
+      region: 'KA',
+      currency: 'INR',
+      geohash: 'tdr1v9',
+      verified: true,
+      myRole: StaffRole.owner,
+    );
+    _venues.addAll([bar, sweets, cellar]);
+    _staff[cellar.id] = [const StaffMember(id: 'demo-me', handle: 'demo-owner', name: 'You (demo)', role: StaffRole.owner)];
+    _rooms[cellar.id] = [];
+    _menu[cellar.id] = [];
+    _perks[cellar.id] = [const PerkTier(id: 'p4', kind: PerkKind.visits, threshold: 6, reward: 'A bag of ice on us')];
+    _products[cellar.id] = const [
+      ShopProduct(id: 'w1', name: 'Single Malt', brand: 'Amrut', category: 'spirit', size: 750, unit: 'ml', price: 3400, mrp: 3500, barcode: '8901234000011'),
+      ShopProduct(id: 'w2', name: 'Craft Lager (can)', brand: 'Bira 91', category: 'beer', size: 500, unit: 'ml', price: 180, mrp: 190),
+      ShopProduct(id: 'w3', name: 'Chenin Blanc', brand: 'Sula', category: 'wine', size: 750, unit: 'ml', price: 1100, mrp: 1150),
+      ShopProduct(id: 'w4', name: 'Tonic Water', brand: 'Svami', category: 'soft', size: 300, unit: 'ml', price: 60),
+      ShopProduct(id: 'w5', name: 'Ice (2 kg)', category: 'other', price: 50),
+    ];
+    _suppliers[cellar.id] = const [ShopSupplier(id: 'sup1', name: 'Karnataka State Beverages', licence: 'CL-2'), ShopSupplier(id: 'sup2', name: 'Fizz & Co', licence: null)];
+    _products[sweets.id] = const [
+      ShopProduct(id: 'k10', name: 'Kaju Katli', category: 'sweet', unit: 'g', byWeight: true, price: 1200),
+      ShopProduct(id: 'k11', name: 'Motichoor Ladoo', category: 'sweet', unit: 'g', byWeight: true, price: 880),
+      ShopProduct(id: 'k12', name: 'Masala Chai', category: 'soft', price: 40),
+    ];
+    _suppliers[sweets.id] = const [];
+    final seedAt = DateTime.now().subtract(const Duration(days: 2));
+    for (final (id, qty) in [('w1', 12), ('w2', 96), ('w3', 24), ('w4', 48), ('w5', 20)]) {
+      _moves.add((venueId: cellar.id, productId: id, qty: qty, reason: 'receive', at: seedAt));
+    }
+    for (final (id, qty) in [('k10', 5000), ('k11', 4000), ('k12', 200)]) {
+      _moves.add((venueId: sweets.id, productId: id, qty: qty, reason: 'receive', at: seedAt));
+    }
 
     _staff[bar.id] = [
       const StaffMember(id: 'demo-me', handle: 'demo-owner', name: 'You (demo)', role: StaffRole.owner),
@@ -580,6 +626,134 @@ class DemoBackend implements Backend {
       if (v.areaShare && d.$5 != null) rows.add(HeatRow(cell, 'spend', '${d.$5}', k(d.$1)));
     });
     return rows;
+  }
+
+  // ── the counter (050) ─────────────────────────────────────────────────────
+  @override
+  Future<List<ShopProduct>> products(String venueId) async => [...(_products[venueId] ?? const [])];
+
+  @override
+  Future<void> saveProduct(String venueId, ShopProduct p, {bool isNew = false}) async {
+    final v = _venue(venueId);
+    if (!roleCan(v.myRole, Cap.editMenu)) throw const BackendError('Your role here can\'t do that.');
+    if (p.name.trim().isEmpty) throw const BackendError('Give it a name.');
+    if (p.mrp != null && p.price > p.mrp!) throw const BackendError('The price can\'t be above the MRP.');
+    if (p.isAlcohol && !v.sellsAlcohol) throw BackendError('A ${v.kind.label.toLowerCase()} sells no alcohol — it can\'t list ${p.name}.');
+    final list = _products.putIfAbsent(venueId, () => []);
+    final i = list.indexWhere((x) => x.id == p.id);
+    if (i < 0) {
+      list.add(p);
+    } else {
+      list[i] = p;
+    }
+    stockRev.bump();
+  }
+
+  @override
+  Future<Map<String, int>> stock(String venueId) async {
+    final out = <String, int>{for (final p in _products[venueId] ?? const <ShopProduct>[]) p.id: 0};
+    for (final m in _moves.where((m) => m.venueId == venueId)) {
+      out[m.productId] = (out[m.productId] ?? 0) + m.qty;
+    }
+    return out;
+  }
+
+  String _venueOfProduct(String productId) =>
+      _products.entries.firstWhere((e) => e.value.any((p) => p.id == productId), orElse: () => throw const BackendError('No such product.')).key;
+
+  @override
+  Future<void> receiveStock(String productId, int qty, {String? supplierId, String? invoice}) async {
+    final vid = _venueOfProduct(productId);
+    if (!roleCan(_venue(vid).myRole, Cap.receiveStock)) throw const BackendError('Your role here can\'t do that.');
+    if (qty < 1) throw const BackendError('Receive at least one.');
+    _moves.add((venueId: vid, productId: productId, qty: qty, reason: 'receive', at: DateTime.now()));
+    stockRev.bump();
+  }
+
+  @override
+  Future<void> adjustStock(String productId, int qty, String why, {String? note}) async {
+    final vid = _venueOfProduct(productId);
+    if (!roleCan(_venue(vid).myRole, Cap.adjustStock)) throw const BackendError('Your role here can\'t do that.');
+    if (qty == 0) throw const BackendError('Adjust by a real amount.');
+    if (why == 'adjust' && (note ?? '').trim().length < 3) throw const BackendError('An adjustment needs a note (a count, a breakage…).');
+    _moves.add((venueId: vid, productId: productId, qty: qty, reason: why, at: DateTime.now()));
+    stockRev.bump();
+  }
+
+  @override
+  Future<List<ShopSupplier>> suppliers(String venueId) async => [...(_suppliers[venueId] ?? const [])];
+
+  @override
+  Future<void> addSupplier(String venueId, String name, {String? licence}) async {
+    if (name.trim().isEmpty) throw const BackendError('Give the supplier a name.');
+    _suppliers.putIfAbsent(venueId, () => []).add(ShopSupplier(id: newId(), name: name.trim(), licence: (licence ?? '').trim().isEmpty ? null : licence!.trim()));
+    stockRev.bump();
+  }
+
+  @override
+  Future<SaleStatus> saleStatus(String venueId) async {
+    final v = _venue(venueId);
+    // The demo pretends Karnataka's retail rules are researched. The real ones are
+    // rows in retail_alcohol_rules with their source; until then the till says no.
+    if (v.region == 'KA') return const SaleStatus(researched: true, allowedNow: true, minAge: 21, maxMl: 2250, saleStart: '10:00', saleEnd: '22:30');
+    return const SaleStatus(researched: false, allowedNow: false, reason: 'We haven\'t researched the retail alcohol rules here yet, so alcohol can\'t be rung up. Everything else can.', minAge: 21);
+  }
+
+  @override
+  Future<double> ringSale(String venueId, String saleId, List<Map<String, Object>> lines, String paidBy, {bool idChecked = false}) async {
+    if (_sales.containsKey(saleId)) return _sales[saleId]!;
+    final v = _venue(venueId);
+    if (!roleCan(v.myRole, Cap.takePayment)) throw const BackendError('Your role here can\'t do that.');
+    final shelf = {for (final p in _products[venueId] ?? const <ShopProduct>[]) p.id: p};
+    var total = 0.0, ml = 0.0, alcohol = false;
+    for (final l in lines) {
+      final p = shelf[l['product']] ?? (throw const BackendError('A product isn\'t on this venue\'s shelf.'));
+      final q = l['qty'] as int;
+      total += p.byWeight ? (p.price * q / 1000 * 100).round() / 100 : p.price * q;
+      if (p.isAlcohol) {
+        alcohol = true;
+        ml += (p.size ?? 0) * q;
+      }
+    }
+    if (alcohol) {
+      final st = await saleStatus(venueId);
+      if (!st.researched || !st.allowedNow) throw BackendError(st.reason ?? 'Alcohol can\'t be sold here right now.');
+      if (!idChecked) throw BackendError('Check ID first: ${st.minAge ?? 21} or over.');
+      if (st.maxMl != null && ml > st.maxMl!) throw BackendError('That\'s over the per-sale limit here (${st.maxMl} ml).');
+    }
+    for (final l in lines) {
+      _moves.add((venueId: venueId, productId: l['product'] as String, qty: -(l['qty'] as int), reason: 'sale', at: DateTime.now()));
+    }
+    _sales[saleId] = total;
+    stockRev.bump();
+    return total;
+  }
+
+  @override
+  Future<List<RegisterRow>> exciseRegister(String venueId, DateTime from, DateTime to) async {
+    final v = _venue(venueId);
+    if (!roleCan(v.myRole, Cap.reports)) throw const BackendError('Your role here can\'t do that.');
+    DateTime day(DateTime d) => DateTime(d.year, d.month, d.day);
+    final out = <RegisterRow>[];
+    for (var d = day(from); !d.isAfter(day(to)); d = d.add(const Duration(days: 1))) {
+      for (final p in (_products[venueId] ?? const <ShopProduct>[]).where((p) => p.isAlcohol)) {
+        final ms = _moves.where((m) => m.venueId == venueId && m.productId == p.id);
+        int sum(bool Function(({String venueId, String productId, int qty, String reason, DateTime at})) f) => ms.where(f).fold(0, (s, m) => s + m.qty);
+        out.add(RegisterRow(
+          day: d,
+          productId: p.id,
+          name: p.name,
+          brand: p.brand,
+          size: p.size,
+          opening: sum((m) => day(m.at).isBefore(d)),
+          received: sum((m) => day(m.at) == d && m.reason == 'receive'),
+          sold: -sum((m) => day(m.at) == d && m.reason == 'sale'),
+          other: sum((m) => day(m.at) == d && m.reason != 'receive' && m.reason != 'sale'),
+          closing: sum((m) => !day(m.at).isAfter(d)),
+        ));
+      }
+    }
+    return out;
   }
 
   @override

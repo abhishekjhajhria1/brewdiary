@@ -391,3 +391,86 @@ class KudosLine {
   final int n;
   const KudosLine(this.reason, this.n);
 }
+
+// ── the counter (050) ───────────────────────────────────────────────────────
+const alcoholCategories = {'spirit', 'beer', 'wine', 'other_alcohol'};
+
+/// One thing on the till's shelf. Sold by weight → price is per kg, quantities are grams.
+class ShopProduct {
+  final String id;
+  final String name;
+  final String? brand;
+  final String category; // spirit | beer | wine | other_alcohol | soft | food | sweet | other
+  final double? size;
+  final String unit; // ml | g | piece
+  final bool byWeight;
+  final double price;
+  final double? mrp;
+  final String? barcode;
+  final bool active;
+  const ShopProduct({required this.id, required this.name, this.brand, required this.category, this.size, this.unit = 'piece', this.byWeight = false, required this.price, this.mrp, this.barcode, this.active = true});
+
+  bool get isAlcohol => alcoholCategories.contains(category);
+
+  /// "750 ml", "per kg", "" — what one unit is.
+  String get pack => byWeight ? 'per kg' : (size == null ? '' : '${size!.toStringAsFixed(size! % 1 == 0 ? 0 : 1)} ${unit == 'piece' ? 'pc' : unit}');
+
+  factory ShopProduct.fromRow(Map<String, dynamic> r) => ShopProduct(
+        id: r['id'] as String,
+        name: r['name'] as String,
+        brand: r['brand'] as String?,
+        category: r['category'] as String,
+        size: (r['size'] as num?)?.toDouble(),
+        unit: (r['unit'] as String?) ?? 'piece',
+        byWeight: r['sold_by'] == 'weight',
+        price: (r['price'] as num).toDouble(),
+        mrp: (r['mrp'] as num?)?.toDouble(),
+        barcode: r['barcode'] as String?,
+        active: r['active'] != false,
+      );
+
+  Map<String, dynamic> toRow(String venueId) => {
+        'id': id,
+        'venue_id': venueId,
+        'name': name.trim(),
+        'brand': (brand ?? '').trim().isEmpty ? null : brand!.trim(),
+        'category': category,
+        'size': size,
+        'unit': unit,
+        'sold_by': byWeight ? 'weight' : 'unit',
+        'price': price,
+        'mrp': mrp,
+        'barcode': (barcode ?? '').trim().isEmpty ? null : barcode!.trim(),
+        'active': active,
+      };
+}
+
+class ShopSupplier {
+  final String id;
+  final String name;
+  final String? licence;
+  const ShopSupplier({required this.id, required this.name, this.licence});
+}
+
+/// What the law allows at this till right now (store_sale_status()).
+class SaleStatus {
+  final bool researched;
+  final bool allowedNow;
+  final String? reason;
+  final int? minAge;
+  final int? maxMl;
+  final String? saleStart; // HH:MM
+  final String? saleEnd;
+  const SaleStatus({required this.researched, required this.allowedNow, this.reason, this.minAge, this.maxMl, this.saleStart, this.saleEnd});
+}
+
+/// One line of the excise register: one alcohol product on one day.
+class RegisterRow {
+  final DateTime day;
+  final String productId;
+  final String name;
+  final String? brand;
+  final double? size;
+  final int opening, received, sold, other, closing;
+  const RegisterRow({required this.day, required this.productId, required this.name, this.brand, this.size, required this.opening, required this.received, required this.sold, required this.other, required this.closing});
+}

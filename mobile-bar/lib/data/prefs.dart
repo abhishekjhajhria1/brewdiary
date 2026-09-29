@@ -41,6 +41,7 @@ final roomsRev = Rev();
 final menuRev = Rev();
 final perksRev = Rev();
 final guestsRev = Rev();
+final stockRev = Rev();
 
 const _uuid = Uuid();
 

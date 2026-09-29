@@ -1,5 +1,6 @@
 // Walk-throughs on the demo venue: the real screens, the real rules, no network.
 import 'package:brewdiary_bar/data/session.dart';
+import 'package:brewdiary_bar/ui/widgets/common.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -138,6 +139,37 @@ void main() {
     await t.pump(const Duration(seconds: 2));
     await t.pumpAndSettle();
     expect(find.textContaining('Stop serving them alcohol'), findsOneWidget);
+  });
+
+  testWidgets('a liquor store: a sale needs an ID check, and the stock follows', (t) async {
+    await bootApp(t, size: const Size(390, 1400));
+    await tapText(t, 'Cellar Door Wines');
+    expect(find.text('TILL'), findsOneWidget);
+    await tapText(t, 'New sale');
+    expect(find.textContaining('Alcohol: on sale'), findsOneWidget);
+    await t.tap(find.widgetWithText(AccentPill, 'ADD').first); // Amrut Single Malt
+    await t.pumpAndSettle();
+    expect(find.text('Check ID first: 21 or over.'), findsOneWidget);
+    await t.tap(find.bySemanticsLabel('ID checked'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Ring up ₹3,400'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 400));
+    expect(find.textContaining('Rung up'), findsOneWidget);
+    await t.pumpAndSettle();
+    expect(find.text('Tap Add on anything below.'), findsOneWidget, reason: 'the basket clears');
+    expect(find.textContaining('11 in stock'), findsOneWidget, reason: 'the ledger moved: 12 − 1');
+  });
+
+  testWidgets('a sweet shop sells by weight', (t) async {
+    await bootApp(t, size: const Size(390, 1400));
+    await tapText(t, 'Mithai Mahal');
+    await tapText(t, 'New sale');
+    await t.tap(find.widgetWithText(AccentPill, 'ADD').first); // Kaju Katli, per kg
+    await t.pumpAndSettle();
+    await tapText(t, '250 g');
+    expect(find.text('250 g Kaju Katli'), findsOneWidget);
+    expect(find.text('Ring up ₹300'), findsOneWidget);
   });
 
   testWidgets('switching venue goes back to the list', (t) async {

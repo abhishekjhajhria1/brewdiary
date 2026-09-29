@@ -63,7 +63,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `src/components/` | Feature-grouped UI: `calendar/`, `log/`, `you/`, `together/`, `discover/`, `bartender/`, `share/`, `onboarding/`, `venue/`, `kiosk/`, `profile/`, `ui/`. |
 | `src/lib/` | Framework-free logic — the "brains". See the table below. |
 | `public/` | Static assets: PWA `manifest.webmanifest`, `sw.js`, app icons. |
-| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`049`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
+| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`050`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
 | `ai-db/` | The **separate** AI database schema (pseudonymous Ninkasi corpus; deny-all RLS). |
 | `scripts/` | Dev/ops tooling: `db.mjs` (migration runner), `gen-icons.mjs`, `verify-venue.mjs` (the only path that approves a venue), `ninkasi/` (dataset export, trend sync, AI-DB verify). |
 | `tests/` | Vitest unit tests for `src/lib` (excluded from `next build`). |
@@ -107,6 +107,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `bartender.ts` | Ninkasi persona + system prompt + scripted fallback. |
 | `hostAdvisor.ts` | **Ninkasi for hosts** (`/api/host-ai`): the shift companion for every staff role. The brief is built on the phone from what that role can already see — counts and titles, never a guest — and the briefing rules are twinned in `mobile-bar/lib/logic/host_brief.dart` (same test cases). Signed-in only; never writes the training corpus. |
 | `appLinks.ts` | The `/.well-known` app-link files (rewritten in `next.config.mjs` to `/api/app-links/*`): bwdy.site → the guest app, bar.bwdy.site → the venue app, from server env (fingerprints, Apple team id); 404 until set. How all four windows connect (Supabase, Cloudflare, hosting): `docs/14`. |
+| *(counter, 050)* | Counters' till lives in the venue app (`mobile-bar/lib/logic/counter.dart`) over `supabase/050_shop_counter.sql`: products (never above MRP), a stock ledger (on hand is derived), suppliers, `ring_sale()` (the SERVER prices it), and alcohol that is **deny-by-default** — no `retail_alcohol_rules` row with a source, no bottle sale; a listed dry day stops it; hours, per-sale ml limit and an ID check (a yes, never the ID) apply. A sale has no customer column. `docs/15`. |
 | `ratelimit.ts` / `aidb.ts` / `supabase-server.ts` | AI-route rate limiting; server-only pseudonymized AI-DB writer; SSR session reader. |
 
 ---

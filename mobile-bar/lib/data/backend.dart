@@ -104,6 +104,24 @@ abstract class Backend {
   Future<int> teamKudos(String venueId, {int days = 30});
   Future<List<KudosLine>> myKudos(String venueId);
 
+  // ── the counter (050): products, stock, sales, the register ───────────────
+  Future<List<ShopProduct>> products(String venueId);
+  Future<void> saveProduct(String venueId, ShopProduct p, {bool isNew = false});
+
+  /// On hand per product id — the ledger's sum.
+  Future<Map<String, int>> stock(String venueId);
+  Future<void> receiveStock(String productId, int qty, {String? supplierId, String? invoice});
+  Future<void> adjustStock(String productId, int qty, String why, {String? note});
+  Future<List<ShopSupplier>> suppliers(String venueId);
+  Future<void> addSupplier(String venueId, String name, {String? licence});
+
+  /// What the law allows at this till right now (dry day, hours, age, per-sale limit).
+  Future<SaleStatus> saleStatus(String venueId);
+
+  /// Rings a sale; the server prices it and returns the total. [saleId] makes a retry safe.
+  Future<double> ringSale(String venueId, String saleId, List<Map<String, Object>> lines, String paidBy, {bool idChecked = false});
+  Future<List<RegisterRow>> exciseRegister(String venueId, DateTime from, DateTime to);
+
   // ── guest book ────────────────────────────────────────────────────────────
   Future<GuestCard?> guestCard(String venueId, String guestId);
   Future<void> setGuestNote(String venueId, String guestId, String body, List<String> tags);

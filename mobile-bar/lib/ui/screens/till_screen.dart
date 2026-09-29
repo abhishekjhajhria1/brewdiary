@@ -17,6 +17,7 @@ import '../widgets/common.dart';
 import '../widgets/page.dart';
 import 'guests_screen.dart';
 import 'tonight_screen.dart';
+import 'checkout_screen.dart';
 import 'host_screen.dart';
 
 class TillScreen extends StatefulWidget {
@@ -75,6 +76,11 @@ class _TillScreenState extends State<TillScreen> {
       children: [
         const DemoNote(),
         ShiftCard(venue: v),
+        if (s.can(Cap.takePayment)) ...[
+          BdButton('New sale', icon: Ph.receipt, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckoutScreen(venue: v)))),
+          const SizedBox(height: S.xl),
+          const SectionHeader('Punch a card'),
+        ],
         if (!v.verified)
           Glass(
             padding: const EdgeInsets.all(S.l),

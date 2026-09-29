@@ -8,12 +8,15 @@ import '../../data/prefs.dart';
 import '../../data/session.dart';
 import '../../data/settings.dart';
 import '../../logic/roles.dart';
+import '../../logic/venue_kinds.dart';
 import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
+import 'excise_screen.dart';
 import 'perks_screen.dart';
 import 'setup_screen.dart';
+import 'stock_screen.dart';
 import 'team_screen.dart';
 
 class MoreScreen extends StatelessWidget {
@@ -32,6 +35,10 @@ class MoreScreen extends StatelessWidget {
         const DemoNote(),
         Group(children: [
           GroupTile(icon: Ph.usersThree, title: 'Team', subtitle: s.can(Cap.manageTeam) ? 'Roles, invites, who\'s on' : 'Who you work with', chevron: true, onTap: () => push(TeamScreen(venue: venue))),
+          if (venue.kind.isCounter && (s.can(Cap.countStock) || s.can(Cap.receiveStock) || s.can(Cap.editMenu)))
+            GroupTile(icon: Ph.package, title: 'Stock', subtitle: 'What you sell, deliveries, suppliers', chevron: true, onTap: () => push(StockScreen(venue: venue))),
+          if (venue.kind == VenueKind.store && s.can(Cap.reports))
+            GroupTile(icon: Ph.receipt, title: 'Excise register', subtitle: 'Opening, in, sold, closing — as CSV', chevron: true, onTap: () => push(ExciseScreen(venue: venue))),
           if (s.can(Cap.editPerks)) GroupTile(icon: Ph.gift, title: 'Loyalty card', subtitle: 'Reward tiers and quiet nights', chevron: true, onTap: () => push(PerksScreen(venue: venue))),
           if (s.can(Cap.editSettings) || s.can(Cap.requestVerification))
             GroupTile(icon: Ph.slidersHorizontal, title: 'Setup', subtitle: venue.verified ? 'Details, location' : 'Details, location, verification', chevron: true, onTap: () => push(SetupScreen(venue: venue))),

@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:brewdiary_bar/data/models.dart';
 import 'package:brewdiary_bar/logic/area.dart';
+import 'package:brewdiary_bar/logic/counter.dart';
 import 'package:brewdiary_bar/logic/host_brief.dart';
 import 'package:brewdiary_bar/logic/insights.dart';
 import 'package:brewdiary_bar/logic/perk_rules.dart';
@@ -257,6 +258,40 @@ void main() {
       expect(j['today'], '2026-10-01');
       expect(j['guestsIn'], 6);
       expect(j.toString(), isNot(contains('Anita')));
+    });
+  });
+
+  group('the counter: the same sums as ring_sale()', () {
+    const whisky = ShopProduct(id: 'w', name: 'Single Malt', category: 'spirit', size: 750, unit: 'ml', price: 3400, mrp: 3500);
+    const tonic = ShopProduct(id: 't', name: 'Tonic', category: 'soft', price: 60);
+    const kaju = ShopProduct(id: 'k', name: 'Kaju Katli', category: 'sweet', unit: 'g', byWeight: true, price: 1200);
+    const open = SaleStatus(researched: true, allowedNow: true, minAge: 21, maxMl: 2250);
+
+    test('units stack, weights replace, and the total matches the server', () {
+      final b = const Basket().add(whisky).add(whisky).add(tonic).add(kaju, 250).add(kaju, 500);
+      expect(b.lines.map((l) => l.qty), [2, 1, 500]);
+      expect(b.total, 3400 * 2 + 60 + 600);
+      expect(b.alcoholMl, 1500);
+      expect(b.toLines().first, {'product': 'w', 'qty': 2}, reason: 'what and how many — never a price');
+      expect(b.set('w', 0).hasAlcohol, isFalse);
+    });
+
+    test('the till explains the law before the server refuses', () {
+      final one = const Basket().add(whisky);
+      expect(basketBlock(const Basket(), open, idChecked: false), 'Add something first.');
+      expect(basketBlock(const Basket().add(tonic), null, idChecked: false), isNull, reason: 'no alcohol, no rule to wait for');
+      expect(basketBlock(one, open, idChecked: false), 'Check ID first: 21 or over.');
+      expect(basketBlock(one, open, idChecked: true), isNull);
+      expect(basketBlock(one.set('w', 4), open, idChecked: true), 'Over the per-sale limit here (2250 ml).');
+      const dry = SaleStatus(researched: true, allowedNow: false, reason: 'Dry day: Gandhi Jayanti — no alcohol may be sold today.');
+      expect(basketBlock(one, dry, idChecked: true), startsWith('Dry day'));
+      const unknown = SaleStatus(researched: false, allowedNow: false, reason: 'We haven\'t researched the retail alcohol rules here yet.');
+      expect(basketBlock(one, unknown, idChecked: true), startsWith('We haven\'t researched'));
+    });
+
+    test('the excise register exports as CSV', () {
+      final csv = registerCsv([RegisterRow(day: DateTime(2026, 10, 1), productId: 'w', name: 'Single Malt', brand: 'Amrut', size: 750, opening: 12, received: 0, sold: 1, other: 0, closing: 11)]);
+      expect(csv, 'date,brand,product,size_ml,opening,received,sold,other,closing\n2026-10-01,Amrut,Single Malt,750,12,0,1,0,11');
     });
   });
 }

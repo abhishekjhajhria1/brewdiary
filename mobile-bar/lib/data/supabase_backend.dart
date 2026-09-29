@@ -506,6 +506,102 @@ class SupabaseBackend implements Backend {
         guestsRev.bump();
       });
 
+  // ── the counter (050) ─────────────────────────────────────────────────────
+  @override
+  Future<List<ShopProduct>> products(String venueId) => _run(() async {
+        final rows = await _c.from('shop_products').select().eq('venue_id', venueId).order('category').order('name');
+        return [for (final r in rows) ShopProduct.fromRow(r)];
+      });
+
+  @override
+  Future<void> saveProduct(String venueId, ShopProduct p, {bool isNew = false}) => _run(() async {
+        final row = p.toRow(venueId);
+        if (isNew) {
+          await _c.from('shop_products').insert(row); // client id, no .select() (RLS/RETURNING)
+        } else {
+          row.remove('id');
+          row.remove('venue_id');
+          await _c.from('shop_products').update(row).eq('id', p.id);
+        }
+        stockRev.bump();
+      });
+
+  @override
+  Future<Map<String, int>> stock(String venueId) => _run(() async {
+        final rows = await _c.rpc('shop_stock', params: {'vid': venueId});
+        return {for (final r in (rows as List? ?? const [])) r['product_id'] as String: (r['on_hand'] as num).toInt()};
+      });
+
+  @override
+  Future<void> receiveStock(String productId, int qty, {String? supplierId, String? invoice}) => _run(() async {
+        await _c.rpc('receive_stock', params: {'pid': productId, 'qty': qty, 'supplier': supplierId, 'invoice_no': invoice});
+        stockRev.bump();
+      });
+
+  @override
+  Future<void> adjustStock(String productId, int qty, String why, {String? note}) => _run(() async {
+        await _c.rpc('adjust_stock', params: {'pid': productId, 'qty': qty, 'why': why, 'note': note});
+        stockRev.bump();
+      });
+
+  @override
+  Future<List<ShopSupplier>> suppliers(String venueId) => _run(() async {
+        final rows = await _c.from('shop_suppliers').select().eq('venue_id', venueId).order('name');
+        return [for (final r in rows) ShopSupplier(id: r['id'] as String, name: r['name'] as String, licence: r['licence_no'] as String?)];
+      });
+
+  @override
+  Future<void> addSupplier(String venueId, String name, {String? licence}) => _run(() async {
+        if (name.trim().isEmpty) throw const BackendError('Give the supplier a name.');
+        await _c.from('shop_suppliers').insert({'id': newId(), 'venue_id': venueId, 'name': name.trim(), 'licence_no': (licence ?? '').trim().isEmpty ? null : licence!.trim()});
+        stockRev.bump();
+      });
+
+  @override
+  Future<SaleStatus> saleStatus(String venueId) => _run(() async {
+        final rows = await _c.rpc('store_sale_status', params: {'vid': venueId});
+        final r = (rows as List).first as Map;
+        String? hm(Object? t) => t == null ? null : (t as String).substring(0, 5);
+        return SaleStatus(
+          researched: r['researched'] == true,
+          allowedNow: r['allowed_now'] == true,
+          reason: r['reason'] as String?,
+          minAge: (r['min_age'] as num?)?.toInt(),
+          maxMl: (r['max_ml'] as num?)?.toInt(),
+          saleStart: hm(r['sale_start']),
+          saleEnd: hm(r['sale_end']),
+        );
+      });
+
+  @override
+  Future<double> ringSale(String venueId, String saleId, List<Map<String, Object>> lines, String paidBy, {bool idChecked = false}) => _run(() async {
+        final t = await _c.rpc('ring_sale', params: {'vid': venueId, 'sale': saleId, 'lines': lines, 'paid': paidBy, 'id_checked': idChecked});
+        stockRev.bump();
+        return (t as num).toDouble();
+      });
+
+  @override
+  Future<List<RegisterRow>> exciseRegister(String venueId, DateTime from, DateTime to) => _run(() async {
+        String d(DateTime x) => '${x.year}-${x.month.toString().padLeft(2, '0')}-${x.day.toString().padLeft(2, '0')}';
+        final rows = await _c.rpc('excise_register', params: {'vid': venueId, 'from_day': d(from), 'to_day': d(to)});
+        int n(Object? x) => (x as num?)?.toInt() ?? 0;
+        return [
+          for (final r in (rows as List? ?? const []))
+            RegisterRow(
+              day: DateTime.parse(r['day'] as String),
+              productId: r['product_id'] as String,
+              name: r['name'] as String,
+              brand: r['brand'] as String?,
+              size: (r['size'] as num?)?.toDouble(),
+              opening: n(r['opening']),
+              received: n(r['received']),
+              sold: n(r['sold']),
+              other: n(r['other']),
+              closing: n(r['closing']),
+            ),
+        ];
+      });
+
   // ── Ninkasi for hosts ─────────────────────────────────────────────────────
   @override
   Stream<String> advise(Map<String, dynamic> brief, List<Map<String, String>> messages) async* {

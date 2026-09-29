@@ -41,6 +41,10 @@ If you can read a recipe, you can read this.
     — one database, four windows (website, venue dashboard, guest app, venue app): what each needs,
     Supabase and Cloudflare setup, hosting on Vercel or Cloudflare Workers, app links that open the
     right app, how a night flows between the apps, and a go-live checklist.
+15. **[15 — The counter: liquor stores, sweet shops, bakeries and every shop](15-the-counter-shops.md)**
+    — the till's checkout (priced by the server, sold by weight too), stock that follows every sale,
+    suppliers, the law on a bottle (ID check, dry days, legal hours, per-sale limits, MRP — all
+    deny-by-default), how to open a state for alcohol sales, and the excise register.
 
 ## The one-paragraph version
 brewdiary is a **drink diary**. You open it, tap tonight's date on a calendar, and jot down what you

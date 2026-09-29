@@ -529,16 +529,16 @@ That is the lawful version of the question (M12.6).
 ### M16 — Shops: liquor stores, sweet shops, bakeries, any shop
 
 - [~] **M16.1** Till: guest code → punch card once a day (`record_visit`); perk status and claim (visits only, never an alcoholic reward). *(Till built on name search; guest code next.)*
-- [ ] **M16.2** Shelf (menu), stock (M9), staff (M10), insights.
+- [~] **M16.2** Shelf (menu), stock (M9), staff (M10), insights. *(Stock done for counters (050): products, ledger, receive/adjust, suppliers.)*
 - [x] **M16.3** No tables, rooms, kiosk, tabs or spend perks. The database refuses rooms for every counter kind (047).
 - [x] **M16.4** Every kind of shop (047): sweet shop, bakery, café, restaurant, club, other shop; `serves_alcohol` decides the legal class; the web dashboard and the app both offer them.
-- [ ] **M16.5** Liquor store checkout: scan or pick by brand and pack size, the bill, how it was paid; stock moves with it.
-- [ ] **M16.6** Age check at the counter: a prompt when a line is alcohol, "ID checked" recorded on the sale (never the ID itself), refusals logged with no guest id.
-- [ ] **M16.7** Dry days, legal sale hours and per-sale quantity limits as deny-by-default rows per state; the till refuses outside them.
-- [ ] **M16.8** MRP: a sale above the printed maximum retail price is refused (India).
-- [ ] **M16.9** Excise registers: daily stock and sales by brand and pack, exported in the state's format.
-- [ ] **M16.10** Suppliers, purchase orders and deliveries (shared with M9).
-- [ ] **M16.11** Sweet shops and bakeries: sale by weight (per kg), made-today batches and waste, festival pre-orders.
+- [x] **M16.5** Liquor store checkout: scan or pick by brand and pack size, the bill, how it was paid; stock moves with it.
+- [x] **M16.6** Age check at the counter: a prompt when a line is alcohol, "ID checked" recorded on the sale (never the ID itself), refusals logged with no guest id.
+- [x] **M16.7** Dry days, legal sale hours and per-sale quantity limits as deny-by-default rows per state; the till refuses outside them. *(The tables ship EMPTY on purpose: a state opens when someone researches it and adds rows with sources — docs/15 §3.)*
+- [x] **M16.8** MRP: a sale above the printed maximum retail price is refused (India).
+- [x] **M16.9** Excise registers: daily stock and sales by brand and pack, exported in the state's format.
+- [~] **M16.10** Suppliers, purchase orders and deliveries (shared with M9). *(Suppliers and deliveries done; purchase orders next.)*
+- [~] **M16.11** Sweet shops and bakeries: sale by weight (per kg), made-today batches and waste, festival pre-orders. *(Sale by weight and waste done; batches and pre-orders next.)*
 
 ### M17 — Guest side (user app + website) the bar app needs
 
@@ -612,15 +612,15 @@ where the website needs one, and Dart parity tests where the app mirrors logic.
 | `047_all_shops.sql` | **Done.** Eight kinds of venue, `serves_alcohol`, legal class, counters |
 | `048_area_map.sql` | **Done.** The area heat map: two guest opt-ins + a venue opt-in, cells of 5+ people and 3+ venues, rounded to 5s, fixed windows, spend bands (D20) |
 | `049_area_signals.sql` | **Done.** Server-only outside signals: places and happenings, never people; cleaned twice; staff read their own area (D21) |
-| `050_floor.sql` | Areas, tables, table tag codes |
-| `051_service_day.sql` | Service days (open/close, auto-opened room), table sessions, `join_table()`, linked guests, guest codes |
-| `052_menu_v2.sql` | Sizes, modifiers, allergens, stations and routing (still no discount column) |
-| `053_orders.sql` | Tabs, order lines, line events, the status view, the tab flag |
-| `054_payments.sql` | Tax profiles, service charge, payments, `close_tab()`, invoice numbers, receipts, refunds |
-| `055_cash.sql` | Drawers, cash movements, the day-close snapshot (Z) |
-| `056_guest_link.sql` | `taste_shares`, the usuals function, table requests |
-| `057_inventory.sql` | Items, locations, recipes, stock movements, counts, suppliers, purchase orders, deliveries |
-| `058_store.sql` | Liquor-store rules: sale hours, dry days, quantity limits, MRP, excise registers |
+| `050_shop_counter.sql` | **Done.** The counter: products (MRP), stock ledger, suppliers, `ring_sale()`, retail alcohol rules + dry days (deny-by-default), the excise register |
+| `051_floor.sql` | Areas, tables, table tag codes |
+| `052_service_day.sql` | Service days (open/close, auto-opened room), table sessions, `join_table()`, linked guests, guest codes |
+| `053_menu_v2.sql` | Sizes, modifiers, allergens, stations and routing (still no discount column) |
+| `054_orders.sql` | Tabs, order lines, line events, the status view, the tab flag |
+| `055_payments.sql` | Tax profiles, service charge, payments, `close_tab()`, invoice numbers, receipts, refunds |
+| `056_cash.sql` | Drawers, cash movements, the day-close snapshot (Z) |
+| `057_guest_link.sql` | `taste_shares`, the usuals function, table requests |
+| `058_inventory.sql` | Items, locations, recipes, stock movements, counts, suppliers, purchase orders, deliveries |
 | `059_labour.sql` | Rota, time clock, availability, time off, swaps, tip pools |
 | `060_bookings.sql` | Reservations, waitlist, door tallies |
 | `061_compliance.sql` | Refusal log, incidents, licences, new jurisdiction columns and state rows |
