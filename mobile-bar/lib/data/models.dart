@@ -312,6 +312,34 @@ class VenueInsights {
       );
 }
 
+/// A public fact about a place near the venue (049): an event, an opening, a price.
+class AreaSignal {
+  final String id;
+  final String kind; // event | opening | closing | holiday | hours | price | venue | trend | weather | news
+  final String title;
+  final String? detail;
+  final DateTime? startsOn;
+  final DateTime? endsOn;
+  final String? cell;
+  final Map<String, Object> facts;
+  final String source;
+  final String? sourceUrl;
+  const AreaSignal({required this.id, required this.kind, required this.title, this.detail, this.startsOn, this.endsOn, this.cell, this.facts = const {}, required this.source, this.sourceUrl});
+
+  factory AreaSignal.fromRow(Map<String, dynamic> r) => AreaSignal(
+        id: r['id'] as String,
+        kind: r['kind'] as String,
+        title: r['title'] as String,
+        detail: r['detail'] as String?,
+        startsOn: r['starts_on'] == null ? null : DateTime.tryParse(r['starts_on'] as String),
+        endsOn: r['ends_on'] == null ? null : DateTime.tryParse(r['ends_on'] as String),
+        cell: r['cell'] as String?,
+        facts: {for (final e in ((r['facts'] as Map?) ?? const {}).entries) '${e.key}': e.value as Object},
+        source: (r['source'] as String?) ?? '',
+        sourceUrl: r['source_url'] as String?,
+      );
+}
+
 class AreaTrend {
   final String kind; // 'drink' | 'mood'
   final String name;

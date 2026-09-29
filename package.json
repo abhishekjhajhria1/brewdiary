@@ -13,7 +13,8 @@
     "db:audit": "node scripts/db-audit.mjs",
     "db:verify": "node scripts/verify-flow.mjs",
     "db:local": "bash scripts/db-local.sh",
-    "gates": "npm run lint && npm test && npm run build"
+    "gates": "npm run lint && npm test && npm run build",
+    "signals:import": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/import-signals.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

@@ -571,6 +571,27 @@ try {
       at && /p\.share_trends/.test(at.d) && />= 5/.test(at.d) && /left\(p\.trends_geo, 4\) = left\(trim\(in_geo\), 4\)/.test(at.d));
   }
 
+  // ── outside signals (049): public facts about places, never people ──────────
+  if (!fns.includes("venue_area_signals")) {
+    console.log("  ~ outside signals (049) not applied — skipping");
+  } else {
+    console.log("\n── outside signals: places and happenings, never people (049) ──");
+    const rls = await one(`select relrowsecurity r from pg_class where oid = 'public.area_signals'::regclass`);
+    ok("area_signals: RLS on", rls && rls.r === true);
+    const pol = await one(`select count(*)::int n from pg_policies where schemaname = 'public' and tablename = 'area_signals'`);
+    ok("area_signals: no client policy at all (server-only writes, reads via a function)", pol && pol.n === 0);
+    const cols = (await all(`select column_name c from information_schema.columns where table_schema = 'public' and table_name = 'area_signals'`)).map((r) => r.c);
+    ok("area_signals: no column that could hold a person", cols.length > 0 && !cols.some((c) => /user|profile|author|person|email|phone|handle|name/.test(c)), `— ${cols.join(", ")}`);
+    const g = await one(`select pg_get_functiondef('public.area_signals_guard()'::regprocedure) d`);
+    ok("area_signals_guard(): refuses emails, phone numbers, @handles and personal fact keys",
+      g && /email address/.test(g.d) && /phone number/.test(g.d) && /@handle/.test(g.d) && /jsonb_object_keys/.test(g.d));
+    const trg = await one(`select count(*)::int n from pg_trigger where tgrelid = 'public.area_signals'::regclass and tgname = 'area_signals_guard'`);
+    ok("area_signals_guard fires on insert and update", trg && trg.n === 1);
+    const rd = await one(`select pg_get_functiondef('public.venue_area_signals(uuid,integer)'::regprocedure) d`);
+    ok("venue_area_signals(): the venue's own staff, a verified venue, its own area, unexpired",
+      rd && /is_venue_staff\(vid, auth\.uid\(\)\)/.test(rd.d) && /not v\.verified/.test(rd.d) && /s\.area = left\(v\.geohash, 4\)/.test(rd.d) && /expires_at > now\(\)/.test(rd.d));
+  }
+
   // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
   // pinned to search_path=public that calls one unqualified works on a laptop and fails
   // in production. None may.

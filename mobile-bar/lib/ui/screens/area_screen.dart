@@ -11,6 +11,7 @@
 // Phones stack it; tablets put the guide beside the map.
 import 'package:brewdiary_core/geo.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/backend.dart';
 import '../../data/models.dart';
@@ -141,6 +142,8 @@ class _AreaScreenState extends State<AreaScreen> {
               Segmented<int>(options: const [(7, '7 days'), (30, '30 days'), (90, '90 days')], value: _days, onChanged: (d) => setState(() => _days = d)),
               const SizedBox(height: S.l),
               _body(context),
+              const SectionHeader('What\'s on around you'),
+              AreaSignals(venue: v),
               const SectionHeader('What the whole area drinks'),
               AreaPreview(venue: v, days: _days, openButton: false),
               const SectionHeader('How this works'),
@@ -418,5 +421,95 @@ class HeatGrid extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── what's on around you (049) ──────────────────────────────────────────────
+IconData signalIcon(String kind) => switch (kind) {
+      'event' => Ph.confetti,
+      'opening' => Ph.doorOpen,
+      'closing' => Ph.door,
+      'holiday' => Ph.calendarBlank,
+      'hours' => Ph.clock,
+      'price' => Ph.tag,
+      'venue' => Ph.storefront,
+      'trend' => Ph.trendUp,
+      'weather' => Ph.sun,
+      _ => Ph.info,
+    };
+
+/// "Sat 3 Oct", "Sat 3 – Mon 5 Oct", "from today" — when a signal is on.
+String signalWhen(AreaSignal s, DateTime today) {
+  const wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  String d(DateTime x) {
+    final t = DateTime(today.year, today.month, today.day);
+    final diff = DateTime(x.year, x.month, x.day).difference(t).inDays;
+    if (diff == 0) return 'today';
+    if (diff == 1) return 'tomorrow';
+    return '${wd[x.weekday - 1]} ${x.day} ${mo[x.month - 1]}';
+  }
+
+  if (s.startsOn == null) return '';
+  if (s.endsOn == null || s.endsOn == s.startsOn) return d(s.startsOn!);
+  return '${d(s.startsOn!)} – ${d(s.endsOn!)}';
+}
+
+class AreaSignals extends StatelessWidget {
+  final Venue venue;
+  const AreaSignals({super.key, required this.venue});
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Loader<List<AreaSignal>>(
+      load: () => Backend.i.areaSignals(venue.id),
+      deps: '${venue.id}-${venue.geohash}-${venue.verified}',
+      retry: true,
+      builder: (context, list, loading) {
+        if (list == null) return const Skeleton(height: 120);
+        if (list.isEmpty) {
+          return const EmptyNote('Nothing on around you yet. Events, openings, dry days and prices near you show here as they come in — public facts about places, never about people.');
+        }
+        final today = DateTime.now();
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Group(children: [
+            for (final s in list)
+              GroupTile(
+                icon: signalIcon(s.kind),
+                title: s.title,
+                subtitle: [
+                  signalWhen(s, today),
+                  if (s.cell != null && (venue.geohash ?? '').length >= 5) directionFrom(venue.geohash!, s.cell!),
+                ].where((x) => x.isNotEmpty).join(' · '),
+                onTap: () => _open(context, s),
+              ),
+          ]),
+          const SizedBox(height: S.s),
+          Text('Public facts about places, gathered from listings and feeds. Never about a person.', style: T.caption(bd)),
+        ]);
+      },
+    );
+  }
+
+  Future<void> _open(BuildContext context, AreaSignal s) async {
+    await showBdSheet<void>(context, title: s.title, builder: (ctx) {
+      final bd = ctx.bd;
+      final when = signalWhen(s, DateTime.now());
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (when.isNotEmpty) Text(when[0].toUpperCase() + when.substring(1), style: T.sans(bd, size: 15, weight: FontWeight.w600)),
+        if (s.detail != null) ...[const SizedBox(height: S.s), Text(s.detail!, style: T.bodyMuted(bd))],
+        if (s.facts.isNotEmpty) ...[
+          const SizedBox(height: S.m),
+          Wrap(spacing: S.s, runSpacing: S.s, children: [for (final e in s.facts.entries) GlassChip('${e.key.replaceAll('_', ' ')}: ${e.value}')]),
+        ],
+        const SizedBox(height: S.m),
+        Text('From: ${s.source}', style: T.caption(bd)),
+        if (s.sourceUrl != null) ...[
+          const SizedBox(height: S.l),
+          BdButton('Open the source', icon: Ph.arrowUpRight, kind: BtnKind.secondary, onTap: () => launchUrl(Uri.parse(s.sourceUrl!), mode: LaunchMode.externalApplication)),
+        ],
+      ]);
+    });
   }
 }

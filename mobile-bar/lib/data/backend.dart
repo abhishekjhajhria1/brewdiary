@@ -96,6 +96,10 @@ abstract class Backend {
   /// The area heat map (048): groups of 5+ people who said yes, never a person.
   /// [tz] is the venue's time zone, so "evening" means the venue's evening.
   Future<List<HeatRow>> areaMap(String venueId, {int days = 30, String tz = 'UTC'});
+
+  /// Public facts about places in the venue's area (049): events, openings, prices.
+  /// Any staff member; empty until the venue is verified and placed.
+  Future<List<AreaSignal>> areaSignals(String venueId, {int daysAhead = 14});
   Future<int> teamKudos(String venueId, {int days = 30});
   Future<List<KudosLine>> myKudos(String venueId);
 

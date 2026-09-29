@@ -491,7 +491,7 @@ That is the lawful version of the question (M12.6).
 - [ ] **M12.4** Stock: variance, pour cost, waste, shrinkage, stock value, days on hand.
 - [ ] **M12.5** Guests: the existing k-anonymous insights, the share of covers from linked guests, perk use, booking no-show rate, the team kudos total.
 - [x] **M12.10** The area heat map (D20): cells at geohash precision 5–6 around the venue, each shown only with 5+ consenting people; layers for footfall by hour, spend band, taste mix and taste personas; a plain guide under the map. *(048; `docs/13-area-heat-map.md`. A venue shares spend only if it shares its own; the web dashboard map is still to do.)*
-- [ ] **M12.11** Outside signals (D21): events, openings, holidays and public venue facts from the import, on the map and in the briefing.
+- [x] **M12.11** Outside signals (D21): events, openings, holidays and public venue facts from the import, on the map and in the briefing. *(049, `docs/13` §9: an import route for tools, a CLI for files, one cleaner, a DB guard. Shown under the map; the map overlay and the briefing are next.)*
 - [ ] **M12.6** The area ("the kind of people outside"): area taste trends (5+ people per row) and menu opens by hour (docs/12 §7.4, counts of 5+). Never who is nearby, never demographics.
 - [ ] **M12.7** Exports: CSV/PDF, an accountant export, a scheduled emailed summary (server-side).
 - [ ] **M12.8** A roll-up for owners of several venues (D14).
@@ -611,7 +611,7 @@ where the website needs one, and Dart parity tests where the app mirrors logic.
 | `046_capability_gates.sql` | **Done.** Existing `is_venue_staff()` gates moved to capability checks |
 | `047_all_shops.sql` | **Done.** Eight kinds of venue, `serves_alcohol`, legal class, counters |
 | `048_area_map.sql` | **Done.** The area heat map: two guest opt-ins + a venue opt-in, cells of 5+ people and 3+ venues, rounded to 5s, fixed windows, spend bands (D20) |
-| `049_area_signals.sql` | Server-only outside signals from the import (D21) |
+| `049_area_signals.sql` | **Done.** Server-only outside signals: places and happenings, never people; cleaned twice; staff read their own area (D21) |
 | `050_floor.sql` | Areas, tables, table tag codes |
 | `051_service_day.sql` | Service days (open/close, auto-opened room), table sessions, `join_table()`, linked guests, guest codes |
 | `052_menu_v2.sql` | Sizes, modifiers, allergens, stations and routing (still no discount column) |
@@ -635,7 +635,7 @@ where the website needs one, and Dart parity tests where the app mirrors logic.
 | --- | --- |
 | `/api/venue-ai` (manager advisor, totals only) | exists |
 | `/api/staff-ai` (guest tip from a consented share; Ninkasi for hosts) | new (M8.3, M8.10) |
-| Outside-data import (scraped public facts → `area_signals`) | new (D21) |
+| Outside-data import (scraped public facts → `area_signals`): `/api/signals/import` + `npm run signals:import` | **done** (D21) |
 | Push sender | new (M13.1) |
 | Receipt PDF / email | new (M6.8) |
 | Scheduled reports | new (M12.7) |

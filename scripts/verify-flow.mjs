@@ -1283,6 +1283,53 @@ try {
     ok("spend bands match money.ts (₹1,200 → ₹1,000; ₹400 → under ₹500; $60 → $50)",
       (await band(1200, "INR")) === 1000 && (await band(400, "INR")) === 0 && (await band(60, "usd")) === 50);
   }
+
+  // ── 19. outside signals (049): public facts about places, never people ────────
+  if ((await db.query(`select to_regclass('public.area_signals') t`)).rows[0].t) {
+    console.log("\n── 19. outside signals: places and happenings, never people (049) ──");
+    const t = Date.now();
+    const sig = (extra = {}) => {
+      const r = { area: "tdr1", cell: "tdr1v9", kind: "event", title: "Dussehra fair at the grounds", source: "verify", dedupe_key: `verify:${t}:${Math.random()}`, starts_on: null, ...extra };
+      const keys = Object.keys(r);
+      return [`insert into public.area_signals (${keys.join(",")}) values (${keys.map((_, i) => `$${i + 1}`).join(",")})`, keys.map((k) => (k === "facts" ? JSON.stringify(r[k]) : r[k]))];
+    };
+    // The import path is the service role (no auth.uid()) — this harness's own connection.
+    await db.query(...sig({ starts_on: new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10) }));
+    await db.query(...sig({ kind: "venue", title: "New brewpub opened on 12th Main", facts: { rating: 4.4, review_count: 120 } }));
+    await db.query(...sig({ area: "ttnf", cell: null, title: "A fair in another city" }));
+    await db.query(...sig({ title: "Yesterday's thing", expires_at: new Date(Date.now() - 864e5).toISOString() }));
+    ok("the import path writes clean public facts", true);
+
+    ok("a signal can't carry an email", await refused(() => db.query(...sig({ detail: "tickets: ravi@example.com" }))));
+    ok("…or a phone number", await refused(() => db.query(...sig({ detail: "call +91 98450 12345" }))));
+    ok("…or an @handle", await refused(() => db.query(...sig({ detail: "hosted by @ravi_k" }))));
+    ok("…or a fact that names a person", await refused(() => db.query(...sig({ facts: { owner_name: "Ravi" } }))));
+    ok("a date is not mistaken for a phone number", !(await refused(() => db.query(...sig({ detail: "from 2026-10-02 to 2026-10-05" })))));
+    ok("a location must be a real cell in its area", await refused(() => db.query(...sig({ cell: "ttnfvb" }))));
+    ok("only an https link", await refused(() => db.query(...sig({ source_url: "http://example.com" }))));
+
+    ok("no client can write a signal (no policy at all)",
+      await refused(() => as(owner, ...sig({ title: "A venue writing its own news" }))));
+    const nPolicies = (await db.query(`select count(*)::int n from pg_policies where schemaname='public' and tablename='area_signals'`)).rows[0].n;
+    ok("area_signals has no client policies", nPolicies === 0);
+
+    // Venue A of scene 18 sits in tdr1 and is verified (or make one here if 18 didn't run).
+    let vA = (await db.query(`select id from public.venues where name = 'Verify Area A' limit 1`)).rows[0]?.id;
+    if (!vA) {
+      vA = randomUUID();
+      await as(owner, `insert into public.venues (id, name, slug, created_by, kind, country, geohash) values ($1,'Verify Signals',$2,$3,'bar','IN','tdr1v9')`, [vA, `vf-sig-${t}`, owner]);
+      await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [vA, owner]);
+      await db.query(`update public.venues set verified = true where id = $1`, [vA]);
+    }
+    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'server') on conflict do nothing`, [vA, rohan]);
+    const seen = (await as(rohan, `select * from public.venue_area_signals($1, 14)`, [vA])).rows;
+    ok("any staff member reads their own area's signals (a server too)", seen.some((r) => r.title === "Dussehra fair at the grounds"));
+    ok("a venue fact carries numbers, not people", seen.some((r) => r.kind === "venue" && r.facts.rating === 4.4));
+    ok("another city's signals never show", !seen.some((r) => r.title === "A fair in another city"));
+    ok("an expired signal never shows", !seen.some((r) => r.title === "Yesterday's thing"));
+    ok("a stranger can't read a venue's area", await refused(() => as(stranger, `select * from public.venue_area_signals($1, 14)`, [vA])));
+    ok("nobody reads the table directly", (await as(owner, `select count(*)::int n from public.area_signals`)).rows[0].n === 0);
+  }
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

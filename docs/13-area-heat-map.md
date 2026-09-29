@@ -12,7 +12,8 @@ information people agreed to share, and never pointing at anyone.
 6. [Switching it on](#6-switching-it-on)
 7. [Where it lives in the code](#7-where-it-lives-in-the-code)
 8. [What it never does](#8-what-it-never-does)
-9. [What comes next](#9-what-comes-next)
+9. [Outside signals: bringing in public data](#9-outside-signals-bringing-in-public-data)
+10. [What comes next](#10-what-comes-next)
 
 Words you might not know (geohash, k-anonymity, persona) are in the [glossary](02-glossary.md).
 
@@ -123,7 +124,8 @@ where there are many explorers. A test checks that the guide never says "another
 | The screen | `mobile-bar/lib/ui/screens/area_screen.dart` |
 | Guest switches | `src/components/you/You.tsx`, `test_m_app/lib/ui/screens/settings_screen.dart` |
 | Venue switch and location | `mobile-bar/lib/ui/screens/setup_screen.dart`, `src/components/venue/VenueApp.tsx` |
-| Checks | `scripts/db-audit.mjs` and `scripts/verify-flow.mjs` (section/scene 18) |
+| Checks | `scripts/db-audit.mjs` and `scripts/verify-flow.mjs` (section/scene 18; outside signals: 19) |
+| Outside signals | `supabase/049_area_signals.sql`, `src/lib/signals.ts`, `src/app/api/signals/import/route.ts`, `scripts/import-signals.mjs` |
 
 ## 8. What it never does
 
@@ -135,11 +137,60 @@ where there are many explorers. A test checks that the guide never says "another
   next answer.
 - It never rewards drinking more. Spend is a band, and suggestions are about fit.
 
-## 9. What comes next
+## 9. Outside signals: bringing in public data
 
-- **Outside signals.** Public facts about places (events, openings, holidays, opening hours) gathered by
-  separate tools, imported through a server-only path that drops anything about a person. They join the
-  map and the briefing.
+Staff also need to know what's happening around them: a festival on Saturday, a dry day, a new bar two
+streets away, what a pint costs down the road, a cricket final. Separate tools gather that (a scraper, a
+feed, a scheduled job, or a person with a spreadsheet). brewdiary takes it in through one door and shows
+it under **What's on around you** on the area screen, to every member of a verified venue's team.
+
+**The rule: places and happenings, never people.** A signal is one of: `event`, `opening`, `closing`,
+`holiday`, `hours`, `price`, `venue`, `trend`, `weather`, `news`. A review comes in only as numbers on a
+venue (`rating`, `review_count`), never as someone's words. Records about a person (a review, a profile,
+a post, a comment) are refused whole.
+
+**Cleaned twice.**
+
+1. `src/lib/signals.ts` (`cleanSignal`) removes emails, phone numbers, @handles and links from the
+   text. It drops fact keys that name a person (`owner_name`, `reviewer`, …), keeps only an `https`
+   link without its query string, and turns coordinates into a ~1 km geohash so they are never stored.
+   It also sets when the signal expires (the day after an event; 90 days for a price or a venue fact;
+   3 days for news or weather).
+2. The table's guard (`supabase/049_area_signals.sql`) refuses anything that still looks like an email,
+   a phone number, an @handle or a personal fact key.
+
+The table has row-level security with **no client policy at all**: only the server writes, and staff
+read through `venue_area_signals()`, which returns their own verified venue's area only, unexpired.
+
+**Two ways in.**
+
+- **From a tool (automatic):** `POST https://bwdy.site/api/signals/import` with the header
+  `Authorization: Bearer <SIGNALS_IMPORT_TOKEN>` and a body like the one below. Add `?dry=1` to check
+  without writing. Up to 500 records per request. The server needs `SIGNALS_IMPORT_TOKEN` (a long random
+  string you give the tool) and `SUPABASE_SERVICE_ROLE_KEY` (server-only, never `NEXT_PUBLIC_`).
+- **From a file (by hand):** `npm run signals:import -- signals.json` shows what would land and what's
+  refused; add `--apply` to write (it uses `SUPABASE_DB_URL`). Sending the same file twice updates
+  rather than duplicates.
+
+```json
+{ "signals": [
+  { "kind": "event", "title": "Dussehra fair at the palace grounds", "lat": 12.998, "lon": 77.592,
+    "starts_on": "2026-10-02", "ends_on": "2026-10-04", "source": "city events listing",
+    "url": "https://events.example.com/dussehra", "external_id": "evt-4411" },
+  { "kind": "venue", "title": "New brewpub on 12th Main", "geohash": "tdr1v9",
+    "facts": { "rating": 4.4, "review_count": 120 }, "source": "maps listing" }
+] }
+```
+
+What a tool may send: `kind`, `title`, `detail`, `geohash` or `lat` + `lon`, `starts_on`, `ends_on`,
+`facts` (up to 12 numbers, yes/no values or short words), `source` (required: where it came from), `url`,
+`external_id` (so re-sending updates the same row). Anything else is ignored.
+
+A note on scraping itself: collect only what a site allows (its terms and `robots.txt`), and only public
+facts about businesses and events. The cleaner and the guard are a safety net, not permission.
+
+## 10. What comes next
+
 - **Ninkasi for hosts.** The assistant reads this guide, the venue's live state and the outside signals,
   and answers "what should I know tonight?".
 - **The web dashboard.** The same map on bar.bwdy.site. The grid code is already shared.

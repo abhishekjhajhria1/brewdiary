@@ -582,6 +582,22 @@ class DemoBackend implements Backend {
   }
 
   @override
+  Future<List<AreaSignal>> areaSignals(String venueId, {int daysAhead = 14}) async {
+    final v = _venue(venueId);
+    if (!v.verified || (v.geohash ?? '').length < 4) return const [];
+    final area = v.geohash!.substring(0, 4);
+    final now = DateTime.now();
+    final d = DateTime(now.year, now.month, now.day);
+    return [
+      AreaSignal(id: 's1', kind: 'event', title: 'Dussehra fair at the palace grounds', detail: 'Three evenings of stalls and music; the road closes from 5 pm.', startsOn: d.add(const Duration(days: 2)), endsOn: d.add(const Duration(days: 4)), cell: '${area}y', source: 'city events listing'),
+      AreaSignal(id: 's2', kind: 'holiday', title: 'Dry day: Gandhi Jayanti', detail: 'No alcohol may be sold in the state for the day.', startsOn: d.add(const Duration(days: 3)), source: 'state excise calendar'),
+      AreaSignal(id: 's3', kind: 'opening', title: 'A new brewpub opened on 12th Main', cell: '${area}v', facts: const {'rating': 4.4, 'review_count': 120}, source: 'maps listing'),
+      const AreaSignal(id: 's4', kind: 'price', title: 'A craft pint nearby costs ₹350–450', facts: {'price_min': 350, 'price_max': 450}, source: 'menu survey'),
+      AreaSignal(id: 's5', kind: 'event', title: 'Cricket final, big screens across town', startsOn: d.add(const Duration(days: 6)), source: 'sports calendar'),
+    ];
+  }
+
+  @override
   Future<int> teamKudos(String venueId, {int days = 30}) async => _venue(venueId).kind.isCounter ? 3 : 27;
 
   @override

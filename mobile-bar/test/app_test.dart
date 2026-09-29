@@ -113,6 +113,12 @@ void main() {
     expect(find.text('Your own neighbourhood'), findsOneWidget); // the sheet's title
     expect(find.text('Explorers'), findsWidgets);
     expect(find.textContaining('No names, no venues'), findsOneWidget);
+    await t.tap(find.byTooltip('Close'));
+    await t.pumpAndSettle();
+
+    // What's on around you: public facts about places.
+    await t.scrollUntilVisible(find.text('Dry day: Gandhi Jayanti'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('A new brewpub opened on 12th Main'), findsOneWidget);
   });
 
   testWidgets('switching venue goes back to the list', (t) async {

@@ -473,6 +473,12 @@ class SupabaseBackend implements Backend {
       });
 
   @override
+  Future<List<AreaSignal>> areaSignals(String venueId, {int daysAhead = 14}) => _run(() async {
+        final rows = await _c.rpc('venue_area_signals', params: {'vid': venueId, 'days_ahead': daysAhead});
+        return [for (final r in (rows as List? ?? const [])) AreaSignal.fromRow(Map<String, dynamic>.from(r as Map))];
+      });
+
+  @override
   Future<int> teamKudos(String venueId, {int days = 30}) => _run(() async {
         final n = await _c.rpc('venue_kudos_total', params: {'vid': venueId, 'since_days': days});
         return (n as num?)?.toInt() ?? 0;
