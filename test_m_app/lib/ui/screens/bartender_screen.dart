@@ -6,8 +6,8 @@
 // below it — above the tab bar, or right on top of the keyboard while typing.
 import 'package:flutter/material.dart';
 
-import '../../core/bartender.dart';
-import '../../core/derive.dart';
+import 'package:brewdiary_core/bartender.dart';
+import 'package:brewdiary_core/derive.dart';
 import '../../data/auth.dart';
 import '../../data/bartender_api.dart';
 import '../../data/base.dart';

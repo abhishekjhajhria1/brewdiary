@@ -1,14 +1,14 @@
 // Parity tests — ported from the web app's vitest suite (tests/*.test.ts) so the
 // Dart logic is proven to behave exactly like src/lib.
-import 'package:brewdiary/core/date.dart';
-import 'package:brewdiary/core/derive.dart';
-import 'package:brewdiary/core/drinks.dart';
-import 'package:brewdiary/core/handles.dart';
-import 'package:brewdiary/core/jurisdiction.dart';
-import 'package:brewdiary/core/misc.dart';
-import 'package:brewdiary/core/money.dart';
-import 'package:brewdiary/core/types.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/drinks.dart';
+import 'package:brewdiary_core/handles.dart';
+import 'package:brewdiary_core/jurisdiction.dart';
+import 'package:brewdiary_core/misc.dart';
+import 'package:brewdiary_core/money.dart';
+import 'package:brewdiary_core/types.dart';
+import 'package:test/test.dart';
 
 var _seq = 0;
 Entry entry({String date = '2026-07-09', String? createdAt, String drink = 'Negroni', DrinkType? type, String? mood}) {

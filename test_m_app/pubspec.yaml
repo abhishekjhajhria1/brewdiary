@@ -51,6 +51,9 @@ dependencies:
   sensors_plus: ^7.1.0
   file_picker: ^13.1.0
   flutter_displaymode: ^0.7.0
+  # The shared pure logic (a 1:1 port of src/lib), also used by the venue app.
+  brewdiary_core:
+    path: ../packages/brewdiary_core
 
 dev_dependencies:
   flutter_test:

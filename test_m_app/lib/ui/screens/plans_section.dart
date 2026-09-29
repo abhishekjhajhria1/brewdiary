@@ -7,7 +7,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/date.dart';
+import 'package:brewdiary_core/date.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/friends.dart';

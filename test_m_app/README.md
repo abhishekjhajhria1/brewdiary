@@ -63,12 +63,14 @@ if you want another).
 
 ```bash
 flutter analyze      # static analysis — clean
-flutter test         # 47 logic parity tests, 4 app walk-throughs, 6 tests for the small moments
+flutter test         # app walk-throughs, the small moments, menus, the home widget
 flutter test test/tour_test.dart --dart-define=TOUR=true --update-goldens         # screenshot tour → test/tour/
 flutter test test/social_tour_test.dart --dart-define=TOUR=true --update-goldens  # the social screens
+(cd ../packages/brewdiary_core && dart test)   # the logic parity tests
 ```
 
-`test/core_test.dart` ports the website's vitest suite, so the streaks, dry days,
+The pure logic lives in [`packages/brewdiary_core`](../packages/brewdiary_core/), shared with the
+venue app. Its tests port the website's vitest suite, so the streaks, dry days,
 drink matching, money formatting (₹1,23,456), jurisdiction and split maths are
 proven to behave exactly like `src/lib`. `test/app_test.dart` boots the real app and
 walks age gate → landing → log a drink → calendar / You / Together / Ninkasi; its
@@ -135,7 +137,7 @@ states that break layouts: scrolled, keyboard up, small phone, large text, table
 
 ```
 lib/
-  core/      pure logic, ported 1:1 from src/lib (dates, derive, drinks, money, …)
+  (logic)    pure logic, ported 1:1 from src/lib — lives in ../packages/brewdiary_core
   data/      Supabase + device storage: auth, entries, wishlist, social, settings,
              the reminder, the Ninkasi stream
   ui/        theme (liquid-glass tokens from globals.css), widgets, screens

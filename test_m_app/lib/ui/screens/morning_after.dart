@@ -5,9 +5,9 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/date.dart';
-import '../../core/derive.dart';
-import '../../core/types.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/types.dart';
 import '../../data/entries.dart';
 import '../theme.dart';
 import '../widgets/common.dart';

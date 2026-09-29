@@ -2,7 +2,7 @@
 // room: host one or join with a code; upcoming nights first, then the recaps.
 import 'package:flutter/material.dart';
 
-import '../../core/date.dart';
+import 'package:brewdiary_core/date.dart';
 import '../../data/base.dart';
 import '../../data/parties.dart';
 import '../theme.dart';

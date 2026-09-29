@@ -4,8 +4,8 @@
 // counters, and a Ninkasi nudge. Month/Year and Discover live in the top bar.
 import 'package:flutter/material.dart';
 
-import '../../core/date.dart';
-import '../../core/derive.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/derive.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';

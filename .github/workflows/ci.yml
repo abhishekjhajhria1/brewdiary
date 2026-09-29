@@ -56,15 +56,21 @@ jobs:
   # The Flutter apps. Their parity tests prove the Dart ports behave exactly like src/lib,
   # so they belong in the gates too.
   flutter:
-    name: flutter · analyze · test (${{ matrix.app }})
+    name: flutter · analyze · test (${{ matrix.dir }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        app: [test_m_app]
+        include:
+          - dir: packages/brewdiary_core   # the shared pure-Dart logic + parity tests
+            analyze: dart analyze
+            test: dart test
+          - dir: test_m_app                # the guest app
+            analyze: flutter analyze
+            test: flutter test
     defaults:
       run:
-        working-directory: ${{ matrix.app }}
+        working-directory: ${{ matrix.dir }}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -73,8 +79,8 @@ jobs:
           flutter-version: 3.47.5
           cache: true
       - run: flutter pub get
-      - run: flutter analyze
-      - run: flutter test
+      - run: ${{ matrix.analyze }}
+      - run: ${{ matrix.test }}
 
   database:
     name: schema audit · end-to-end flow

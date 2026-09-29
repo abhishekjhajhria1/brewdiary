@@ -4,7 +4,7 @@
 //   flutter test test/social_tour_test.dart --dart-define=TOUR=true --update-goldens
 // Output: test/tour/*.png (git-ignored).
 import 'package:brewdiary/app.dart';
-import 'package:brewdiary/core/date.dart';
+import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary/data/circles.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/data/friends.dart';

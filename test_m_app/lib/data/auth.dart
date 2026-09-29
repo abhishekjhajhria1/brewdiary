@@ -6,8 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
-import '../core/date.dart';
-import '../core/handles.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/handles.dart';
 import 'base.dart';
 
 class Profile {

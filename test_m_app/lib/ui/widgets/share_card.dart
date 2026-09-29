@@ -9,9 +9,9 @@ import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../core/date.dart';
-import '../../core/derive.dart';
-import '../../core/types.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/types.dart';
 import '../../data/entries.dart';
 import '../theme.dart';
 import 'common.dart';

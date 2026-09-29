@@ -1,0 +1,17 @@
+name: brewdiary_core
+description: >-
+  brewdiary's pure logic in Dart — dates, the diary derivations, drink matching,
+  money, jurisdiction, menus. A 1:1 port of src/lib, shared by the guest app
+  (test_m_app) and the venue app (mobile-bar). Change the web version, change this.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.13.4
+
+dependencies:
+  intl: ^0.20.3
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.26.0

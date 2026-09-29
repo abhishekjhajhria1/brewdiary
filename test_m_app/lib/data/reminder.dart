@@ -16,7 +16,7 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-import '../core/date.dart';
+import 'package:brewdiary_core/date.dart';
 import 'base.dart';
 import 'entries.dart';
 

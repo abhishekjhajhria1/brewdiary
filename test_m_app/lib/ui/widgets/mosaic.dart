@@ -5,8 +5,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../core/date.dart';
-import '../../core/derive.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/derive.dart';
 import '../../data/settings.dart';
 import '../theme.dart';
 import 'common.dart';

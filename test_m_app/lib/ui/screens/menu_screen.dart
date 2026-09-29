@@ -6,9 +6,9 @@
 // venue filled in. A menu is never an offer: no discounts, by design.
 import 'package:flutter/material.dart';
 
-import '../../core/date.dart';
-import '../../core/menus.dart';
-import '../../core/money.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/menus.dart';
+import 'package:brewdiary_core/money.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';
 import '../../data/menus.dart';

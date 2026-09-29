@@ -14,12 +14,12 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../config.dart';
-import '../../core/date.dart';
-import '../../core/handles.dart';
-import '../../core/jurisdiction.dart';
-import '../../core/misc.dart';
-import '../../core/money.dart';
-import '../../core/types.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/handles.dart';
+import 'package:brewdiary_core/jurisdiction.dart';
+import 'package:brewdiary_core/misc.dart';
+import 'package:brewdiary_core/money.dart';
+import 'package:brewdiary_core/types.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';

@@ -1,7 +1,7 @@
 // Parity with tests/menus.test.ts — the menu logic must behave exactly like src/lib/menus.ts.
-import 'package:brewdiary/core/menus.dart';
-import 'package:brewdiary/core/types.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:brewdiary_core/menus.dart';
+import 'package:brewdiary_core/types.dart';
+import 'package:test/test.dart';
 
 Map<String, dynamic> row([Map<String, dynamic> over = const {}]) => {
       'venue_name': 'Soka',

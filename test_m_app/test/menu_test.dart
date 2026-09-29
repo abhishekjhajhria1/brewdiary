@@ -1,7 +1,7 @@
 // Table menus: the menu a tag opens, the picks worked out from the diary on the
 // phone, and "Log it" writing the drink into today with the venue filled in.
 import 'package:brewdiary/app.dart';
-import 'package:brewdiary/core/date.dart';
+import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/ui/screens/menu_screen.dart';
 import 'package:brewdiary/ui/screens/taste_card.dart';

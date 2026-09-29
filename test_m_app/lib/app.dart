@@ -11,8 +11,8 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'core/date.dart';
-import 'core/menus.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/menus.dart';
 import 'data/auth.dart';
 import 'data/base.dart';
 import 'data/entries.dart';

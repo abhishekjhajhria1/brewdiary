@@ -305,7 +305,7 @@ That is the lawful version of the question (M12.6).
 - [ ] **M0.2** App id, name and icons (D17). Android 12+ / iOS 17+ like the user app; phones portrait, tablets rotate.
 - [ ] **M0.3** Config like `test_m_app/lib/config.dart`: `--dart-define-from-file=env.json`, anon key only, `SITE_URL` for server routes, `env.example.json`, `env.json` git-ignored.
 - [ ] **M0.4** Demo mode when there's no env: a seeded, clearly labelled demo venue for screenshots, golden tests and demos. (No offline-only production mode: a venue app without the database isn't useful.)
-- [ ] **M0.5** Shared core (D1): dates, money (`₹1,23,456`; currency from the venue), jurisdiction and perk-policy mirrors, drink canonicalisation, menus.
+- [x] **M0.5** Shared core (D1): `packages/brewdiary_core` — dates, money (`₹1,23,456`; currency from the venue), the jurisdiction mirror, drink canonicalisation, menus — used by both apps, with the parity tests.
 - [ ] **M0.6** Theme: reuse the liquid-glass tokens (`test_m_app/lib/ui/theme.dart`), fonts (Hanken Grotesk, Newsreader), Phosphor icons. Add staff tokens: status colours with shapes and labels, a station type scale, and a reduced-blur mode for cheap tablets.
 - [ ] **M0.7** Data plumbing like `test_m_app/lib/data/base.dart` (`db`, `Rev`, `rows()`), plus a realtime helper and the outbox (M13.3).
 - [ ] **M0.8** Shell: role-based navigation; phone tabs and tablet station layouts; states for loading, empty, offline, "couldn't reach brewdiary" with retry, and "your role can't do this".

@@ -3,7 +3,7 @@
 // The list lives in Together; each circle opens as its own page.
 import 'package:flutter/material.dart';
 
-import '../../core/date.dart';
+import 'package:brewdiary_core/date.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/circles.dart';

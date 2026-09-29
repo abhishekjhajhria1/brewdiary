@@ -5,7 +5,7 @@
 import 'dart:math';
 
 import 'package:brewdiary/app.dart';
-import 'package:brewdiary/core/date.dart';
+import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/data/settings.dart';
 import 'package:brewdiary/ui/screens/together_intro.dart';

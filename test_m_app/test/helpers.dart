@@ -3,8 +3,8 @@
 import 'dart:io';
 
 import 'package:brewdiary/app.dart';
-import 'package:brewdiary/core/date.dart';
-import 'package:brewdiary/core/menus.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/menus.dart';
 import 'package:brewdiary/data/auth.dart';
 import 'package:brewdiary/data/base.dart';
 import 'package:brewdiary/data/entries.dart';

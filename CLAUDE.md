@@ -67,7 +67,9 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `ai-db/` | The **separate** AI database schema (pseudonymous Ninkasi corpus; deny-all RLS). |
 | `scripts/` | Dev/ops tooling: `db.mjs` (migration runner), `gen-icons.mjs`, `verify-venue.mjs` (the only path that approves a venue), `ninkasi/` (dataset export, trend sync, AI-DB verify). |
 | `tests/` | Vitest unit tests for `src/lib` (excluded from `next build`). |
-| `test_m_app/` | The **Flutter mobile user app** (Android + iOS) on the same Supabase backend. Pure logic in `lib/core` is a 1:1 port of `src/lib` with parity tests — change one, change both. See `test_m_app/README.md`; connecting it to the server, Ninkasi, email-code sign-in and the bar side: `docs/12-mobile-server-and-venues.md`. |
+| `test_m_app/` | The **Flutter mobile user app** (Android + iOS) on the same Supabase backend. Its pure logic lives in `packages/brewdiary_core/` (shared with the venue app), a 1:1 port of `src/lib` with parity tests — change one, change both. See `test_m_app/README.md`; connecting it to the server, Ninkasi, email-code sign-in and the bar side: `docs/12-mobile-server-and-venues.md`. |
+| `packages/brewdiary_core/` | The pure-Dart logic both Flutter apps share (dates, derive, drinks, money, jurisdiction, menus), with the parity tests. `dart test` inside it. |
+| `mobile-bar/` | The **venue staff app** (Flutter) for bars and restaurants: floor, orders, stations, bills, guests, stock, rota, reports — role-based. Same backend. The build list is `mobile-bar/PLAN.md`. |
 | `docs/` | The beginner-proof handbook (committed — for every developer you hire). |
 | `.claude/skills/taste-engine/` | The design/product spec + anti-slop engine. Loaded as a Claude Code skill; **keep it here** (moving it breaks the skill). |
 | `internal/` | **Git-ignored** local planning/handoff. Not in a fresh clone. |

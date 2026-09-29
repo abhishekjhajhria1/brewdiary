@@ -7,10 +7,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../core/date.dart';
-import '../../core/derive.dart';
-import '../../core/drinks.dart';
-import '../../core/types.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/drinks.dart';
+import 'package:brewdiary_core/types.dart';
 import '../../data/entries.dart';
 import '../../data/settings.dart';
 import '../../data/wishlist.dart';

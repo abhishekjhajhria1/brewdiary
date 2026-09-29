@@ -3,10 +3,10 @@
 // tiny ChangeNotifier over device storage: private intentions never leave the phone.
 import 'package:flutter/material.dart';
 
-import '../core/jurisdiction.dart';
-import '../core/misc.dart';
-import '../core/money.dart';
-import '../core/types.dart';
+import 'package:brewdiary_core/jurisdiction.dart';
+import 'package:brewdiary_core/misc.dart';
+import 'package:brewdiary_core/money.dart';
+import 'package:brewdiary_core/types.dart';
 import 'base.dart';
 
 // ── theme (dark-default, like the web; Light and System are choices) ─────────

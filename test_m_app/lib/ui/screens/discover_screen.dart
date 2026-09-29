@@ -10,7 +10,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/misc.dart';
+import 'package:brewdiary_core/misc.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/safety.dart';

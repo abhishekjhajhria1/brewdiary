@@ -4,8 +4,8 @@
 //
 // join_policy is only ever private | invite | friends | fof — there is NO stranger
 // tier, and the DB CHECK refuses anything else. Soft signals are COUNTS, never a rating.
-import '../core/date.dart';
-import '../core/misc.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/misc.dart';
 import 'auth.dart';
 import 'base.dart';
 
