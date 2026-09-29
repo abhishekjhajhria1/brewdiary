@@ -49,7 +49,8 @@ abstract class Backend {
     required String country,
     String? region,
   });
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService});
+  /// [capacity] 0 clears it.
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity});
   Future<void> deleteVenue(String venueId);
 
   Future<VerificationRequest?> verification(String venueId);
@@ -141,6 +142,12 @@ abstract class Backend {
   Future<void> setWaitStatus(String partyId, String status);
 
   Future<ServiceBoard> serviceBoard(String venueId);
+
+  // ── the door (052): counts, never people ──────────────────────────────────
+  Future<DoorCount> doorCount(String venueId);
+
+  /// [n] people in (positive) or out (negative), 1 to 12 at a time.
+  Future<void> doorTick(String venueId, int n);
 
   // ── the counter (050): products, stock, sales, the register ───────────────
   Future<List<ShopProduct>> products(String venueId);

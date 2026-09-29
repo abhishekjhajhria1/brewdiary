@@ -43,6 +43,7 @@ final perksRev = Rev();
 final guestsRev = Rev();
 final stockRev = Rev();
 final floorRev = Rev();
+final doorRev = Rev();
 
 const _uuid = Uuid();
 

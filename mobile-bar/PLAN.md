@@ -377,7 +377,7 @@ That is the lawful version of the question (M12.6).
 - [ ] **M3.5** Sections: assign servers to areas or tables per shift; transfer a table; merge and split tables.
 - [x] **M3.6** Seat a party: covers, server, optional booking; this opens a table session. *(Seat → how many → the tab opens.)*
 - [~] **M3.7** Timers on every table: seated for, since the last order, items waiting. *(Minutes seated and the running total on each table; per-item waits on the stations.)*
-- [ ] **M3.8** Capacity: seats in use against the total, and the licensed maximum occupancy.
+- [~] **M3.8** Capacity: seats in use against the total, and the licensed maximum occupancy. *(052: the licensed capacity on the venue; the door counts against it.)*
 
 ### M4 — Orders and tabs (the POS core)
 
@@ -479,7 +479,7 @@ That is the lawful version of the question (M12.6).
 - [ ] **M11.3** Contact data (D9): in-app bookings use push; phone numbers live only on the booking and are deleted automatically.
 - [~] **M11.4** Waitlist: add, quoted wait, notify (push for app users; SMS/WhatsApp needs a provider), seat. *(Host waitlist: name or "party of 4", quote, seat, gone — forgets names within a day. Notify-by-push next.)*
 - [ ] **M11.5** Deposits and no-show fees: blocked on payments.
-- [ ] **M11.6** Door: a live headcount against the licensed capacity; an ID-check tally (passed/refused counts only, with no photo, date of birth or ID number).
+- [~] **M11.6** Door: a live headcount against the licensed capacity; an ID-check tally (passed/refused counts only, with no photo, date of birth or ID number). *(052: the shared headcount, in/out and groups, amber at 90% and red at full, undo; the ID tally is next.)*
 - [ ] **M11.7** Events: tonight's room, venue-hosted plans (docs/12 §7.7), guest lists with host approval (007). A listing, never an offer.
 - [ ] **M11.8** Book from the user app (M17.8).
 
@@ -614,6 +614,7 @@ where the website needs one, and Dart parity tests where the app mirrors logic.
 | `049_area_signals.sql` | **Done.** Server-only outside signals: places and happenings, never people; cleaned twice; staff read their own area (D21) |
 | `050_shop_counter.sql` | **Done.** The counter: products (MRP), stock ledger, suppliers, `ring_sale()`, retail alcohol rules + dry days (deny-by-default), the excise register |
 | `051_service.sql` | **Done.** Areas, tables and table codes; tabs, lines, stations, bills (staff-recorded payments), the table link (requests, calls), the waitlist, the live board, diet marks and allergens |
+| `052_door.sql` | **Done.** The licensed capacity and the door's headcount: a ledger of taps (counts, never people), `door_tick()` for the door roles, `door_count()` for tonight |
 | `052_service_day.sql` | Service days (open/close, auto-opened room), table sessions, `join_table()`, linked guests, guest codes |
 | `053_menu_v2.sql` | Sizes, modifiers, allergens, stations and routing (still no discount column) |
 | `054_orders.sql` | Tabs, order lines, line events, the status view, the tab flag |

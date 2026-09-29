@@ -657,6 +657,19 @@ try {
     ok("tabs and lines hold no guest: no user column", !tabCols.some((c) => /guest_id|user_id|subject/.test(c)), `— ${tabCols.join(", ")}`);
   }
 
+  // ── the door (052) ──────────────────────────────────────────────────────────
+  if (!fns.includes("door_tick")) {
+    console.log("  ~ the door (052) not applied — skipping");
+  } else {
+    console.log("\n── the door: counts, never people (052) ──");
+    const dw = await all(`select cmd from pg_policies where schemaname = 'public' and tablename = 'door_events' and cmd <> 'SELECT'`);
+    ok("door_events: no client write policy (door_tick() only)", dw.length === 0);
+    const dc = (await all(`select column_name c from information_schema.columns where table_schema = 'public' and table_name = 'door_events'`)).map((r) => r.c);
+    ok("door_events: a count and a time — no column that could say who came in", !dc.some((c) => /guest|user_id|name|photo|id_number|subject/.test(c)), `— ${dc.join(", ")}`);
+    const dt = await one(`select pg_get_functiondef('public.door_tick(uuid,integer)'::regprocedure) d`);
+    ok("door_tick(): the door role (guests.seat), 1 to 12 at a time", dt && /'guests\.seat'/.test(dt.d) && /n < -12 or n > 12/.test(dt.d));
+  }
+
   // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
   // pinned to search_path=public that calls one unqualified works on a laptop and fails
   // in production. None may.

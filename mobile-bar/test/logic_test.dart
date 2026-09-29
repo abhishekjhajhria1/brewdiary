@@ -298,6 +298,26 @@ void main() {
     });
   });
 
+  group('the door', () {
+    test('tonight starts at 6 in the morning, so a night past midnight is one night', () {
+      expect(nightStart(DateTime(2026, 10, 2, 1, 30)), DateTime(2026, 10, 1, 6));
+      expect(nightStart(DateTime(2026, 10, 1, 20)), DateTime(2026, 10, 1, 6));
+      expect(nightStart(DateTime(2026, 10, 1, 6)), DateTime(2026, 10, 1, 6));
+    });
+
+    test('amber from 90%, red at full, and it says how many are over', () {
+      expect(doorState(50, 120), DoorState.open);
+      expect(doorState(108, 120), DoorState.nearly);
+      expect(doorState(120, 120), DoorState.full);
+      expect(doorState(9, null), DoorState.open);
+      expect(doorStateWord(DoorState.open, 22, 120), '98 more can come in');
+      expect(doorStateWord(DoorState.nearly, 110, 120), 'nearly full — 10 more');
+      expect(doorStateWord(DoorState.full, 120, 120), 'full — hold the door');
+      expect(doorStateWord(DoorState.full, 123, 120), '3 over — hold the door');
+      expect(doorStateWord(DoorState.open, 9, null), 'counting');
+    });
+  });
+
   group('service: the same sums as close_tab()', () {
     final now = DateTime(2026, 10, 1, 20, 0);
     OrderLine l(String id, String tab, double price, int qty, {String status = 'sent', String station = 'bar', int ago = 0, String? table}) =>

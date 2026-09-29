@@ -49,6 +49,13 @@ class FloorSetupScreen extends StatelessWidget {
                 ),
               ),
               if (!v.verified) Text('The table QRs open the menu once you\'re verified.', style: T.caption(bd)),
+              SettingRow(
+                title: 'Capacity',
+                hint: v.capacity == null
+                    ? 'How many people your licence allows inside at once. The door counter turns amber at 90% and red at full.'
+                    : '${v.capacity} people. The door counter turns amber at 90% and red at full.',
+                trailing: AccentPill(v.capacity == null ? 'Set' : 'Change', onTap: () => can ? _capacity(context) : toast(context, 'An owner or manager can change this.')),
+              ),
               const SizedBox(height: S.l),
               Loader<(List<VenueArea>, List<VenueTable>)>(
                 load: () async => (await Backend.i.areas(v.id), await Backend.i.tables(v.id)),
@@ -85,6 +92,26 @@ class FloorSetupScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _capacity(BuildContext context) async {
+    final ctl = TextEditingController(text: v.capacity?.toString() ?? '');
+    await showBdSheet<void>(context, title: 'Capacity', builder: (ctx) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        LineField(controller: ctl, label: 'People allowed inside at once', keyboard: TextInputType.number, autofocus: true, maxLength: 5),
+        const SizedBox(height: S.s),
+        Text('The number on your licence or fire certificate. Leave it empty to count without a limit.', style: T.caption(ctx.bd)),
+        const SizedBox(height: S.xl),
+        BdButton('Save', onTap: () async {
+          final raw = ctl.text.trim();
+          final n = raw.isEmpty ? 0 : int.tryParse(raw);
+          if (n == null || n < 0 || n > 20000) return toast(ctx, 'A number from 1 to 20,000, or leave it empty.');
+          final ok = await runAction(ctx, () => Backend.i.updateVenue(v.id, capacity: n));
+          if (ok && ctx.mounted) Navigator.pop(ctx);
+        }),
+      ]);
+    });
+    ctl.dispose();
   }
 
   Future<void> _table(BuildContext context, VenueTable t, List<VenueArea> areas) async {

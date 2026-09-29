@@ -14,6 +14,7 @@ import 'prefs.dart';
 import '../logic/area.dart' show HeatRow;
 import '../logic/host_brief.dart';
 import '../logic/roles.dart';
+import '../logic/service.dart' show nightStart;
 import '../logic/venue_kinds.dart';
 
 class DemoBackend implements Backend {
@@ -93,6 +94,7 @@ class DemoBackend implements Backend {
       geohash: 'tdr1v9',
       areaShare: true,
       tableService: true,
+      capacity: 120,
       verified: true,
       myRole: StaffRole.owner,
     );
@@ -295,7 +297,7 @@ class DemoBackend implements Backend {
   }
 
   @override
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService}) async {
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity}) async {
     final i = _venues.indexWhere((v) => v.id == venueId);
     if (i < 0) throw const BackendError('No such venue.');
     final v = _venues[i];
@@ -307,6 +309,7 @@ class DemoBackend implements Backend {
       geohash: geohash,
       areaShare: areaShare,
       tableService: tableService,
+      capacity: capacity,
       servesAlcohol: servesAlcohol == null || !v.kind.alcoholIsChoice ? null : servesAlcohol,
     );
     venueRev.bump();
@@ -1111,6 +1114,43 @@ class DemoBackend implements Backend {
       waiting: (_wait[venueId] ?? const <WaitParty>[]).where((p) => p.status == 'waiting').length,
       methods: methods,
     );
+  }
+
+  // ── the door ──────────────────────────────────────────────────────────────
+  final _door = <String, List<(DateTime, int)>>{};
+
+  @override
+  Future<DoorCount> doorCount(String venueId) async {
+    _can(venueId, Cap.floorView);
+    final since = nightStart(DateTime.now());
+    final taps = (_door[venueId] ??= _seedDoor(venueId)).where((t) => !t.$1.isBefore(since));
+    final sum = taps.fold<int>(0, (s, t) => s + t.$2);
+    return DoorCount(
+      inside: sum < 0 ? 0 : sum,
+      cameIn: taps.where((t) => t.$2 > 0).fold(0, (s, t) => s + t.$2),
+      capacity: _venues.firstWhere((v) => v.id == venueId).capacity,
+    );
+  }
+
+  List<(DateTime, int)> _seedDoor(String venueId) {
+    if (_venues.firstWhere((v) => v.id == venueId).capacity == null) return [];
+    final now = DateTime.now();
+    final since = nightStart(now);
+    // Never before tonight started, so the demo reads the same at any hour.
+    DateTime ago(int m) {
+      final t = now.subtract(Duration(minutes: m));
+      return t.isBefore(since) ? since : t;
+    }
+
+    return [(ago(90), 12), (ago(60), 8), (ago(40), -4), (ago(5), 6)];
+  }
+
+  @override
+  Future<void> doorTick(String venueId, int n) async {
+    _can(venueId, Cap.seatGuests);
+    if (n == 0 || n < -12 || n > 12) throw const BackendError('Count 1 to 12 at a time.');
+    (_door[venueId] ??= _seedDoor(venueId)).add((DateTime.now(), n));
+    doorRev.bump();
   }
 
   @override

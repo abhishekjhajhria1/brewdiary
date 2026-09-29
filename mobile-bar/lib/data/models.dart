@@ -46,6 +46,9 @@ class Venue {
 
   /// Guests may order and call staff from the table's link (051). Off by default.
   final bool tableService;
+
+  /// How many people the licence allows inside at once (052) — the door counts against it.
+  final int? capacity;
   final bool verified;
   final StaffRole myRole;
 
@@ -64,6 +67,7 @@ class Venue {
     this.geohash,
     this.areaShare = false,
     this.tableService = false,
+    this.capacity,
     this.verified = false,
     this.myRole = StaffRole.bartender,
   });
@@ -83,6 +87,7 @@ class Venue {
         geohash: v['geohash'] as String?,
         areaShare: v['area_share'] == true,
         tableService: v['table_service'] == true,
+        capacity: (v['capacity'] as num?)?.toInt(),
         verified: v['verified'] == true,
         myRole: role,
       );
@@ -90,7 +95,8 @@ class Venue {
   LegalClass get legal => legalClass(kind, servesAlcohol: servesAlcohol);
   bool get sellsAlcohol => legal != LegalClass.noAlcohol;
 
-  Venue copyWith({String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, bool? verified}) => Venue(
+  /// [capacity] 0 clears it.
+  Venue copyWith({String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity, bool? verified}) => Venue(
         id: id,
         name: name ?? this.name,
         slug: slug,
@@ -105,6 +111,7 @@ class Venue {
         geohash: geohash ?? this.geohash,
         areaShare: areaShare ?? this.areaShare,
         tableService: tableService ?? this.tableService,
+        capacity: capacity == null ? this.capacity : (capacity > 0 ? capacity : null),
         verified: verified ?? this.verified,
         myRole: myRole,
       );
@@ -674,6 +681,14 @@ class WaitParty {
   final String status; // waiting | seated | left
   final DateTime createdAt;
   const WaitParty({required this.id, required this.name, required this.party, this.quotedMin, this.note, this.status = 'waiting', required this.createdAt});
+}
+
+/// Tonight at the door (door_count()): counts, never people.
+class DoorCount {
+  final int inside;
+  final int cameIn;
+  final int? capacity;
+  const DoorCount({this.inside = 0, this.cameIn = 0, this.capacity});
 }
 
 /// The live board (service_board()): business numbers only.

@@ -99,3 +99,28 @@ String billText({
   b.write('Thank you.');
   return b.toString();
 }
+
+/// Where the venue's night starts: 6 in the morning. A night that runs past midnight
+/// still counts from the evening before, and a café's day from its first coffee.
+DateTime nightStart(DateTime now, {int hour = 6}) {
+  final today = DateTime(now.year, now.month, now.day, hour);
+  return now.isBefore(today) ? today.subtract(const Duration(days: 1)) : today;
+}
+
+/// The door against the licensed capacity.
+enum DoorState { open, nearly, full }
+
+/// Nearly full from 90%; full at the capacity (and past it, which the count still
+/// records — a clicker that won't count someone already inside is a wrong clicker).
+DoorState doorState(int inside, int? capacity) {
+  if (capacity == null || capacity <= 0) return DoorState.open;
+  if (inside >= capacity) return DoorState.full;
+  if (inside * 10 >= capacity * 9) return DoorState.nearly;
+  return DoorState.open;
+}
+
+String doorStateWord(DoorState s, int inside, int? capacity) => switch (s) {
+      DoorState.open => capacity == null ? 'counting' : '${capacity - inside} more can come in',
+      DoorState.nearly => 'nearly full — ${capacity! - inside} more',
+      DoorState.full => inside > capacity! ? '${inside - capacity} over — hold the door' : 'full — hold the door',
+    };

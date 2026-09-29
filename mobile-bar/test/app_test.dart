@@ -218,6 +218,23 @@ void main() {
     expect(find.bySemanticsLabel(RegExp(r'^T5, free')), findsOneWidget, reason: 'the table is free again');
   });
 
+  testWidgets('the door counts in and out against the capacity', (t) async {
+    await bootApp(t, size: const Size(390, 1400));
+    await tapText(t, 'The Amber Room');
+    await tapText(t, 'Door');
+    expect(find.text('22'), findsOneWidget);
+    expect(find.text('of 120'), findsOneWidget);
+    expect(find.text('98 more can come in'), findsOneWidget);
+    await tapText(t, 'In');
+    expect(find.text('23'), findsOneWidget);
+    await tapText(t, '+2 in');
+    expect(find.text('25'), findsOneWidget);
+    expect(find.text('29 came in tonight'), findsOneWidget);
+    await tapText(t, 'Undo +2 in');
+    expect(find.text('23'), findsOneWidget);
+    expect(find.textContaining('nobody\'s name, face or ID'), findsOneWidget);
+  });
+
   testWidgets('setting up the floor: a table and its own QR', (t) async {
     await bootApp(t, size: const Size(390, 1400));
     await tapText(t, 'The Amber Room');

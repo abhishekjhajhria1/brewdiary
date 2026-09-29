@@ -42,6 +42,7 @@ bakeries have a till instead: [doc 15](15-the-counter-shops.md).)
 | **Bar tickets / Kitchen tickets** | the bar, the kitchen | Tickets oldest first, one per table. The timer turns amber and then red, with a word, as it runs long: the bar at 7 and 12 minutes, the kitchen at 15 and 25. Tap a line to move it along; "All ready" does the whole ticket. Tablet-first and readable from a step back. A kitchen-only role lands straight here. |
 | **Inbox** | the floor | Orders from table QRs (accept onto the table's tab, or decline with a reason the guest sees), and "call staff / bill please / water". It shows **which table**, **never who**. An order with alcohol says "check ID". |
 | **Waitlist** | hosts | A first name or "party of 4", the quoted wait, minutes waited, then seat or gone. |
+| **Door** | hosts and the floor count; everyone on the floor sees it | How many are inside now, against the licensed capacity: big **In** and **Out** buttons, groups (+2, +4…), and undo. It turns amber at 90% ("nearly full — 10 more") and red at full ("full — hold the door"), with a mark and a word each time. Every phone on the door shares one count. Counts only: no name, face or ID. Tonight starts at 6 in the morning, so a night past midnight is one night. (`supabase/052_door.sql`) |
 | **Floor setup** (More) | owners, managers | Areas and tables; each table's QR to print or write to an NFC tag; a new code that retires a lost tag; the switch for ordering from the table. |
 | **Right now** (Numbers) | owners, managers, supervisors | Open tabs, guests seated, sales and tips today, what the bar and kitchen have waiting and their average time to ready, voids, requests and calls, the waitlist, and how people paid. Business numbers only: no guest, and no ranking of staff. |
 
@@ -99,6 +100,9 @@ checks each rule exists, and `npm run db:verify` (scene 21) plays a whole servic
 - **The waitlist forgets.** Each new name clears the ones older than 20 hours.
 - **Tables are for places with tables.** A counter can't add any. A table's code can only change
   through `rotate_table_code()`, which retires the printed tag.
+- **The door counts, never people.** A tap is +1 or −1 (a group up to 12); the ledger has no column
+  that could say who. "Inside now" is the sum of tonight's taps (never below zero). The count still
+  records people past the capacity; the screen says to hold the door. Only the door roles tap.
 - **Nothing rewards drinking more.** No happy hours, no discounts, no "another round?" prompt, no
   per-guest drink counts, no staff league table.
 
@@ -108,7 +112,8 @@ checks each rule exists, and `npm run db:verify` (scene 21) plays a whole servic
    `npm run db:verify`. `npm run db:local` proves it on a throwaway copy first.
 2. In the venue app: **More › Floor setup**. Add areas (Bar, Floor, Patio) and tables (label and
    seats). Open each table to print its QR or write it to an NFC tag (NTAG213 or better).
-3. Optional: switch on **Guests can order from the table**.
+3. Optional: switch on **Guests can order from the table**, and set the **Capacity** (the number on your
+   licence) for the door counter. Run migration **052** for the door.
 4. Menu: give each item its station (bar, kitchen, or none), its mark (veg / non-veg / egg / vegan) and
    its allergens.
 5. App links: `/t/*` is claimed by the guest app on Android and iOS (see
@@ -118,9 +123,9 @@ checks each rule exists, and `npm run db:verify` (scene 21) plays a whole servic
 
 | Piece | Where |
 | --- | --- |
-| Database | `supabase/051_service.sql` |
-| Checks | `scripts/db-audit.mjs` (service section), `scripts/verify-flow.mjs` (scene 21) |
-| Venue app screens | `mobile-bar/lib/ui/screens/` `floor_screen.dart`, `tab_screen.dart`, `station_screen.dart`, `inbox_screen.dart`, `waitlist_screen.dart`, `floor_setup_screen.dart`; the live board is in `numbers_screen.dart` |
+| Database | `supabase/051_service.sql`; the door is `supabase/052_door.sql` |
+| Checks | `scripts/db-audit.mjs` (service and door sections), `scripts/verify-flow.mjs` (scenes 21 and 22) |
+| Venue app screens | `mobile-bar/lib/ui/screens/` `floor_screen.dart`, `tab_screen.dart`, `station_screen.dart`, `inbox_screen.dart`, `waitlist_screen.dart`, `floor_setup_screen.dart`, `door_screen.dart`; the live board is in `numbers_screen.dart` |
 | Venue app sums (splits, table states, tickets, the shared bill) | `mobile-bar/lib/logic/service.dart` |
 | Website table link | `src/app/t/[code]/page.tsx`, `src/components/menu/TableMenu.tsx`, `src/components/menu/MenuView.tsx`, `src/lib/tableOrder.ts` |
 | Guest app table link | `test_m_app/lib/data/table_order.dart`, `test_m_app/lib/ui/screens/menu_screen.dart` (`TableMenuScreen`), routed in `test_m_app/lib/app.dart`; parsing in `packages/brewdiary_core/lib/menus.dart` |

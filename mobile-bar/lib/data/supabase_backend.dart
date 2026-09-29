@@ -15,6 +15,7 @@ import '../config.dart';
 import '../logic/area.dart' show HeatRow;
 import '../logic/host_brief.dart' show HostBrief;
 import '../logic/roles.dart';
+import '../logic/service.dart' show nightStart;
 import '../logic/venue_kinds.dart';
 import 'backend.dart';
 import 'models.dart';
@@ -196,7 +197,7 @@ class SupabaseBackend implements Backend {
       });
 
   @override
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService}) => _run(() async {
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity}) => _run(() async {
         final patch = <String, dynamic>{};
         if (name != null) {
           if (name.trim().isEmpty) throw const BackendError('Name can\'t be empty.');
@@ -208,6 +209,10 @@ class SupabaseBackend implements Backend {
         if (servesAlcohol != null) patch['serves_alcohol'] = servesAlcohol;
         if (areaShare != null) patch['area_share'] = areaShare;
         if (tableService != null) patch['table_service'] = tableService;
+        if (capacity != null) {
+          if (capacity > 20000) throw const BackendError('Capacity is 1 to 20,000 people.');
+          patch['capacity'] = capacity > 0 ? capacity : null;
+        }
         if (patch.isEmpty) return;
         await _c.from('venues').update(patch).eq('id', venueId);
         venueRev.bump();
@@ -677,6 +682,22 @@ class SupabaseBackend implements Backend {
         final dayStart = DateTime(now.year, now.month, now.day).toUtc().toIso8601String();
         final j = await _c.rpc('service_board', params: {'vid': venueId, 'day_start': dayStart});
         return ServiceBoard.fromJson(Map<String, dynamic>.from(j as Map));
+      });
+
+  // ── the door (052) ────────────────────────────────────────────────────────
+  @override
+  Future<DoorCount> doorCount(String venueId) => _run(() async {
+        final rows = await _c.rpc('door_count', params: {'vid': venueId, 'day_start': nightStart(DateTime.now()).toUtc().toIso8601String()});
+        final list = rows as List;
+        if (list.isEmpty) return const DoorCount();
+        final r = Map<String, dynamic>.from(list.first as Map);
+        return DoorCount(inside: (r['inside'] as num?)?.toInt() ?? 0, cameIn: (r['came_in'] as num?)?.toInt() ?? 0, capacity: (r['capacity'] as num?)?.toInt());
+      });
+
+  @override
+  Future<void> doorTick(String venueId, int n) => _run(() async {
+        await _c.rpc('door_tick', params: {'vid': venueId, 'n': n});
+        doorRev.bump();
       });
 
   // ── the counter (050) ─────────────────────────────────────────────────────

@@ -1548,6 +1548,28 @@ try {
       board.open_tabs === 1 && Number(board.sales) === 1090 && Number(board.tips) === 50 && board.methods.upi !== undefined && board.methods.cash !== undefined, JSON.stringify(board));
     ok("a server doesn't see the live board", await refused(() => as(waiter, `select public.service_board($1)`, [bistro])));
   }
+
+  // ── 22. the door (052): counts, never people ──────────────────────────────────
+  if ((await db.query(`select to_regprocedure('public.door_tick(uuid,integer)') f`)).rows[0].f) {
+    console.log("\n── 22. the door: how many inside, against capacity (052) ──");
+    const t = Date.now();
+    const club = randomUUID();
+    const doorman = await mkUser("Door", `vf-door-${t}`);
+    await as(owner, `insert into public.venues (id, name, slug, created_by, kind, country) values ($1,'Verify Club',$2,$3,'club','IN')`, [club, `vf-club-${t}`, owner]);
+    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [club, owner]);
+    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'host')`, [club, doorman]);
+    await as(owner, `update public.venues set capacity = 3 where id = $1`, [club]);
+    await as(doorman, `select public.door_tick($1, 2)`, [club]);
+    await as(doorman, `select public.door_tick($1, 1)`, [club]);
+    await as(doorman, `select public.door_tick($1, -1)`, [club]);
+    const c = (await as(doorman, `select * from public.door_count($1)`, [club])).rows[0];
+    ok("the door counts in and out: 3 came in, 2 inside, capacity 3", c.inside === 2 && c.came_in === 3 && c.capacity === 3, JSON.stringify(c));
+    await as(doorman, `select public.door_tick($1, -5)`, [club]);
+    ok("inside never goes below zero", (await as(doorman, `select inside from public.door_count($1)`, [club])).rows[0].inside === 0);
+    ok("a tap is 1 to 12 people", await refused(() => as(doorman, `select public.door_tick($1, 40)`, [club])));
+    ok("a guest can't work the door", await refused(() => as(anita, `select public.door_tick($1, 1)`, [club])));
+    ok("nobody writes the ledger directly", await refused(() => as(owner, `insert into public.door_events (venue_id, delta) values ($1, 1)`, [club])));
+  }
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

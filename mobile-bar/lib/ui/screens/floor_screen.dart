@@ -17,6 +17,7 @@ import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
+import 'door_screen.dart';
 import 'floor_setup_screen.dart';
 import 'host_screen.dart';
 import 'inbox_screen.dart';
@@ -295,6 +296,7 @@ class _Shortcuts extends StatelessWidget {
       if (s.can(Cap.kitchenStation)) BdChip('Kitchen tickets', icon: Ph.cookingPot, onTap: () => onPush(StationScreen(venue: venue, station: 'kitchen'))),
       if (s.can(Cap.floorView)) BdChip(waiting > 0 ? 'Waitlist · $waiting' : 'Waitlist', icon: Ph.hourglass, onTap: () => onPush(WaitlistScreen(venue: venue))),
       if (s.can(Cap.floorView)) BdChip('Inbox', icon: Ph.chatCircleDots, onTap: () => onPush(InboxScreen(venue: venue))),
+      if (s.can(Cap.floorView)) BdChip('Door', icon: Ph.door, onTap: () => onPush(DoorScreen(venue: venue))),
       if (s.can(Cap.openRoom) || s.can(Cap.guestsAtTables)) BdChip('Tonight\'s room', icon: Ph.doorOpen, onTap: () => onPush(TonightScreen(venue: venue, pushed: true))),
     ]);
   }

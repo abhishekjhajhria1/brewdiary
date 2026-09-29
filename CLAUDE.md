@@ -63,7 +63,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `src/components/` | Feature-grouped UI: `calendar/`, `log/`, `you/`, `together/`, `discover/`, `bartender/`, `share/`, `onboarding/`, `venue/`, `kiosk/`, `profile/`, `ui/`. |
 | `src/lib/` | Framework-free logic — the "brains". See the table below. |
 | `public/` | Static assets: PWA `manifest.webmanifest`, `sw.js`, app icons. |
-| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`051`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
+| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`052`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
 | `ai-db/` | The **separate** AI database schema (pseudonymous Ninkasi corpus; deny-all RLS). |
 | `scripts/` | Dev/ops tooling: `db.mjs` (migration runner), `gen-icons.mjs`, `verify-venue.mjs` (the only path that approves a venue), `ninkasi/` (dataset export, trend sync, AI-DB verify). |
 | `tests/` | Vitest unit tests for `src/lib` (excluded from `next build`). |
