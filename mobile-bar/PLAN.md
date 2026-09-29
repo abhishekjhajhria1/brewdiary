@@ -433,7 +433,7 @@ That is the lawful version of the question (M12.6).
 
 ### M8 — Ninkasi for staff (AI)
 
-- [ ] **M8.1** The advisor on mobile for managers (M2.8), plus a pre-shift briefing built from totals, the 86 list, bookings and events.
+- [~] **M8.1** The advisor on mobile for managers (M2.8), plus a pre-shift briefing built from totals, the 86 list, bookings and events. *(Advisor and briefing done (`/api/host-ai`, the "Before your shift" card); bookings wait for M11.)*
 - [ ] **M8.2** Guest tip card for servers and bartenders (D6): 1–3 picks from this menu that match the consented taste and usuals, always one alcohol-free option, an optional food pairing.
 - [ ] **M8.3** Route `/api/staff-ai` on the website: rate-limited, size-capped, reads the taste share with the staff member's own token (so RLS applies), sends the model no name or id, never writes the training corpus.
 - [ ] **M8.4** Offline / no-key fallback: a matcher on the device (like `menuPicks`, driven by the taste summary).
@@ -442,8 +442,8 @@ That is the lawful version of the question (M12.6).
 - [ ] **M8.7** Reorder suggestions from par levels and sales (deterministic first, AI wording optional).
 - [ ] **M8.8** An end-of-night summary for managers.
 - [ ] **M8.9** Switches: off until `AI_API_KEY` is set, opt-in per venue, a kill switch.
-- [ ] **M8.10** Ninkasi for hosts: one assistant for every role that knows the venue's live state (open room, 86 list, menu, stock, bookings), the area heat map and the imported outside signals (D21), and answers "what should I know tonight?" — events nearby, what the area is drinking, what's running low.
-- [~] **M8.11** A heat-map guide: Ninkasi explains the map in plain words ("the cells east of you lean coffee and dessert on weekday evenings; spend there is mostly ₹500–1,000") and suggests menu or hours changes, never targeting a person. *(The guide is built — `areaGuide()` — and shown under the map; Ninkasi reading it is next.)*
+- [x] **M8.10** Ninkasi for hosts: one assistant for every role that knows the venue's live state (open room, 86 list, menu, stock, bookings), the area heat map and the imported outside signals (D21), and answers "what should I know tonight?" — events nearby, what the area is drinking, what's running low. *(A "Before your shift" card on Tonight and the Till, and a question screen. The briefing is built on the phone, so it's instant, free and offline; the AI is asked only for questions. Rules twinned in `src/lib/hostAdvisor.ts`.)*
+- [x] **M8.11** A heat-map guide: Ninkasi explains the map in plain words ("the cells east of you lean coffee and dessert on weekday evenings; spend there is mostly ₹500–1,000") and suggests menu or hours changes, never targeting a person. *(`areaGuide()`, under the map and in the manager's shift briefing.)*
 
 ### M9 — Inventory
 
@@ -634,7 +634,8 @@ where the website needs one, and Dart parity tests where the app mirrors logic.
 | Route / job | Status |
 | --- | --- |
 | `/api/venue-ai` (manager advisor, totals only) | exists |
-| `/api/staff-ai` (guest tip from a consented share; Ninkasi for hosts) | new (M8.3, M8.10) |
+| `/api/host-ai` (Ninkasi for hosts: the shift companion, every role) | **done** (M8.10) |
+| `/api/staff-ai` (guest tip from a consented share) | new (M8.3) |
 | Outside-data import (scraped public facts → `area_signals`): `/api/signals/import` + `npm run signals:import` | **done** (D21) |
 | Push sender | new (M13.1) |
 | Receipt PDF / email | new (M6.8) |

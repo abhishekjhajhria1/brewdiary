@@ -191,6 +191,7 @@ facts about businesses and events. The cleaner and the guard are a safety net, n
 
 ## 10. What comes next
 
-- **Ninkasi for hosts.** The assistant reads this guide, the venue's live state and the outside signals,
-  and answers "what should I know tonight?".
+- **Ninkasi for hosts** is built: the "Before your shift" card reads this guide (for managers), the
+  venue's live state and the outside signals ([doc 05](05-the-ninkasi-ai-explained.md)). Next: signals as
+  pins on the map.
 - **The web dashboard.** The same map on bar.bwdy.site. The grid code is already shared.

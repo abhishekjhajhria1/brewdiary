@@ -30,7 +30,13 @@ void main() {
     expect(find.textContaining('amberfox'), findsWidgets);
     expect(find.text('Anita'), findsOneWidget);
 
+    // Before the shift: Ninkasi's briefing sits on top.
+    expect(find.text('BEFORE YOUR SHIFT'), findsOneWidget);
+
     // Anita has earned the first tier — hand it over.
+    await t.scrollUntilVisible(find.byTooltip('Anita\'s rewards'), 150, scrollable: find.byType(Scrollable).first);
+    await t.drag(find.byType(Scrollable).first, const Offset(0, -150)); // clear of the tab bar
+    await t.pumpAndSettle();
     await t.tap(find.byTooltip('Anita\'s rewards'));
     await t.pumpAndSettle();
     expect(find.text('A coffee on us'), findsOneWidget);
@@ -119,6 +125,19 @@ void main() {
     // What's on around you: public facts about places.
     await t.scrollUntilVisible(find.text('Dry day: Gandhi Jayanti'), 200, scrollable: find.byType(Scrollable).first);
     expect(find.text('A new brewpub opened on 12th Main'), findsOneWidget);
+  });
+
+  testWidgets('Ninkasi for the whole team: a briefing, and answers that never push drink', (t) async {
+    await bootApp(t);
+    await tapText(t, 'The Amber Room');
+    await tapText(t, 'Ask Ninkasi');
+    expect(find.text('THIS SHIFT'), findsOneWidget);
+    expect(find.textContaining('Tonight\'s room is open'), findsOneWidget);
+    expect(find.textContaining('Alcohol-free tonight: Kokum Cooler'), findsOneWidget);
+    await tapText(t, 'Someone\'s had enough — what do I do?');
+    await t.pump(const Duration(seconds: 2));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Stop serving them alcohol'), findsOneWidget);
   });
 
   testWidgets('switching venue goes back to the list', (t) async {

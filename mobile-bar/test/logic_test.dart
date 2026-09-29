@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:brewdiary_bar/data/models.dart';
 import 'package:brewdiary_bar/logic/area.dart';
+import 'package:brewdiary_bar/logic/host_brief.dart';
 import 'package:brewdiary_bar/logic/insights.dart';
 import 'package:brewdiary_bar/logic/perk_rules.dart';
 import 'package:brewdiary_bar/logic/roles.dart';
@@ -195,6 +196,67 @@ void main() {
     test('spend reads as a band, never a figure', () {
       expect(spendWords(1000, 'INR'), '₹1,000+');
       expect(spendWords(0, 'INR'), 'under ₹500');
+    });
+  });
+
+  group('Ninkasi for hosts (the same cases as tests/hostAdvisor.test.ts)', () {
+    final brief = HostBrief(
+      venueName: 'The Amber Room',
+      kind: 'bar',
+      role: 'server',
+      sellsAlcohol: true,
+      counter: false,
+      today: DateTime(2026, 10, 1),
+      roomOpen: true,
+      guestsIn: 6,
+      quietTonight: true,
+      soldOut: const ['Negroni'],
+      alcoholFree: const ['Kokum Cooler'],
+      menuItems: 5,
+      perks: const [(reward: 'A coffee on us', at: '3 visits')],
+      signals: [
+        (kind: 'holiday', title: 'Dry day: Gandhi Jayanti', startsOn: DateTime(2026, 10, 2), endsOn: null, where: ''),
+        (kind: 'event', title: 'Dussehra fair', startsOn: DateTime(2026, 10, 3), endsOn: DateTime(2026, 10, 5), where: '~5 km east'),
+        (kind: 'price', title: 'A craft pint nearby costs ₹350–450', startsOn: null, endsOn: null, where: ''),
+      ],
+      area: const ['Busiest: your own neighbourhood — 45+ people went out there.'],
+    );
+
+    test('briefs the shift, most urgent first', () {
+      expect(hostBriefing(brief), [
+        'Tomorrow is a dry day (Dry day: Gandhi Jayanti) — let regulars know tonight.',
+        'Tonight\'s room is open, 6 guests in.',
+        'It\'s a quiet night: a visit counts double toward the card. Worth a word to regulars — it\'s a visit, not a drink, that counts.',
+        '86\'d: Negroni. Say so before they order.',
+        'Alcohol-free tonight: Kokum Cooler. Offer one with every recommendation.',
+        'Around you: Dussehra fair (on Saturday, ~5 km east).',
+        'Busiest: your own neighbourhood — 45+ people went out there.',
+        'Water is free and on every table. If someone\'s had enough, stop serving alcohol, offer water and food, and get the manager.',
+      ]);
+    });
+
+    test('on the dry day itself, the law comes first', () {
+      final today = HostBrief(venueName: 'x', kind: 'bar', role: 'server', sellsAlcohol: true, counter: false, today: DateTime(2026, 10, 2), signals: brief.signals);
+      expect(hostBriefing(today).first, 'Today is a dry day (Dry day: Gandhi Jayanti): no alcohol may be sold. Lead with the alcohol-free list.');
+    });
+
+    test('a counter that sells no alcohol gets a till line and nothing about drinking', () {
+      final shop = HostBrief(venueName: 'Mithai Mahal', kind: 'sweet_shop', role: 'manager', sellsAlcohol: false, counter: true, today: DateTime(2026, 10, 1));
+      final lines = hostBriefing(shop);
+      expect(lines.first, 'The till is ready — punch cards once a day per guest.');
+      expect(lines.join(' ').toLowerCase(), isNot(contains('alcohol')));
+    });
+
+    test('answers the hard question the same way every time', () {
+      expect(hostFallbackAnswer(brief, 'Someone\'s had enough — what do I do?'), startsWith('Stop serving them alcohol'));
+      expect(hostFallbackAnswer(brief, 'How do I explain the loyalty card?'), contains('never how much anyone drinks'));
+    });
+
+    test('the wire shape carries counts and titles, never a guest', () {
+      final j = brief.toJson();
+      expect(j['today'], '2026-10-01');
+      expect(j['guestsIn'], 6);
+      expect(j.toString(), isNot(contains('Anita')));
     });
   });
 }

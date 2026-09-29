@@ -17,6 +17,7 @@ import '../widgets/common.dart';
 import '../widgets/page.dart';
 import 'guests_screen.dart';
 import 'tonight_screen.dart';
+import 'host_screen.dart';
 
 class TillScreen extends StatefulWidget {
   final Venue venue;
@@ -73,6 +74,7 @@ class _TillScreenState extends State<TillScreen> {
       subtitle: v.name,
       children: [
         const DemoNote(),
+        ShiftCard(venue: v),
         if (!v.verified)
           Glass(
             padding: const EdgeInsets.all(S.l),

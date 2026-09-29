@@ -105,6 +105,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `expenses.ts` | Split (Splitwise-style) balance math. |
 | `wishlist.ts` / `trends.ts` / `training.ts` | To-try list, opt-in taste trends, local Ninkasi training export. |
 | `bartender.ts` | Ninkasi persona + system prompt + scripted fallback. |
+| `hostAdvisor.ts` | **Ninkasi for hosts** (`/api/host-ai`): the shift companion for every staff role. The brief is built on the phone from what that role can already see — counts and titles, never a guest — and the briefing rules are twinned in `mobile-bar/lib/logic/host_brief.dart` (same test cases). Signed-in only; never writes the training corpus. |
 | `ratelimit.ts` / `aidb.ts` / `supabase-server.ts` | AI-route rate limiting; server-only pseudonymized AI-DB writer; SSR session reader. |
 
 ---

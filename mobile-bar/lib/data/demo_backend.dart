@@ -12,6 +12,7 @@ import 'backend.dart';
 import 'models.dart';
 import 'prefs.dart';
 import '../logic/area.dart' show HeatRow;
+import '../logic/host_brief.dart';
 import '../logic/roles.dart';
 import '../logic/venue_kinds.dart';
 
@@ -634,6 +635,15 @@ class DemoBackend implements Backend {
         : 'In the demo I answer from a script. Sign in with your real venue and I\'ll read your own numbers — totals only, never a single guest.';
     for (final w in text.split(' ')) {
       await Future<void>.delayed(const Duration(milliseconds: 8));
+      yield '$w ';
+    }
+  }
+
+  @override
+  Stream<String> askHost(HostBrief brief, List<Map<String, String>> messages) async* {
+    final q = messages.lastWhere((m) => m['role'] == 'user', orElse: () => const {'content': ''})['content'] ?? '';
+    for (final w in hostFallbackAnswer(brief, q).split(' ')) {
+      await Future<void>.delayed(const Duration(milliseconds: 6));
       yield '$w ';
     }
   }

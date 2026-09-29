@@ -107,6 +107,28 @@ up, the app runs perfectly and simply doesn't record centrally yet.
   | `MODEL_CARD.md` | The model's "nutrition label": what it's for, its limits, its safety behavior. |
   | `LICENSE-NOTES.md` | Why Qwen2.5/Apache-2.0, with alternatives. |
 
+## Ninkasi for hosts: the same bartender, working the other side of the bar
+
+Venues get their own Ninkasi, in two forms:
+
+- **The advisor** (managers, Numbers → Ninkasi, `/api/venue-ai`) reads the venue's own totals and gives
+  business advice.
+- **Ninkasi for hosts** (everyone on the team, `/api/host-ai`) is a shift companion. A **Before your
+  shift** card sits at the top of Tonight and the Till, and tapping it opens a screen for questions
+  mid-shift.
+
+The briefing is built **on the phone** from what that person's role can already see: whether tonight's
+room is open and how many guests are in (only if their role sees the room), what's 86'd, what's
+alcohol-free, the loyalty card, public facts about the area (a dry day tomorrow, a fair on Saturday), and,
+for a manager, the area map's guide. It is counts and titles only. No guest's name leaves the phone.
+
+Because the briefing is worked out on the phone (`mobile-bar/lib/logic/host_brief.dart`), it's instant,
+free and works offline. The AI is asked only when someone types a question. With no AI key, or no
+signal, she answers from the same rules (`src/lib/hostAdvisor.ts` is the website's twin, tested on the
+same cases). Her rules never change: never suggest selling more, always offer an alcohol-free option,
+never comment on how much anyone has had, never guess anyone's age, gender or religion, and on a dry day
+say plainly that no alcohol may be sold. Nothing from these routes joins the training corpus.
+
 ## The safety and consent rules (never optional)
 These are built in *and* enforced, not just promised:
 - **Consent:** we only keep a conversation for training if the user left the "Help train Ninkasi" switch

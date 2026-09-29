@@ -6,6 +6,7 @@
 // real thing run the same screens.
 import 'models.dart';
 import '../logic/area.dart' show HeatRow;
+import '../logic/host_brief.dart' show HostBrief;
 import '../logic/roles.dart';
 import '../logic/venue_kinds.dart';
 
@@ -110,4 +111,8 @@ abstract class Backend {
   // ── Ninkasi for hosts ─────────────────────────────────────────────────────
   /// Streams Ninkasi's reply. [brief] holds only what this manager can already see.
   Stream<String> advise(Map<String, dynamic> brief, List<Map<String, String>> messages);
+
+  /// Ninkasi for the whole team (/api/host-ai): a question about the shift. Throws a
+  /// [BackendError] when she's out of reach, and the screen answers from the same rules.
+  Stream<String> askHost(HostBrief brief, List<Map<String, String>> messages);
 }

@@ -16,6 +16,7 @@ import '../widgets/bits.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
 import 'guests_screen.dart';
+import 'host_screen.dart';
 
 /// The four things staff can praise a guest for — fixed, positive, never a rating.
 const staffVibeReasons = ['great vibe', 'kept it classy', 'a pleasure to serve', 'looked after the table'];
@@ -49,6 +50,7 @@ class _TonightScreenState extends State<TonightScreen> {
       onRefresh: () async => roomsRev.bump(),
       children: [
         const DemoNote(),
+        ShiftCard(venue: v),
         if (!v.verified)
           Padding(
             padding: const EdgeInsets.only(bottom: S.l),

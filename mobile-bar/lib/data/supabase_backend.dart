@@ -13,6 +13,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
 import '../logic/area.dart' show HeatRow;
+import '../logic/host_brief.dart' show HostBrief;
 import '../logic/roles.dart';
 import '../logic/venue_kinds.dart';
 import 'backend.dart';
@@ -521,6 +522,24 @@ class SupabaseBackend implements Backend {
     }
     if (res.statusCode == 429) throw const BackendError('Give her a moment with the last set of books, then ask again.');
     if (res.statusCode >= 400) throw const BackendError('Ninkasi couldn\'t read that — try again.');
+    yield* res.stream.transform(utf8.decoder);
+  }
+
+  @override
+  Stream<String> askHost(HostBrief brief, List<Map<String, String>> messages) async* {
+    final req = http.Request('POST', Config.api('/api/host-ai'))
+      ..headers['Content-Type'] = 'application/json'
+      ..body = jsonEncode({'brief': brief.toJson(), 'messages': messages});
+    final token = _c.auth.currentSession?.accessToken;
+    if (token == null) throw const BackendError('Sign in again to ask Ninkasi.');
+    req.headers['Authorization'] = 'Bearer $token';
+    http.StreamedResponse res;
+    try {
+      res = await http.Client().send(req).timeout(const Duration(seconds: 25));
+    } catch (_) {
+      throw const BackendError('Ninkasi is out of reach.');
+    }
+    if (res.statusCode >= 400) throw BackendError('Ninkasi couldn\'t answer (${res.statusCode}).');
     yield* res.stream.transform(utf8.decoder);
   }
 }
