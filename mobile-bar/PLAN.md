@@ -542,7 +542,7 @@ That is the lawful version of the question (M12.6).
 
 ### M17 — Guest side (user app + website) the bar app needs
 
-- [ ] **M17.1** Per-table links: website route `/m/<slug>/t/<code>`, user-app deep-link parsing (`menuSlugFrom`), and the `assetlinks.json` / `apple-app-site-association` paths.
+- [~] **M17.1** Per-table links: website route `/m/<slug>/t/<code>`, user-app deep-link parsing (`menuSlugFrom`), and the `assetlinks.json` / `apple-app-site-association` paths. *(The two app-link files are served for both apps from env (`src/lib/appLinks.ts`, docs/14 §6); per-table routes still to do.)*
 - [ ] **M17.2** "Join this table" with plain consent wording, and "Leave".
 - [ ] **M17.3** The menu and tonight's room in one tap (docs/12 §7.1).
 - [ ] **M17.4** Taste share for tonight from the taste card (M7.5): pick the lines, alcohol-free first, allergies; see and revoke it.
@@ -584,7 +584,7 @@ That is the lawful version of the question (M12.6).
 - [ ] **M20.2** Update `CLAUDE.md` (a `mobile-bar/` row, roles, new libs and migrations) and docs/11–12 where rules change (taste shares, AI about a consenting guest, roles).
 - [ ] **M20.3** Keep `mobile-bar/README.md` current (run, build, test).
 - [ ] **M20.4** A printable one-page quick start per role, and a venue onboarding guide.
-- [ ] **M20.5** Connecting everything: one Supabase project, Cloudflare in front (DNS, hosting the website and its API routes, secrets, rate limits, app links), and how the guest app, the website and this app reach it.
+- [x] **M20.5** Connecting everything: one Supabase project, Cloudflare in front (DNS, hosting the website and its API routes, secrets, rate limits, app links), and how the guest app, the website and this app reach it. *(`docs/14-supabase-cloudflare-connect.md`.)*
 - [~] **M20.6** The heat-map guide and the outside-data import, in plain English. *(Heat map done: docs/13.)*
 
 ### M21 — Release and pilot

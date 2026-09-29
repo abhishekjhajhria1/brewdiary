@@ -5,6 +5,14 @@ const nextConfig = {
   // webpack bundle — it ships native/wasm assets that must be require()'d at runtime,
   // not bundled. Only the bartender API route (nodejs runtime) loads it. See src/lib/embed.ts.
   serverExternalPackages: ["@huggingface/transformers"],
+  // The app-link files (src/lib/appLinks.ts): same paths on bwdy.site (the guest app)
+  // and bar.bwdy.site (the venue app); the route decides by host.
+  async rewrites() {
+    return [
+      { source: "/.well-known/assetlinks.json", destination: "/api/app-links/android" },
+      { source: "/.well-known/apple-app-site-association", destination: "/api/app-links/apple" },
+    ];
+  },
   async headers() {
     return [
       {

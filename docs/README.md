@@ -37,6 +37,10 @@ If you can read a recipe, you can read this.
     neighbourhoods of people who said yes, what they like, when they go out, and a typical night's
     spend as a band. Every rule that keeps it from pointing at a person, and how to read it. Also how
     outside tools (scrapers, feeds) bring in public facts about places: events, openings, dry days.
+14. **[14 — Connecting everything: Supabase, Cloudflare and both apps](14-supabase-cloudflare-connect.md)**
+    — one database, four windows (website, venue dashboard, guest app, venue app): what each needs,
+    Supabase and Cloudflare setup, hosting on Vercel or Cloudflare Workers, app links that open the
+    right app, how a night flows between the apps, and a go-live checklist.
 
 ## The one-paragraph version
 brewdiary is a **drink diary**. You open it, tap tonight's date on a calendar, and jot down what you
