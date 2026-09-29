@@ -684,6 +684,18 @@ class _PrivacyGroupState extends State<_PrivacyGroup> {
                         trailing: _locating ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: bd.muted)) : null,
                         onTap: _locating ? null : _setArea,
                       ),
+              if (settings.shareTrends)
+                Loader<bool?>(
+                  refresh: profileRev,
+                  load: ProfileApi.shareNightsOut,
+                  builder: (context, on, _) => on == null
+                      ? const SizedBox.shrink()
+                      : SettingRow(
+                          title: 'Neighbourhood maps',
+                          hint: 'Also count me where I go out (the venue rooms I join) — only in groups of 5+ people across 3+ venues. Never my name, never which venue.',
+                          trailing: BdToggle(on: on, label: 'Neighbourhood maps', onChanged: ProfileApi.setShareNightsOut),
+                        ),
+                ),
               SettingRow(
                 title: 'Leaderboard in Together',
                 hint: 'Show the board — and put me on it, next to friends who also opted in. Never your spend.',

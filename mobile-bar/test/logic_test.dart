@@ -4,6 +4,7 @@
 import 'dart:io';
 
 import 'package:brewdiary_bar/data/models.dart';
+import 'package:brewdiary_bar/logic/area.dart';
 import 'package:brewdiary_bar/logic/insights.dart';
 import 'package:brewdiary_bar/logic/perk_rules.dart';
 import 'package:brewdiary_bar/logic/roles.dart';
@@ -135,6 +136,65 @@ void main() {
       expect(trendLine(110, 100, 'the 30d before'), '+10% on the 30d before');
       expect(trendLine(90, 100, 'x'), '-10% on x');
       expect(trendLine(5, 0, 'x'), isNull);
+    });
+  });
+
+  group('the area heat map, read', () {
+    const rows = [
+      HeatRow('tdr1v', 'people', '', 25),
+      HeatRow('tdr1v', 'persona', 'coffee_tea', 10),
+      HeatRow('tdr1v', 'persona', 'zero_proof', 5),
+      HeatRow('tdr1v', 'taste', 'coffee', 15),
+      HeatRow('tdr1v', 'hours', 'evening', 15),
+      HeatRow('tdr1v', 'spend', '1000', 25),
+      HeatRow('tdr1y', 'people', '', 40),
+      HeatRow('tdr1y', 'persona', 'coffee_tea', 20),
+      HeatRow('tdr1y', 'hours', 'evening', 20),
+      HeatRow('tdr1y', 'hours', 'late', 5),
+    ];
+
+    test('rows fold into neighbourhoods', () {
+      final m = readMap(rows);
+      expect(m.keys, {'tdr1v', 'tdr1y'});
+      expect(m['tdr1v']!.people, 25);
+      expect(m['tdr1v']!.topPersona, 'coffee_tea');
+      expect(m['tdr1v']!.spendFloor, 1000);
+      expect(m['tdr1y']!.spendFloor, isNull);
+    });
+
+    test('the guide talks about crowds, in plain words', () {
+      final g = areaGuide(venueCell: 'tdr1v9', cells: readMap(rows), currency: 'INR', sellsAlcohol: true, sharing: true);
+      expect(g.first, 'Busiest: ~5 km east — 40+ people went out there.');
+      expect(g, contains('Your own neighbourhood: 25+ people.'));
+      expect(g, contains('Coffee & tea people lead in 2 of 2 neighbourhoods.'));
+      expect(g, contains('Most people go out in the evening (5–9 pm).'));
+      expect(g.any((l) => l.contains('₹1,000+')), isTrue);
+      expect(g.any((l) => l.contains('coffee menu')), isTrue, reason: 'a fit suggestion, never "more"');
+    });
+
+    test('no spend for a venue that doesn\'t share, and nothing that means "more"', () {
+      final g = areaGuide(venueCell: 'tdr1v9', cells: readMap(rows), currency: 'INR', sellsAlcohol: true, sharing: false);
+      expect(g.any((l) => l.contains('₹')), isFalse);
+      for (final l in g) {
+        expect(l.toLowerCase(), isNot(matches(RegExp(r'another round|drink more|upsell|happy hour'))));
+      }
+    });
+
+    test('an empty map explains itself', () {
+      final g = areaGuide(venueCell: 'tdr1v9', cells: const {}, currency: 'INR', sellsAlcohol: true, sharing: true);
+      expect(g.single, contains('5 people who said yes'));
+    });
+
+    test('hours are read on the venue\'s clock', () {
+      expect(venueTimeZone('IN', 'KA'), 'Asia/Kolkata');
+      expect(venueTimeZone('US', 'NY'), 'America/New_York');
+      expect(venueTimeZone('US', 'CA'), 'America/Los_Angeles');
+      expect(venueTimeZone('ZZ', null), 'UTC');
+    });
+
+    test('spend reads as a band, never a figure', () {
+      expect(spendWords(1000, 'INR'), '₹1,000+');
+      expect(spendWords(0, 'INR'), 'under ₹500');
     });
   });
 }

@@ -1174,6 +1174,115 @@ try {
     ok("a verified café can't turn itself into a licensed bar by itself",
       await refused(() => as(owner, `update public.venues set serves_alcohol = true where id=$1`, [cafe])));
   }
+
+  // ── 18. the area heat map (048): groups of people who said yes, never a person ─
+  if ((await db.query(`select to_regprocedure('public.area_heat_map(uuid,integer,text)') f`)).rows[0].f) {
+    console.log("\n── 18. the area heat map: consenting groups, never a person (048) ──");
+    const t = Date.now();
+    const rnd = () => Math.floor(Math.random() * 1e6);
+    const mkBar = async (name, geo, share) => {
+      const id = randomUUID();
+      await as(owner, `insert into public.venues (id, name, slug, created_by, kind, country, geohash, area_share) values ($1,$2,$3,$4,'bar','IN',$5,$6)`,
+        [id, name, `vf-area-${t}-${rnd()}`.slice(0, 40), owner, geo, share]);
+      await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [id, owner]);
+      await db.query(`update public.venues set verified = true where id = $1`, [id]);
+      const room = randomUUID();
+      await as(owner, `insert into public.parties (id, name, host_id, date, venue_id, invite_code) values ($1,'Area night',$2,current_date,$3,$4)`,
+        [room, owner, id, `ar${rnd()}`.slice(0, 8)]);
+      return { id, room };
+    };
+    // Three bars in one ~5 km cell (tdr1w), a lone bar next door (tdr1x), two in a third (tdr1y).
+    const A = await mkBar("Verify Area A", "tdr1wb", true);
+    const B = await mkBar("Verify Area B", "tdr1wc", true);
+    const C = await mkBar("Verify Area C", "tdr1wd", true);
+    const D = await mkBar("Verify Area D", "tdr1xe", true);
+    const E = await mkBar("Verify Area E", "tdr1yf", true);
+    const F = await mkBar("Verify Area F", "tdr1yg", true);
+
+    // Seven people out last night at 7 pm (India time). g6 shares taste trends but
+    // never said yes to neighbourhood maps.
+    const g = [];
+    for (let i = 0; i < 7; i++) g.push(await mkUser(`Area ${i}`, `vf-area${i}-${t}`));
+    const evening = `((current_date - 1) + time '19:00') at time zone 'Asia/Kolkata'`;
+    for (const [i, uid] of g.entries()) {
+      await db.query(`update public.profiles set share_trends = true, trends_geo = 'tdr1', share_nights_out = $2 where id = $1`, [uid, i < 4]);
+      for (const bar of [A, B, C, E, F]) {
+        await db.query(`insert into public.party_members (party_id, user_id, status, joined_at) values ($1,$2,'approved',${evening})`, [bar.room, uid]);
+      }
+      for (let k = 0; k < 3; k++) {
+        await db.query(`insert into public.entries (id, user_id, date, drink, type) values ($1,$2,current_date - 1,'filter coffee','coffee')`, [randomUUID(), uid]);
+      }
+    }
+    await db.query(`insert into public.party_members (party_id, user_id, status, joined_at) values ($1,$2,'approved',${evening})`, [D.room, g[0]]);
+    for (const [drink, type] of [["IPA", "beer"], ["Sula", "wine"], ["Negroni", "cocktail"]]) {
+      await db.query(`insert into public.entries (id, user_id, date, drink, type) values ($1,$2,current_date - 1,$3,$4)`, [randomUUID(), g[0], drink, type]);
+    }
+    const map = async (who = owner, vid_ = A.id, days = 7) =>
+      (await as(who, `select * from public.area_heat_map($1, $2, 'Asia/Kolkata')`, [vid_, days])).rows;
+    const row = (rows, cell, layer, label = "") => rows.find((r) => r.cell === cell && r.layer === layer && r.label === label);
+
+    let rows = await map();
+    ok("4 who said yes + 1 who didn't: the cell stays dark (a 'no' is never counted)", !rows.some((r) => r.cell === "tdr1w"));
+
+    await db.query(`update public.profiles set share_nights_out = true where id = any($1)`, [[g[4], g[5]]]);
+    rows = await map();
+    ok("the fifth and sixth yes light the cell", row(rows, "tdr1w", "people")?.people === 5, JSON.stringify(rows));
+    ok("counts are rounded DOWN to 5s — six people read as 5", row(rows, "tdr1w", "people")?.people === 5);
+    ok("every figure on the map is ≥ 5 and a multiple of 5", rows.length > 0 && rows.every((r) => r.people >= 5 && r.people % 5 === 0));
+    ok("the kinds of people are TASTE personas (5 coffee-and-tea people)", row(rows, "tdr1w", "persona", "coffee_tea")?.people === 5);
+    ok("a persona of one (the explorer) stays hidden", !row(rows, "tdr1w", "persona", "explorer"));
+    ok("what they like: coffee, counted in people", row(rows, "tdr1w", "taste", "coffee")?.people === 5);
+    ok("a drink only one person logged never shows", !row(rows, "tdr1w", "taste", "beer"));
+    ok("when they come out, on the venue's clock (7 pm → evening)", row(rows, "tdr1w", "hours", "evening")?.people === 5);
+    ok("a cell with one person and one bar stays dark", !rows.some((r) => r.cell === "tdr1x"));
+    ok("a cell of TWO venues stays dark even with a crowd (no competitor's night on show)", !rows.some((r) => r.cell === "tdr1y"));
+    ok("the answer is (cell, layer, label, people) — no name, no venue, no row per person",
+      JSON.stringify(Object.keys(rows[0] ?? {})) === JSON.stringify(["cell", "layer", "label", "people"]));
+
+    // Spend: a night's tab per guest, only between venues that share.
+    for (const bar of [A, B, C]) {
+      for (const uid of g.slice(0, 6)) {
+        await db.query(`insert into public.spend_events (party_id, subject_user_id, recorded_by, amount, created_at) values ($1,$2,$3,1200,${evening})`, [bar.room, uid, owner]);
+      }
+    }
+    rows = await map();
+    ok("sharing venues see the cell's typical tab as a BAND (₹1,200 tabs → '₹1,000+')", row(rows, "tdr1w", "spend", "1000")?.people === 5, JSON.stringify(rows.filter((r) => r.layer === "spend")));
+    await as(owner, `update public.venues set area_share = false where id = $1`, [C.id]);
+    rows = await map();
+    ok("a venue that doesn't share is left out — two sharing venues are too few to show", !rows.some((r) => r.layer === "spend"));
+    await as(owner, `update public.venues set area_share = true where id = $1`, [C.id]);
+    await as(owner, `update public.venues set area_share = false where id = $1`, [A.id]);
+    rows = await map();
+    ok("give to get: a venue that doesn't share sees no one else's spend", !rows.some((r) => r.layer === "spend") && row(rows, "tdr1w", "people"));
+    await as(owner, `update public.venues set area_share = true where id = $1`, [A.id]);
+
+    ok("the windows are fixed (8 days reads as 30), so two answers can't be subtracted",
+      JSON.stringify(await map(owner, A.id, 8)) === JSON.stringify(await map(owner, A.id, 30)));
+
+    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'bartender')`, [A.id, barman]);
+    ok("a bartender can't open the area map (it's a manager's view)", await refused(() => map(barman)));
+    ok("a stranger can't open it", await refused(() => map(stranger)));
+    ok("a venue with no location set is told to set one", await refused(() => map(owner, vid)));
+    const unv = randomUUID();
+    await as(owner, `insert into public.venues (id, name, slug, created_by, kind, country, geohash) values ($1,'Verify Unverified',$2,$3,'bar','IN','tdr1wh')`,
+      [unv, `vf-unv-${t}`, owner]);
+    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [unv, owner]);
+    ok("an UNVERIFIED venue can't read the map (no pop-up venue to peek at an area)", await refused(() => map(owner, unv)));
+
+    ok("a verified venue can't MOVE to another area to look at it",
+      await refused(() => as(owner, `update public.venues set geohash = 'ttnfvb' where id = $1`, [A.id])));
+    ok("…but it can refine its spot within its area",
+      !(await refused(() => as(owner, `update public.venues set geohash = 'tdr1wbz' where id = $1`, [A.id]))));
+    ok("a location must be a real geohash, not free text",
+      await refused(() => as(owner, `update public.venues set geohash = 'tdr1 main st' where id = $1`, [A.id])));
+
+    const trends = (await as(owner, `select * from public.area_taste_trends('tdr1wbz', 30)`)).rows;
+    ok("area trends read a finer venue location at city scale", trends.some((r) => r.kind === "drink" && r.users >= 5));
+
+    const band = async (a, c) => Number((await db.query(`select public.spend_band_floor($1, $2) b`, [a, c])).rows[0].b);
+    ok("spend bands match money.ts (₹1,200 → ₹1,000; ₹400 → under ₹500; $60 → $50)",
+      (await band(1200, "INR")) === 1000 && (await band(400, "INR")) === 0 && (await band(60, "usd")) === 50);
+  }
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

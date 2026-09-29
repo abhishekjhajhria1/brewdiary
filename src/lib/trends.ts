@@ -120,13 +120,13 @@ export function useTrendsGeo(): { hasArea: boolean; geo: string | null; loaded: 
 
 /** Ask the browser for a one-time position and reduce it to a coarse cell ON DEVICE.
  *  Only the short geohash is ever returned/stored — raw coordinates never leave here. */
-export function requestLocationGeohash(): Promise<{ geohash?: string; error?: string }> {
+export function requestLocationGeohash(precision = AREA_PRECISION): Promise<{ geohash?: string; error?: string }> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
     return Promise.resolve({ error: "Your device can't share a location." });
   }
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ geohash: encodeGeohash(pos.coords.latitude, pos.coords.longitude, AREA_PRECISION) }),
+      (pos) => resolve({ geohash: encodeGeohash(pos.coords.latitude, pos.coords.longitude, precision) }),
       (err) =>
         resolve({
           error:
@@ -173,4 +173,35 @@ export function useShareTrends(): { shareTrends: boolean; loaded: boolean } {
 export async function setShareTrends(meId: string, value: boolean) {
   if (!supabase) return;
   await supabase.from("profiles").update({ share_trends: value }).eq("id", meId);
+}
+
+// ── neighbourhood maps (048): a second, separate yes ─────────────────────────
+// Only meaningful with share_trends on. It lets the area heat map count me — in groups
+// of 5+ across 3+ venues — in the neighbourhoods where I go out (the venue rooms I
+// join). `available` is false until migration 048 is applied, so the row stays hidden.
+export function useShareNightsOut(): { on: boolean; available: boolean; loaded: boolean } {
+  const me = useAuth().profile?.id;
+  const [state, setState] = useState({ on: false, available: false, loaded: false });
+
+  useEffect(() => {
+    if (!supabase || !me) {
+      setState({ on: false, available: false, loaded: true });
+      return;
+    }
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase!.from("profiles").select("share_nights_out").eq("id", me).maybeSingle();
+      if (active) setState({ on: Boolean(data?.share_nights_out), available: !error, loaded: true });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [me]);
+
+  return state;
+}
+
+export async function setShareNightsOut(meId: string, value: boolean) {
+  if (!supabase) return;
+  await supabase.from("profiles").update({ share_nights_out: value }).eq("id", meId);
 }

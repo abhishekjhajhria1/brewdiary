@@ -39,9 +39,12 @@ export interface Venue {
   /** Weekdays this bar calls quiet (0 = Sun … 6 = Sat). A visit on one counts
    *  double toward the house perk — never a drink discount. */
   quietNights: number[];
-  /** Coarse geohash of the venue (owner-set from the dashboard). Matches drinkers'
-   *  opt-in coarse cell for area taste trends — see 041 / geohash.ts. */
+  /** The venue's geohash (owner-set from the dashboard, VENUE_PRECISION ≈ 1 km). Its
+   *  first 4 characters match drinkers' opt-in cell for area taste trends (041); the
+   *  first 5 place it on the area heat map (048). */
   geohash?: string;
+  /** Shares its anonymised totals with the area heat map, and so sees its spend layer (048). */
+  areaShare: boolean;
   verified: boolean;
   myRole: StaffRole;
 }
@@ -134,6 +137,7 @@ export function useMyVenues(): { venues: Venue[]; loading: boolean } {
               region: (vv.region as string) ?? undefined,
               quietNights: (vv.quiet_nights as number[]) ?? [],
               geohash: (vv.geohash as string) ?? undefined,
+              areaShare: vv.area_share === true,
               verified: Boolean(vv.verified),
               myRole: r.role as StaffRole,
             };
@@ -300,10 +304,11 @@ export async function createVenue(
 
 export async function updateVenue(
   venueId: string,
-  fields: { name?: string; city?: string; quietNights?: number[]; geohash?: string | null },
+  fields: { name?: string; city?: string; quietNights?: number[]; geohash?: string | null; areaShare?: boolean },
 ): Promise<string | null> {
   if (!supabase) return "offline";
-  const patch: Record<string, string | number[] | null> = {};
+  const patch: Record<string, string | number[] | boolean | null> = {};
+  if (fields.areaShare !== undefined) patch.area_share = fields.areaShare;
   if (fields.geohash !== undefined) patch.geohash = fields.geohash ? fields.geohash.slice(0, 12) : null;
   if (fields.name !== undefined) {
     const n = fields.name.trim();

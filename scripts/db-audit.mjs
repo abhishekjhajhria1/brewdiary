@@ -537,6 +537,40 @@ try {
     ok("the venues table can't hold a sober bar or a licensed bakery", Boolean(sa));
   }
 
+  // ── the area heat map (048): consenting groups, never a person ─────────────
+  if (!fns.includes("area_heat_map")) {
+    console.log("  ~ the area heat map (048) not applied — skipping");
+  } else {
+    console.log("\n── the area heat map: consenting groups, never a person (048) ──");
+    const hm = await one(`select pg_get_functiondef('public.area_heat_map(uuid,integer,text)'::regprocedure) d,
+      (select prosecdef from pg_proc where oid = 'public.area_heat_map(uuid,integer,text)'::regprocedure) sd,
+      (select proconfig::text from pg_proc where oid = 'public.area_heat_map(uuid,integer,text)'::regprocedure) cfg`);
+    ok("area_heat_map(): SECURITY DEFINER with a pinned search_path", hm && hm.sd && /search_path=public/.test(hm.cfg ?? ""));
+    ok("area_heat_map(): only a role with area.view, only a verified venue",
+      hm && /venue_can\(vid, auth\.uid\(\), 'area\.view'\)/.test(hm.d) && /not v\.verified/.test(hm.d));
+    ok("area_heat_map(): counts only people who said yes to BOTH trends and nights out",
+      hm && (hm.d.match(/share_trends and p\.share_nights_out/g) ?? []).length >= 2);
+    ok("area_heat_map(): a cell needs 5+ people AND 3+ venues", hm && /count\(distinct c\.user_id\) >= 5 and count\(distinct c\.venue_id\) >= 3/.test(hm.d));
+    ok("area_heat_map(): spend needs the caller's AND each venue's yes (give to get), in bands",
+      hm && /where v\.area_share/.test(hm.d) && /vc\.area_share/.test(hm.d) && /spend_band_floor/.test(hm.d));
+    ok("area_heat_map(): every figure rounded down to 5s, nothing under 5", hm && /\(a\.n \/ 5\) \* 5/.test(hm.d) && /where a\.n >= 5/.test(hm.d));
+    ok("area_heat_map(): fixed windows of whole days", hm && /when days_back <= 7 then 7 when days_back <= 30 then 30 else 90/.test(hm.d) && /< current_date/.test(hm.d));
+    ok("area_heat_map(): returns no person and no venue", hm && !/returns table \([^)]*(user_id|venue_id|name)/i.test(hm.d));
+    ok("area_heat_map(): nothing about age, gender or religion", hm && !/\b(birth|age_|gender|sex|religio|caste)/i.test(hm.d));
+    const optin = await all(`select table_name, column_name, column_default from information_schema.columns
+      where table_schema = 'public' and ((table_name = 'profiles' and column_name = 'share_nights_out') or (table_name = 'venues' and column_name = 'area_share'))`);
+    ok("both opt-ins exist and default to OFF", optin.length === 2 && optin.every((r) => r.column_default === "false"));
+    const gg = await one(`select pg_get_functiondef('public.venues_guard_geohash()'::regprocedure) d`);
+    ok("a verified venue can't move to another area", gg && /left\(new\.geohash, 4\) <> left\(old\.geohash, 4\)/.test(gg.d));
+    const gc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'venues_geohash_chars'`);
+    ok("a venue's location is a real geohash, not free text", Boolean(gc));
+    const bands = await one(`select public.spend_band_floor(1200, 'INR') a, public.spend_band_floor(400, 'INR') b, public.spend_band_floor(60, 'USD') c`);
+    ok("spend_band_floor() matches money.ts", bands && Number(bands.a) === 1000 && Number(bands.b) === 0 && Number(bands.c) === 50);
+    const at = await one(`select pg_get_functiondef('public.area_taste_trends(text,integer)'::regprocedure) d`);
+    ok("area_taste_trends(): still consenting-only, k ≥ 5, matched on the ~40 km cell",
+      at && /p\.share_trends/.test(at.d) && />= 5/.test(at.d) && /left\(p\.trends_geo, 4\) = left\(trim\(in_geo\), 4\)/.test(at.d));
+  }
+
   // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
   // pinned to search_path=public that calls one unqualified works on a laptop and fails
   // in production. None may.

@@ -33,6 +33,9 @@ If you can read a recipe, you can read this.
     Flutter app to Supabase and Ninkasi, turn on email-code sign-in, how bars connect to guests (table
     menus, rooms, perks), how the data is linked and where it must never go, and a roadmap for making
     the bar side more fun.
+13. **[13 — The area heat map](13-area-heat-map.md)** — how a venue sees "the kind of people outside":
+    neighbourhoods of people who said yes, what they like, when they go out, and a typical night's
+    spend as a band. Every rule that keeps it from pointing at a person, and how to read it.
 
 ## The one-paragraph version
 brewdiary is a **drink diary**. You open it, tap tonight's date on a calendar, and jot down what you

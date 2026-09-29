@@ -184,6 +184,23 @@ class ProfileApi {
   static Future<void> setSocialHandle(String h) => _update({'social_handle': h.trim().isEmpty ? null : h.trim()});
   static Future<void> setShareTrends(bool v) => _update({'share_trends': v});
 
+  /// Neighbourhood maps (048): the second, separate yes — count me, in groups of 5+
+  /// across 3+ venues, where I go out. Null until the migration is applied, so the
+  /// row stays hidden rather than failing.
+  static Future<bool?> shareNightsOut() async {
+    final c = db;
+    final me = auth.meId;
+    if (c == null || me == null) return null;
+    try {
+      final r = await c.from('profiles').select('share_nights_out').eq('id', me).maybeSingle();
+      return r?['share_nights_out'] == true;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> setShareNightsOut(bool v) => _update({'share_nights_out': v});
+
   /// Store (or clear) the coarse area cell. Raw coordinates never leave the device.
   static Future<void> setTrendsGeo(String? geohash) => _update({'trends_geo': geohash == null ? null : (geohash.length > 12 ? geohash.substring(0, 12) : geohash)});
 }

@@ -94,6 +94,27 @@ void main() {
     expect(find.text('TILL'), findsOneWidget, reason: 'straight into a working till');
   });
 
+  testWidgets('the area map: neighbourhoods of people who said yes, never a person', (t) async {
+    await bootApp(t);
+    await tapText(t, 'The Amber Room');
+    await tapText(t, 'NUMBERS');
+    await t.scrollUntilVisible(find.text('Open the area map'), 200, scrollable: find.byType(Scrollable).first);
+    await t.drag(find.byType(Scrollable).first, const Offset(0, -200)); // clear of the tab bar
+    await t.pumpAndSettle();
+    await tapText(t, 'Open the area map');
+    expect(find.text('Your area'), findsWidgets);
+    expect(find.text('45+'), findsOneWidget, reason: 'the venue\'s own neighbourhood, in 5s');
+    expect(find.textContaining('Busiest: your own neighbourhood'), findsOneWidget);
+
+    await tapText(t, 'Kinds of people');
+    expect(find.text('Cocktails & spirits'), findsWidgets);
+    await t.tap(find.bySemanticsLabel(RegExp('^Your neighbourhood')));
+    await t.pumpAndSettle();
+    expect(find.text('Your own neighbourhood'), findsOneWidget); // the sheet's title
+    expect(find.text('Explorers'), findsWidgets);
+    expect(find.textContaining('No names, no venues'), findsOneWidget);
+  });
+
   testWidgets('switching venue goes back to the list', (t) async {
     await bootApp(t);
     await tapText(t, 'The Amber Room');

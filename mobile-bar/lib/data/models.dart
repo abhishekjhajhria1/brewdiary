@@ -40,6 +40,9 @@ class Venue {
   final String currency;
   final List<int> quietNights;
   final String? geohash;
+
+  /// Shares its anonymised totals with the area heat map, and so sees its spend layer (048).
+  final bool areaShare;
   final bool verified;
   final StaffRole myRole;
 
@@ -56,6 +59,7 @@ class Venue {
     this.currency = 'INR',
     this.quietNights = const [],
     this.geohash,
+    this.areaShare = false,
     this.verified = false,
     this.myRole = StaffRole.bartender,
   });
@@ -73,6 +77,7 @@ class Venue {
         currency: (v['currency'] as String?) ?? 'INR',
         quietNights: ((v['quiet_nights'] as List?) ?? const []).map((d) => _int(d)).toList(),
         geohash: v['geohash'] as String?,
+        areaShare: v['area_share'] == true,
         verified: v['verified'] == true,
         myRole: role,
       );
@@ -80,7 +85,7 @@ class Venue {
   LegalClass get legal => legalClass(kind, servesAlcohol: servesAlcohol);
   bool get sellsAlcohol => legal != LegalClass.noAlcohol;
 
-  Venue copyWith({String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? verified}) => Venue(
+  Venue copyWith({String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? verified}) => Venue(
         id: id,
         name: name ?? this.name,
         slug: slug,
@@ -93,6 +98,7 @@ class Venue {
         currency: currency,
         quietNights: quietNights ?? this.quietNights,
         geohash: geohash ?? this.geohash,
+        areaShare: areaShare ?? this.areaShare,
         verified: verified ?? this.verified,
         myRole: myRole,
       );

@@ -49,6 +49,7 @@ import { useRoomGuests, staffAwardVibe, recordSpend, STAFF_VIBE_REASONS } from "
 import { todayKey } from "@/lib/date";
 import { peakDays, pctChange } from "@/lib/venueAdvisor";
 import { requestLocationGeohash } from "@/lib/trends";
+import { VENUE_PRECISION } from "@/lib/geohash";
 import { VenueAdvisor } from "./VenueAdvisor";
 import { GuestBook } from "./GuestBook";
 import { VenueMenu } from "./VenueMenu";
@@ -1723,10 +1724,10 @@ function AddStaff({ venueId, meId }: { venueId: string; meId: string }) {
   );
 }
 
-// The owner sets the venue's coarse location once — standing in the bar. We keep only
-// a ~40 km geohash cell (never a pin), which is what area taste trends match on so
-// Ninkasi can read the neighbourhood. updateVenue bumps the version, so the label here
-// flips to "set" on its own once the venue reloads.
+// The owner sets the venue's location once — standing in the venue. We keep a ~1 km
+// geohash cell (a venue's address is public anyway): its first 4 characters are what
+// area taste trends match on, its first 5 place it on the area heat map (048).
+// updateVenue bumps the version, so the label flips to "set" once the venue reloads.
 function VenueLocation({ venue }: { venue: Venue }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -1734,7 +1735,7 @@ function VenueLocation({ venue }: { venue: Venue }) {
   async function setLoc() {
     setBusy(true);
     setMsg(null);
-    const { geohash, error } = await requestLocationGeohash();
+    const { geohash, error } = await requestLocationGeohash(VENUE_PRECISION);
     if (error || !geohash) {
       setBusy(false);
       setMsg(error ?? "Couldn't read a location.");
@@ -1749,8 +1750,8 @@ function VenueLocation({ venue }: { venue: Venue }) {
     <div className="mt-6 border-t border-line pt-4">
       <p className="text-sm text-ink">Venue location</p>
       <p className="mb-2.5 text-xs leading-relaxed text-faint">
-        Stand in your venue and set its location once. We keep only a rough ~40&nbsp;km cell — never a pin — so
-        Ninkasi can read what your neighbourhood is drinking. {venue.geohash ? "It's set." : "Not set yet."}
+        Stand in your venue and set its location once. We keep a ~1&nbsp;km cell — never a pin — so Ninkasi can
+        read what your area is drinking and the area map can place you. {venue.geohash ? "It's set." : "Not set yet."}
       </p>
       <div className="flex items-center gap-3">
         <button
@@ -1770,6 +1771,21 @@ function VenueLocation({ venue }: { venue: Venue }) {
         )}
       </div>
       {msg && <p className="mt-2 text-xs text-accent">{msg}</p>}
+      <label className="mt-4 flex items-start gap-3 text-sm text-ink">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={venue.areaShare}
+          onChange={(e) => updateVenue(venue.id, { areaShare: e.target.checked })}
+        />
+        <span>
+          Share our totals with the area map
+          <span className="block text-xs leading-relaxed text-faint">
+            Counts and bands only, from guests who said yes, in groups of 5+ people across 3+ venues. Venues that
+            share see the typical night&apos;s spend around them; venues that don&apos;t, don&apos;t.
+          </span>
+        </span>
+      </label>
     </div>
   );
 }

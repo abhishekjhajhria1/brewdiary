@@ -19,7 +19,15 @@ import { TrustCard } from "../verify/TrustCard";
 import { useIsModerator } from "@/lib/moderation";
 import { useBlocks, unblockUser } from "@/lib/safety";
 import { isCollecting, setCollecting, clearTraining, useTrainingCount } from "@/lib/training";
-import { useShareTrends, setShareTrends, useTrendsGeo, requestLocationGeohash, setTrendsGeo } from "@/lib/trends";
+import {
+  useShareTrends,
+  setShareTrends,
+  useShareNightsOut,
+  setShareNightsOut,
+  useTrendsGeo,
+  requestLocationGeohash,
+  setTrendsGeo,
+} from "@/lib/trends";
 import { useMyVenueBooks, forgetVenueBook } from "@/lib/guestbook";
 import { useCompeteVisible, setCompeteVisible } from "@/lib/points";
 import { useProfilePrivacy, setProfileVisibility, setSocialHandle, type ProfileVisibility } from "@/lib/publicProfile";
@@ -552,8 +560,38 @@ function TrendsOptIn({ meId }: { meId: string }) {
             </>
           )}
           {msg && <p className="mt-2 text-xs text-accent">{msg}</p>}
+          <NightsOutOptIn meId={meId} />
         </div>
       )}
+    </div>
+  );
+}
+
+/** The second, separate yes (048): count me in neighbourhood maps. Default OFF. */
+function NightsOutOptIn({ meId }: { meId: string }) {
+  const { on: saved, available, loaded } = useShareNightsOut();
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (loaded) setOn(saved);
+  }, [loaded, saved]);
+  if (!loaded || !available) return null;
+  return (
+    <div className="mt-4 flex items-center justify-between gap-4">
+      <div>
+        <p className="text-sm text-ink">Neighbourhood maps</p>
+        <p className="text-xs text-faint">
+          Also count me where I go out (the venue rooms I join) — only in groups of 5+ people across 3+ venues. Never
+          my name, never which venue.
+        </p>
+      </div>
+      <Toggle
+        on={on}
+        label="Neighbourhood maps"
+        onToggle={() => {
+          setOn(!on);
+          setShareNightsOut(meId, !on);
+        }}
+      />
     </div>
   );
 }

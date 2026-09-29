@@ -12,6 +12,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
+import '../logic/area.dart' show HeatRow;
 import '../logic/roles.dart';
 import '../logic/venue_kinds.dart';
 import 'backend.dart';
@@ -194,7 +195,7 @@ class SupabaseBackend implements Backend {
       });
 
   @override
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol}) => _run(() async {
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare}) => _run(() async {
         final patch = <String, dynamic>{};
         if (name != null) {
           if (name.trim().isEmpty) throw const BackendError('Name can\'t be empty.');
@@ -204,6 +205,7 @@ class SupabaseBackend implements Backend {
         if (quietNights != null) patch['quiet_nights'] = (quietNights.toSet().where((d) => d >= 0 && d <= 6).toList()..sort());
         if (geohash != null) patch['geohash'] = geohash.isEmpty ? null : geohash.substring(0, geohash.length.clamp(0, 12));
         if (servesAlcohol != null) patch['serves_alcohol'] = servesAlcohol;
+        if (areaShare != null) patch['area_share'] = areaShare;
         if (patch.isEmpty) return;
         await _c.from('venues').update(patch).eq('id', venueId);
         venueRev.bump();
@@ -458,6 +460,15 @@ class SupabaseBackend implements Backend {
         return [
           for (final r in (rows as List? ?? const []))
             AreaTrend(kind: (r['kind'] as String?) ?? 'drink', name: (r['name'] as String?) ?? '', users: (r['users'] as num?)?.toInt() ?? 0),
+        ];
+      });
+
+  @override
+  Future<List<HeatRow>> areaMap(String venueId, {int days = 30, String tz = 'UTC'}) => _run(() async {
+        final rows = await _c.rpc('area_heat_map', params: {'vid': venueId, 'days_back': days, 'tz': tz});
+        return [
+          for (final r in (rows as List? ?? const []))
+            HeatRow(r['cell'] as String, r['layer'] as String, (r['label'] as String?) ?? '', (r['people'] as num).toInt()),
         ];
       });
 

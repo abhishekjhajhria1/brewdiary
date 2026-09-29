@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import 'backend.dart';
 import 'models.dart';
 import 'prefs.dart';
+import '../logic/area.dart' show HeatRow;
 import '../logic/roles.dart';
 import '../logic/venue_kinds.dart';
 
@@ -73,7 +74,8 @@ class DemoBackend implements Backend {
       country: 'IN',
       currency: 'INR',
       quietNights: [2],
-      geohash: 'tdr1',
+      geohash: 'tdr1v9',
+      areaShare: true,
       verified: true,
       myRole: StaffRole.owner,
     );
@@ -234,7 +236,7 @@ class DemoBackend implements Backend {
   }
 
   @override
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol}) async {
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare}) async {
     final i = _venues.indexWhere((v) => v.id == venueId);
     if (i < 0) throw const BackendError('No such venue.');
     final v = _venues[i];
@@ -244,6 +246,7 @@ class DemoBackend implements Backend {
       city: city?.trim(),
       quietNights: quietNights,
       geohash: geohash,
+      areaShare: areaShare,
       servesAlcohol: servesAlcohol == null || !v.kind.alcoholIsChoice ? null : servesAlcohol,
     );
     venueRev.bump();
@@ -534,6 +537,49 @@ class DemoBackend implements Backend {
         AreaTrend(kind: 'mood', name: 'cozy', users: 17),
         AreaTrend(kind: 'mood', name: 'celebratory', users: 11),
       ];
+
+  @override
+  Future<List<HeatRow>> areaMap(String venueId, {int days = 30, String tz = 'UTC'}) async {
+    final v = _venue(venueId);
+    if (!v.verified) throw const BackendError('The area map opens once your venue is verified.');
+    if ((v.geohash ?? '').length < 5) throw const BackendError('Set your venue\'s location first (Setup).');
+    final area = v.geohash!.substring(0, 4);
+    // A made-up Bengaluru evening: a busy centre, coffee to the south, zero-proof east.
+    // Every figure a multiple of 5, as the real map returns them.
+    const seed = <String, (int, Map<String, int>, Map<String, int>, Map<String, int>, int?)>{
+      'v': (45, {'cocktails': 15, 'explorer': 10, 'beer': 10, 'coffee_tea': 5}, {'cocktail': 25, 'beer': 20, 'coffee': 15, 'soft': 10}, {'evening': 25, 'late': 20}, 1000),
+      'y': (30, {'beer': 10, 'cocktails': 10, 'zero_proof': 5}, {'beer': 20, 'cocktail': 10, 'soft': 10}, {'evening': 15, 'late': 10}, 1000),
+      'u': (25, {'coffee_tea': 15, 'explorer': 5}, {'coffee': 20, 'tea': 10}, {'morning': 10, 'afternoon': 10}, 500),
+      't': (20, {'coffee_tea': 10, 'wine': 5}, {'coffee': 15, 'wine': 5}, {'afternoon': 10, 'evening': 5}, 500),
+      'w': (15, {'zero_proof': 10}, {'soft': 10, 'coffee': 5}, {'evening': 10}, null),
+      's': (10, {'coffee_tea': 5}, {'coffee': 10}, {'morning': 5}, 0),
+      'g': (10, {'wine': 5}, {'wine': 5, 'cocktail': 5}, {'evening': 5}, 2500),
+      'z': (5, {}, {'beer': 5}, {'late': 5}, null),
+      'k': (15, {'coffee_tea': 5, 'zero_proof': 5}, {'coffee': 10, 'soft': 5}, {'morning': 5, 'afternoon': 5}, 500),
+      'm': (10, {'explorer': 5}, {'wine': 5, 'beer': 5}, {'evening': 5}, 1000),
+      '7': (5, {}, {'tea': 5}, {'afternoon': 5}, null),
+    };
+    final days_ = days <= 7 ? 7 : (days <= 30 ? 30 : 90);
+    final scale = days_ == 7 ? 0.4 : (days_ == 90 ? 1.6 : 1.0);
+    int k(int n) => ((n * scale) ~/ 5) * 5;
+    final rows = <HeatRow>[];
+    seed.forEach((ch, d) {
+      final cell = '$area$ch';
+      if (k(d.$1) < 5) return;
+      rows.add(HeatRow(cell, 'people', '', k(d.$1)));
+      d.$2.forEach((l, n) {
+        if (k(n) >= 5) rows.add(HeatRow(cell, 'persona', l, k(n)));
+      });
+      d.$3.forEach((l, n) {
+        if (k(n) >= 5) rows.add(HeatRow(cell, 'taste', l, k(n)));
+      });
+      d.$4.forEach((l, n) {
+        if (k(n) >= 5) rows.add(HeatRow(cell, 'hours', l, k(n)));
+      });
+      if (v.areaShare && d.$5 != null) rows.add(HeatRow(cell, 'spend', '${d.$5}', k(d.$1)));
+    });
+    return rows;
+  }
 
   @override
   Future<int> teamKudos(String venueId, {int days = 30}) async => _venue(venueId).kind.isCounter ? 3 : 27;

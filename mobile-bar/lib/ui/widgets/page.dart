@@ -17,10 +17,13 @@ const kTopBarHeight = 64.0; // the floating header pill (52) and the space aroun
 /// The widest a page's content grows (foldables, tablets); beyond it, it centres.
 const kContentMaxWidth = 640.0;
 
-/// Side padding that keeps content at most [kContentMaxWidth] wide, centred.
-double sideGutter(BuildContext context) {
+/// A page that earns a tablet's width (a map, a station) opts into this instead.
+const kWideMaxWidth = 1100.0;
+
+/// Side padding that keeps content at most [maxWidth] wide, centred.
+double sideGutter(BuildContext context, [double maxWidth = kContentMaxWidth]) {
   final w = MediaQuery.sizeOf(context).width;
-  return w - 2 * S.gutter > kContentMaxWidth ? (w - kContentMaxWidth) / 2 : S.gutter;
+  return w - 2 * S.gutter > maxWidth ? (w - maxWidth) / 2 : S.gutter;
 }
 
 /// Bottom padding that keeps the last item clear of the tab bar (or the home
@@ -76,6 +79,9 @@ class ScrollPage extends StatefulWidget {
   final List<Widget> children;
   final ScrollController? controller;
 
+  /// How wide the content may grow on a tablet ([kWideMaxWidth] for maps and stations).
+  final double maxWidth;
+
   const ScrollPage({
     super.key,
     this.title,
@@ -88,6 +94,7 @@ class ScrollPage extends StatefulWidget {
     this.onRefresh,
     required this.children,
     this.controller,
+    this.maxWidth = kContentMaxWidth,
   });
 
   @override
@@ -113,7 +120,7 @@ class _ScrollPageState extends State<ScrollPage> {
     final mq = MediaQuery.of(context);
     final top = mq.padding.top;
     final hasLarge = widget.title != null;
-    final side = sideGutter(context);
+    final side = sideGutter(context, widget.maxWidth);
 
     Widget scroll = CustomScrollView(
       controller: widget.controller,
@@ -162,6 +169,7 @@ class _ScrollPageState extends State<ScrollPage> {
         top: 0,
         child: TopBar(
           frosted: _offset > 4,
+          maxWidth: widget.maxWidth,
           // Tab pages wear the website's header: the wordmark, handing over to the
           // page's own title once its large title has scrolled away.
           title: widget.barTitle ??
@@ -187,13 +195,14 @@ class TopBar extends StatelessWidget {
   final Widget? title;
   final bool back;
   final List<Widget> actions;
-  const TopBar({super.key, required this.frosted, this.title, this.back = false, this.actions = const []});
+  final double maxWidth;
+  const TopBar({super.key, required this.frosted, this.title, this.back = false, this.actions = const [], this.maxWidth = kContentMaxWidth});
 
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
     final top = MediaQuery.of(context).padding.top;
-    final side = sideGutter(context);
+    final side = sideGutter(context, maxWidth);
     // The website's header: a glass pill floating over the page, a touch more
     // opaque once content scrolls beneath it.
     final pill = ClipRRect(

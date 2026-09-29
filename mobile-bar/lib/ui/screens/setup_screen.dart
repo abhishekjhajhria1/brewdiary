@@ -1,9 +1,9 @@
-// Setup: the venue's details, its coarse location (for area trends), verification, and
+// Setup: the venue's details, its location (for area trends and the area map), verification, and
 // — for the owner — deleting it. Once verified, where the venue is, what kind of place
 // it is and its web address are fixed (the database refuses a change): the country
 // decides which perks are lawful, and the address is printed on every table.
 import 'package:brewdiary_core/jurisdiction.dart';
-import 'package:brewdiary_core/misc.dart' show encodeGeohash, areaPrecision;
+import 'package:brewdiary_core/geo.dart' show venueCell;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -49,9 +49,10 @@ class _SetupScreenState extends State<SetupScreen> {
         return;
       }
       final pos = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.low));
-      // Only a coarse cell (precision 4, ~40 km) ever leaves the phone.
-      final cell = encodeGeohash(pos.latitude, pos.longitude, areaPrecision);
-      if (mounted) await runAction(context, () => Backend.i.updateVenue(v.id, geohash: cell), done: 'Area set — about 40 km around you.');
+      // Only a ~1 km cell leaves the phone, never the coordinates. A venue's address is
+      // public; people are only ever kept at ~40 km (their own choice, in their diary).
+      final cell = venueCell(pos.latitude, pos.longitude);
+      if (mounted) await runAction(context, () => Backend.i.updateVenue(v.id, geohash: cell), done: 'Location set.');
     } catch (_) {
       if (mounted) toast(context, 'Couldn\'t get a location — try again outside or near a window.');
     } finally {
@@ -98,12 +99,24 @@ class _SetupScreenState extends State<SetupScreen> {
               const SectionHeader('Your area'),
               Text(
                 v.geohash == null || v.geohash!.isEmpty
-                    ? 'Set it once, standing in your venue: we keep only a coarse ~40 km cell, used to show what consenting drinkers nearby are into.'
-                    : 'Area set (cell ${v.geohash}, about 40 km across). Reset it if you moved.',
+                    ? 'Set it once, standing in your venue. We keep a ~1 km cell (never a pin) to show what your area is into and to place you on the area map.'
+                    : (v.geohash!.length < 5
+                        ? 'Set as a rough ~40 km area. Set it again, standing in the venue, to open the area map.'
+                        : 'Set (a ~1 km cell).${v.verified ? ' You can refine it within your area; to move, ask brewdiary.' : ''}'),
                 style: T.caption(bd),
               ),
               const SizedBox(height: S.m),
-              BdButton(v.geohash == null ? 'Use my location' : 'Reset my area', icon: Ph.crosshair, kind: BtnKind.secondary, busy: _locating, onTap: s.can(Cap.editSettings) ? _locate : null),
+              BdButton(v.geohash == null ? 'Use my location' : 'Set it again', icon: Ph.crosshair, kind: BtnKind.secondary, busy: _locating, onTap: s.can(Cap.editSettings) ? _locate : null),
+              const SizedBox(height: S.m),
+              SettingRow(
+                title: 'Share our totals with the area map',
+                hint: 'Counts and bands only, from guests who said yes, in groups of 5+ across 3+ venues. Venues that share see the typical night\'s spend around them.',
+                trailing: BdToggle(
+                  on: v.areaShare,
+                  label: 'Share with the area map',
+                  onChanged: (x) => s.can(Cap.editSettings) ? runAction(context, () => Backend.i.updateVenue(v.id, areaShare: x)) : toast(context, 'An owner or manager can change this.'),
+                ),
+              ),
               if (s.can(Cap.requestVerification)) ...[
                 const SectionHeader('Verification'),
                 _Verification(venue: v),

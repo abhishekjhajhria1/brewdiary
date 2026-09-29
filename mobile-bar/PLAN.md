@@ -1,7 +1,8 @@
 # mobile-bar — the venue staff app: everything that has to be built
 
-**Status (2026-09-29): R1 built.** M0–M2 are in this folder (the app, its demo venue and tests) and in
-`supabase/044`–`047` (roles, capability gates, every kind of shop). This is the full list of what a
+**Status (2026-09-29): R1 built, R1.5 under way.** M0–M2 are in this folder (the app, its demo venue and
+tests) and in `supabase/044`–`047` (roles, capability gates, every kind of shop); the area heat map is in
+`048` and `docs/13`. This is the full list of what a
 bar / restaurant / shop staff app needs, written after scanning the whole repo: the docs, every venue
 migration, the web bar dashboard, the Ninkasi routes and the Flutter user app.
 
@@ -442,7 +443,7 @@ That is the lawful version of the question (M12.6).
 - [ ] **M8.8** An end-of-night summary for managers.
 - [ ] **M8.9** Switches: off until `AI_API_KEY` is set, opt-in per venue, a kill switch.
 - [ ] **M8.10** Ninkasi for hosts: one assistant for every role that knows the venue's live state (open room, 86 list, menu, stock, bookings), the area heat map and the imported outside signals (D21), and answers "what should I know tonight?" — events nearby, what the area is drinking, what's running low.
-- [ ] **M8.11** A heat-map guide: Ninkasi explains the map in plain words ("the cells east of you lean coffee and dessert on weekday evenings; spend there is mostly ₹500–1,000") and suggests menu or hours changes, never targeting a person.
+- [~] **M8.11** A heat-map guide: Ninkasi explains the map in plain words ("the cells east of you lean coffee and dessert on weekday evenings; spend there is mostly ₹500–1,000") and suggests menu or hours changes, never targeting a person. *(The guide is built — `areaGuide()` — and shown under the map; Ninkasi reading it is next.)*
 
 ### M9 — Inventory
 
@@ -489,7 +490,7 @@ That is the lawful version of the question (M12.6).
 - [ ] **M12.3** Labour: hours, cost %, overtime, rota against actual.
 - [ ] **M12.4** Stock: variance, pour cost, waste, shrinkage, stock value, days on hand.
 - [ ] **M12.5** Guests: the existing k-anonymous insights, the share of covers from linked guests, perk use, booking no-show rate, the team kudos total.
-- [ ] **M12.10** The area heat map (D20): cells at geohash precision 5–6 around the venue, each shown only with 5+ consenting people; layers for footfall by hour, spend band, taste mix and taste personas; a plain guide under the map.
+- [x] **M12.10** The area heat map (D20): cells at geohash precision 5–6 around the venue, each shown only with 5+ consenting people; layers for footfall by hour, spend band, taste mix and taste personas; a plain guide under the map. *(048; `docs/13-area-heat-map.md`. A venue shares spend only if it shares its own; the web dashboard map is still to do.)*
 - [ ] **M12.11** Outside signals (D21): events, openings, holidays and public venue facts from the import, on the map and in the briefing.
 - [ ] **M12.6** The area ("the kind of people outside"): area taste trends (5+ people per row) and menu opens by hour (docs/12 §7.4, counts of 5+). Never who is nearby, never demographics.
 - [ ] **M12.7** Exports: CSV/PDF, an accountant export, a scheduled emailed summary (server-side).
@@ -584,7 +585,7 @@ That is the lawful version of the question (M12.6).
 - [ ] **M20.3** Keep `mobile-bar/README.md` current (run, build, test).
 - [ ] **M20.4** A printable one-page quick start per role, and a venue onboarding guide.
 - [ ] **M20.5** Connecting everything: one Supabase project, Cloudflare in front (DNS, hosting the website and its API routes, secrets, rate limits, app links), and how the guest app, the website and this app reach it.
-- [ ] **M20.6** The heat-map guide and the outside-data import, in plain English.
+- [~] **M20.6** The heat-map guide and the outside-data import, in plain English. *(Heat map done: docs/13.)*
 
 ### M21 — Release and pilot
 
@@ -609,7 +610,7 @@ where the website needs one, and Dart parity tests where the app mirrors logic.
 | `045_staff_roles.sql` | **Done.** New roles, `role_capabilities`, `venue_can()`, the staff RLS fixes, venue fields locked after verification, staff invites, `set_thankable` |
 | `046_capability_gates.sql` | **Done.** Existing `is_venue_staff()` gates moved to capability checks |
 | `047_all_shops.sql` | **Done.** Eight kinds of venue, `serves_alcohol`, legal class, counters |
-| `048_area_map.sql` | The area heat map: consented, k-anonymous cells (D20) |
+| `048_area_map.sql` | **Done.** The area heat map: two guest opt-ins + a venue opt-in, cells of 5+ people and 3+ venues, rounded to 5s, fixed windows, spend bands (D20) |
 | `049_area_signals.sql` | Server-only outside signals from the import (D21) |
 | `050_floor.sql` | Areas, tables, table tag codes |
 | `051_service_day.sql` | Service days (open/close, auto-opened room), table sessions, `join_table()`, linked guests, guest codes |

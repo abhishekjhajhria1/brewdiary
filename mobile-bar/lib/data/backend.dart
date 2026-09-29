@@ -5,6 +5,7 @@
 // on the device. Screens only ever see this interface, so the demo, the tests and the
 // real thing run the same screens.
 import 'models.dart';
+import '../logic/area.dart' show HeatRow;
 import '../logic/roles.dart';
 import '../logic/venue_kinds.dart';
 
@@ -47,7 +48,7 @@ abstract class Backend {
     required String country,
     String? region,
   });
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol});
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare});
   Future<void> deleteVenue(String venueId);
 
   Future<VerificationRequest?> verification(String venueId);
@@ -91,6 +92,10 @@ abstract class Backend {
   // ── insights & the area ───────────────────────────────────────────────────
   Future<VenueInsights?> insights(String venueId, {int days = 30});
   Future<List<AreaTrend>> areaTrends(String geohash, {int days = 30});
+
+  /// The area heat map (048): groups of 5+ people who said yes, never a person.
+  /// [tz] is the venue's time zone, so "evening" means the venue's evening.
+  Future<List<HeatRow>> areaMap(String venueId, {int days = 30, String tz = 'UTC'});
   Future<int> teamKudos(String venueId, {int days = 30});
   Future<List<KudosLine>> myKudos(String venueId);
 

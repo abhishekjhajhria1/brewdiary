@@ -135,6 +135,15 @@ tab. Terms are grouped, not alphabetical, so related ideas sit together.
   leaderboard; show your tab; make your profile public). Off is always the default.
 - **Friends-of-friends ("fof").** A privacy tier for your profile: not just your friends, but also
   *their* friends — a middle setting between "friends only" and "anyone on the internet."
+- **Geohash.** A short code for a square on the map: the more letters, the smaller the square.
+  4 letters is roughly a city (~40 km), 5 a neighbourhood (~5 km), 6 a few streets (~1 km). We keep
+  people at 4 letters at most, and venues at 6 (a venue's address is public anyway).
+- **k-anonymity ("k = 5").** A rule that a number is shown only when at least *k* different people are
+  behind it — here five — so no figure can point at one person.
+- **Heat map.** A grid of squares that glow brighter where there's more of something. The venue app's
+  area map is one (full detail in [doc 13](13-area-heat-map.md)).
+- **Persona (taste).** A "kind of person" described only by what they like to drink — "coffee & tea
+  people", "explorers" — worked out from their own diary. Never age, gender or anything like it.
 
 ## AI words (full detail in doc 05)
 - **LLM (Large Language Model).** The kind of AI that understands and writes text — the "brain" behind a
