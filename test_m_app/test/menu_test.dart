@@ -66,4 +66,14 @@ void main() {
     expect(find.text('NOTHING WITH ALCOHOL TONIGHT'), findsOneWidget);
     expect(find.byType(BdToggle), findsWidgets);
   });
+
+  testWidgets('the menu shows the veg mark and allergens (051)', (t) async {
+    await bootApp(t, prefs: const {'brewdiary.age.v2': 'ok', 'brewdiary.country.v1': 'IN'}, signedIn: true);
+    navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => MenuView(menu: sampleMenu())));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('Masala fries'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.byType(DietMark), findsOneWidget);
+    expect(find.text('Contains gluten'), findsOneWidget);
+    expect(find.byTooltip('Add Masala fries'), findsNothing, reason: 'no ordering without a table that takes orders');
+  });
 }

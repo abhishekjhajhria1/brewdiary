@@ -1,17 +1,24 @@
 // A venue's menu — what tapping the NFC tag (or scanning the QR) on the table
-// opens. A port of src/components/menu/MenuView.tsx.
+// opens. A port of src/components/menu/MenuView.tsx. Opened from a table's own link
+// (bwdy.site/t/<code>, 051) it knows the table: there, if the venue switched it on,
+// you can send an order and call staff. An order waits for the staff's OK; they see
+// the table, never your name.
 //
 // "You'd probably like" is worked out on this phone from your own diary; the venue
 // never learns who looked. "Log it" writes the drink straight into today with the
 // venue filled in. A menu is never an offer: no discounts, by design.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/menus.dart';
 import 'package:brewdiary_core/money.dart';
+import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';
 import '../../data/menus.dart';
+import '../../data/table_order.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
@@ -47,16 +54,146 @@ class MenuScreen extends StatelessWidget {
   }
 }
 
+/// A table's own link (bwdy.site/t/<code>): which venue and table, then its menu.
+class TableMenuScreen extends StatelessWidget {
+  final String code;
+  const TableMenuScreen({super.key, required this.code});
+
+  @override
+  Widget build(BuildContext context) {
+    if (db == null) {
+      return const SubPage(title: 'Menu', child: EmptyNote("This build isn't connected to the brewdiary cloud — open the link in your browser, or ask for a paper menu.", icon: Ph.cloudSlash));
+    }
+    return Loader<(TableInfo, Menu)?>(
+      load: () async {
+        final t = await TableApi.info(code);
+        if (t == null) return null;
+        final m = await MenuApi.load(t.venueSlug);
+        return m == null ? null : (t, m);
+      },
+      failed: (context, retry) => SubPage(title: 'Menu', child: LoadError(onRetry: retry)),
+      builder: (context, data, loading) {
+        if (data == null) {
+          return SubPage(
+            title: 'Menu',
+            child: loading
+                ? const Column(children: [Skeleton(height: 72), SizedBox(height: S.m), Skeleton(height: 220)])
+                : const EmptyNote("This table's link isn't live — the tag may have been replaced. Ask your server for the menu.", icon: Ph.notebook),
+          );
+        }
+        return MenuView(menu: data.$2, table: data.$1);
+      },
+    );
+  }
+}
+
+const _allergenWords = {
+  'gluten': 'gluten',
+  'crustaceans': 'crustaceans',
+  'eggs': 'eggs',
+  'fish': 'fish',
+  'peanuts': 'peanuts',
+  'soy': 'soy',
+  'milk': 'milk',
+  'nuts': 'tree nuts',
+  'celery': 'celery',
+  'mustard': 'mustard',
+  'sesame': 'sesame',
+  'sulphites': 'sulphites',
+  'lupin': 'lupin',
+  'molluscs': 'molluscs',
+};
+
+/// India's menu mark: a square with a dot, green for veg, brown for non-veg.
+class DietMark extends StatelessWidget {
+  final String diet;
+  const DietMark(this.diet, {super.key});
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (diet) { 'veg' || 'vegan' => const Color(0xFF3E8E5E), 'egg' => const Color(0xFFB08A2E), _ => const Color(0xFFA0472F) };
+    return Semantics(
+      label: switch (diet) { 'veg' => 'vegetarian', 'vegan' => 'vegan', 'egg' => 'contains egg', _ => 'non-vegetarian' },
+      child: Container(
+        width: 14,
+        height: 14,
+        margin: const EdgeInsets.only(right: 8, top: 3),
+        decoration: BoxDecoration(border: Border.all(color: color, width: 1.4), borderRadius: BorderRadius.circular(2)),
+        alignment: Alignment.center,
+        child: Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: diet == 'non_veg' ? BoxShape.rectangle : BoxShape.circle)),
+      ),
+    );
+  }
+}
+
 /// The menu itself (public so tests can render one without the cloud).
 class MenuView extends StatefulWidget {
   final Menu menu;
-  const MenuView({super.key, required this.menu});
+
+  /// Set when opened from a table's own link.
+  final TableInfo? table;
+  const MenuView({super.key, required this.menu, this.table});
   @override
   State<MenuView> createState() => MenuViewState();
 }
 
 class MenuViewState extends State<MenuView> {
   bool _noAlcohol = false;
+  final Map<String, int> _basket = {};
+  bool _sending = false;
+  List<MyRequest> _mine = const [];
+  Timer? _poll;
+
+  bool get _ordering => widget.table?.tableService == true && auth.isAuthed && db != null;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_ordering) {
+      _refreshMine();
+      _poll = Timer.periodic(const Duration(seconds: 15), (_) => _refreshMine());
+    }
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshMine() async {
+    try {
+      final r = await TableApi.mine();
+      if (mounted) setState(() => _mine = r);
+    } catch (_) {}
+  }
+
+  Future<void> _send() async {
+    final t = widget.table;
+    if (t == null || _basket.isEmpty) return;
+    setState(() => _sending = true);
+    try {
+      await TableApi.order(t.code, [for (final e in _basket.entries) {'item': e.key, 'qty': e.value}]);
+      if (!mounted) return;
+      setState(() => _basket.clear());
+      toast(context, 'Sent — the staff will confirm it.');
+      await _refreshMine();
+    } catch (e) {
+      if (mounted) toast(context, tableError(e));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _call(String kind) async {
+    final t = widget.table;
+    if (t == null) return;
+    try {
+      await TableApi.call(t.code, kind);
+      if (mounted) toast(context, switch (kind) { 'bill' => 'They\'re bringing the bill.', 'water' => 'Water\'s on its way.', _ => 'Someone\'s coming over.' });
+    } catch (e) {
+      if (mounted) toast(context, tableError(e));
+    }
+  }
 
   void _log(MenuItem item) {
     entryStore.addEntry(date: todayKey(), drink: item.name, type: item.drinkType, venue: widget.menu.venueName);
@@ -80,17 +217,35 @@ class MenuViewState extends State<MenuView> {
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text.rich(TextSpan(children: [
-                  TextSpan(text: it.name, style: T.row(bd)),
-                  if (it.noAlcohol) TextSpan(text: '   NO ALCOHOL', style: T.label(bd, color: bd.accentText)),
-                ])),
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  if (it.diet != null) DietMark(it.diet!),
+                  Expanded(
+                    child: Text.rich(TextSpan(children: [
+                      TextSpan(text: it.name, style: T.row(bd)),
+                      if (it.noAlcohol) TextSpan(text: '   NO ALCOHOL', style: T.label(bd, color: bd.accentText)),
+                    ])),
+                  ),
+                ]),
                 if (it.description != null) Padding(padding: const EdgeInsets.only(top: 2), child: Text(it.description!, style: T.body(bd, color: bd.muted))),
+                if (it.allergens.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2), child: Text('Contains ${it.allergens.map((a) => _allergenWords[a] ?? a).join(', ')}', style: T.caption(bd))),
               ]),
             ),
             const SizedBox(width: S.m),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
               if (it.price != null) Text(formatMoney(it.price!, menu.currency), style: T.row(bd).copyWith(fontFeatures: T.tnum)),
-              if (it.kind != 'food') TextAction('Log it', accent: true, size: 13, onTap: () => _log(it)),
+              if (_ordering)
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  if ((_basket[it.id] ?? 0) > 0) ...[
+                    IconBtn(Ph.minus, tooltip: 'One fewer ${it.name}', onTap: () => setState(() {
+                          final q = (_basket[it.id] ?? 0) - 1;
+                          q <= 0 ? _basket.remove(it.id) : _basket[it.id] = q;
+                        })),
+                    Text('${_basket[it.id]}', style: T.row(bd).copyWith(fontFeatures: T.tnum)),
+                  ],
+                  IconBtn(Ph.plus, tooltip: 'Add ${it.name}', onTap: () => setState(() => _basket[it.id] = ((_basket[it.id] ?? 0) + 1).clamp(1, 20))),
+                ])
+              else if (it.kind != 'food')
+                TextAction('Log it', accent: true, size: 13, onTap: () => _log(it)),
             ]),
           ]),
         );
@@ -98,7 +253,7 @@ class MenuViewState extends State<MenuView> {
     return SubPage(
       title: menu.venueName,
       actions: [IconBtn(Ph.identificationBadge, tooltip: 'Show my taste passport', onTap: () => showTasteCard(context))],
-      subtitle: [if (menu.venueCity != null) menu.venueCity!, menu.isStore ? 'On the shelf' : 'The menu'].join(' · '),
+      subtitle: [if (widget.table != null) 'Table ${widget.table!.tableLabel}', if (menu.venueCity != null) menu.venueCity!, menu.isStore ? 'On the shelf' : 'The menu'].join(' · '),
       child: menu.sections.isEmpty
           ? const EmptyNote("The menu isn't up yet — ask at the bar.", icon: Ph.notebook)
           : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -115,8 +270,47 @@ class MenuViewState extends State<MenuView> {
                 SectionHeader(s.name),
                 Group(children: [for (final it in s.items) row(it)]),
               ],
+              if (widget.table != null && widget.table!.tableService && !auth.isAuthed) ...[
+                const SizedBox(height: S.xl),
+                const EmptyNote('Sign in to brewdiary to order from the table or call staff — or just wave; they\'ll see you.', icon: Ph.handWaving),
+              ],
+              if (_ordering) ...[
+                SectionHeader('At table ${widget.table!.tableLabel}'),
+                Wrap(spacing: S.s, runSpacing: S.s, children: [
+                  BdChip('Call staff', icon: Ph.handWaving, onTap: () => _call('staff')),
+                  BdChip('Bill please', icon: Ph.receipt, onTap: () => _call('bill')),
+                  BdChip('Water', icon: Ph.drop, onTap: () => _call('water')),
+                ]),
+                if (_mine.isNotEmpty) ...[
+                  const SizedBox(height: S.l),
+                  Group(children: [
+                    for (final r in _mine)
+                      GroupTile(
+                        title: r.lines.map((l) => '${l.qty} × ${l.name}').join(', '),
+                        subtitle: r.statusWords,
+                        trailing: r.status == 'pending'
+                            ? TextAction('Cancel', faint: true, size: 13, onTap: () async {
+                                await TableApi.withdraw(r.id);
+                                await _refreshMine();
+                              })
+                            : null,
+                      ),
+                  ]),
+                ],
+                if (_basket.isNotEmpty) ...[
+                  const SizedBox(height: S.l),
+                  BdButton(
+                    _sending ? 'Sending…' : 'Send ${_basket.values.fold<int>(0, (a, b) => a + b)} to the staff · ${formatMoney(_basket.entries.fold<double>(0, (s, e) => s + (byId[e.key]?.price ?? 0) * e.value), menu.currency)}',
+                    busy: _sending,
+                    onTap: _send,
+                  ),
+                ],
+              ],
               const SizedBox(height: S.xl),
-              Text("Opening a menu tells ${menu.venueName} nothing about you. Prices are the venue's own.", style: T.caption(bd)),
+              Text(
+                "Opening a menu tells ${menu.venueName} nothing about you. Prices are the venue's own.${_ordering ? ' An order waits for the staff to confirm it; they see the table, never your name.' : ''}",
+                style: T.caption(bd),
+              ),
             ]),
     );
   }

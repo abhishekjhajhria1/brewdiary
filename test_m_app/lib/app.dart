@@ -139,8 +139,8 @@ class _ShellState extends State<Shell> {
   }
 
   /// Invite links (`bwdy.site/p/<code>`), public profiles (`/u/<handle>`), party
-  /// pages (`/party/<id>`) and table menus (`/m/<slug>`, from an NFC tag or QR)
-  /// open straight into the app when installed.
+  /// pages (`/party/<id>`), table menus (`/m/<slug>`, from an NFC tag or QR) and
+  /// a table's own link (`/t/<code>`) open straight into the app when installed.
   void _listenForLinks() {
     final links = AppLinks();
     links.getInitialLink().then((u) {
@@ -185,6 +185,11 @@ class _ShellState extends State<Shell> {
         // A table's NFC tag or QR (bwdy.site/m/<slug>) — the venue's menu.
         final slug = menuSlugFrom(uri);
         if (slug != null) nav.push(MaterialPageRoute(builder: (_) => MenuScreen(slug: slug)));
+      case 't':
+        // A table's own link (bwdy.site/t/<code>, 051) — the menu with the table known,
+        // ordering and "call staff" when the venue has them on.
+        final code = tableCodeFrom(uri);
+        if (code != null) nav.push(MaterialPageRoute(builder: (_) => TableMenuScreen(code: code)));
     }
   }
 

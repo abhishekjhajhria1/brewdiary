@@ -21,7 +21,7 @@ describe("app links", () => {
     ]);
     expect(JSON.stringify(assetLinks("bar.bwdy.site", env))).toContain("site.bwdy.bar");
     expect(appleAssociation("bwdy.site", env)).toEqual({
-      applinks: { details: [{ appIDs: ["ABCDE12345.site.bwdy.brewdiary"], components: [{ "/": "/p/*" }, { "/": "/u/*" }, { "/": "/party/*" }, { "/": "/m/*" }] }] },
+      applinks: { details: [{ appIDs: ["ABCDE12345.site.bwdy.brewdiary"], components: [{ "/": "/p/*" }, { "/": "/u/*" }, { "/": "/party/*" }, { "/": "/m/*" }, { "/": "/t/*" }] }] },
     });
     expect(JSON.stringify(appleAssociation("bar.bwdy.site", env))).toContain("ABCDE12345.site.bwdy.bar");
   });

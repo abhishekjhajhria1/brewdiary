@@ -370,23 +370,23 @@ That is the lawful version of the question (M12.6).
 
 ### M3 — Floor and tables
 
-- [ ] **M3.1** DB: `venue_areas`, `venue_tables` (label, seats, shape, position, active) and a per-table tag code.
-- [ ] **M3.2** Floor-plan editor: drag tables on a tablet, a simple list on a phone; bar seats are one-seat tables.
-- [ ] **M3.3** Table tags: `bwdy.site/m/<slug>/t/<code>`, written to NFC and printed as QR; rotate a code if a tag is lost or abused.
-- [ ] **M3.4** Live floor: each table's state derived from sessions, orders and requests (free, seated, waiting, served, bill asked, paying, to clear).
+- [x] **M3.1** DB: `venue_areas`, `venue_tables` (label, seats, shape, position, active) and a per-table tag code. *(051: areas, tables, an 8-character code per table.)*
+- [~] **M3.2** Floor-plan editor: drag tables on a tablet, a simple list on a phone; bar seats are one-seat tables. *(A list editor on phone and tablet (More › Floor setup); drag-to-place plan next.)*
+- [x] **M3.3** Table tags: `bwdy.site/m/<slug>/t/<code>`, written to NFC and printed as QR; rotate a code if a tag is lost or abused. *(bwdy.site/t/<code> (shorter than /m/<slug>/t/<code>); QR + share; rotate_table_code().)*
+- [x] **M3.4** Live floor: each table's state derived from sessions, orders and requests (free, seated, waiting, served, bill asked, paying, to clear). *(Free / seated / food ready / asking — colour, word and mark.)*
 - [ ] **M3.5** Sections: assign servers to areas or tables per shift; transfer a table; merge and split tables.
-- [ ] **M3.6** Seat a party: covers, server, optional booking; this opens a table session.
-- [ ] **M3.7** Timers on every table: seated for, since the last order, items waiting.
+- [x] **M3.6** Seat a party: covers, server, optional booking; this opens a table session. *(Seat → how many → the tab opens.)*
+- [~] **M3.7** Timers on every table: seated for, since the last order, items waiting. *(Minutes seated and the running total on each table; per-item waits on the stations.)*
 - [ ] **M3.8** Capacity: seats in use against the total, and the licensed maximum occupancy.
 
 ### M4 — Orders and tabs (the POS core)
 
-- [ ] **M4.1** DB: `tabs` (on a table session, a bar tab by name, or walk-up pay-now); `order_lines` with name, price and tax class copied at the time of ordering; `order_line_events`, append-only (sent, started, ready, served, void, comp, remake, return). Status is derived in a view.
-- [ ] **M4.2** Menu extensions: sizes with their own prices (30/60 ml pegs, pint/half), modifier groups (required/optional, price changes), allergen and diet tags, ABV and pour size, station routing. Still no discount column.
-- [ ] **M4.3** Order screen: sections, search, quick keys, modifiers, seat, course, notes (allergy notes stand out), quantity. Two taps for a common drink.
-- [ ] **M4.4** Send: drinks to the bar, food to the kitchen; hold and fire by course; rush.
-- [ ] **M4.5** Void your own lines before sending. After sending, a void needs a reason and supervisor/manager approval above a threshold; a comp needs a reason and approval. All of it is audited.
-- [ ] **M4.6** Repeat a line only when the guest asks. It is never offered as a prompt.
+- [~] **M4.1** DB: `tabs` (on a table session, a bar tab by name, or walk-up pay-now); `order_lines` with name, price and tax class copied at the time of ordering; `order_line_events`, append-only (sent, started, ready, served, void, comp, remake, return). Status is derived in a view. *(051: tabs and order_lines with name/price/station copied at order time; status on the line (not an event ledger yet).)*
+- [~] **M4.2** Menu extensions: sizes with their own prices (30/60 ml pegs, pint/half), modifier groups (required/optional, price changes), allergen and diet tags, ABV and pour size, station routing. Still no discount column. *(Allergens (EU 14), the veg/non-veg/egg/vegan mark and station routing done; sizes and modifiers next.)*
+- [~] **M4.3** Order screen: sections, search, quick keys, modifiers, seat, course, notes (allergy notes stand out), quantity. Two taps for a common drink. *(Sections, search, quantity, quick notes; seats in the data, courses next.)*
+- [x] **M4.4** Send: drinks to the bar, food to the kitchen; hold and fire by course; rush. *(Drinks to the bar, food to the kitchen, per item; hold/fire next.)*
+- [x] **M4.5** Void your own lines before sending. After sending, a void needs a reason and supervisor/manager approval above a threshold; a comp needs a reason and approval. All of it is audited. *(Own fresh lines by the server; anything else a supervisor; always a reason.)*
+- [x] **M4.6** Repeat a line only when the guest asks. It is never offered as a prompt. *(There is no repeat prompt anywhere.)*
 - [ ] **M4.7** Move lines between seats and tabs, merge tabs, hand a tab to another server.
 - [ ] **M4.8** Tab flag "no more alcohol tonight" (D10): blocks alcoholic lines on that tab only; ends with the tab.
 - [ ] **M4.9** Realtime: new lines reach the stations within about a second; offline lines queue (M13.3).
@@ -394,9 +394,9 @@ That is the lawful version of the question (M12.6).
 
 ### M5 — Bar screen and kitchen screen
 
-- [ ] **M5.1** Station mode on a tablet: pick the station(s); a full-screen ticket queue.
-- [ ] **M5.2** Ticket card: table, seat, server, items with modifiers, allergy flags, notes, course, an age timer with thresholds, rush.
-- [ ] **M5.3** Actions: start, bump, partial bump, recall, remake, 86 from the station.
+- [x] **M5.1** Station mode on a tablet: pick the station(s); a full-screen ticket queue. *(Bar and Kitchen ticket screens; a kitchen-only role lands on theirs.)*
+- [~] **M5.2** Ticket card: table, seat, server, items with modifiers, allergy flags, notes, course, an age timer with thresholds, rush. *(Table, items, seat, notes, an age timer that turns a word and colour as it runs long.)*
+- [~] **M5.3** Actions: start, bump, partial bump, recall, remake, 86 from the station. *(Start (making), ready, "All ready"; recall/remake next.)*
 - [ ] **M5.4** All-day counts per item (what's still to make), for the station only.
 - [ ] **M5.5** Expo view for restaurants: every station, assemble and run.
 - [ ] **M5.6** "Ready" pings the server (push and in-app).
@@ -406,12 +406,12 @@ That is the lawful version of the question (M12.6).
 
 ### M6 — Bill, pay, close, cash-up
 
-- [ ] **M6.1** Bill: items, modifiers, taxes by class, optional service charge, rounding. Print it, or share an e-bill.
+- [~] **M6.1** Bill: items, modifiers, taxes by class, optional service charge, rounding. Print it, or share an e-bill. *(The bill and a shareable e-bill (text); taxes and printing wait for the tax profile (M6.2).)*
 - [ ] **M6.2** DB: a tax profile per venue. India: food and soft drinks under GST, alcohol outside GST and taxed by the state, on separate lines (confirm with a CA). Tax-inclusive or exclusive prices by country.
 - [ ] **M6.3** Service charge as a jurisdiction column. In India it can't be added by default (CCPA guidelines), so it's off by default, removable on request and clearly labelled.
-- [ ] **M6.4** Split: evenly, by seat, by item, or custom; each part paid separately; optionally send the split to the guests' Split.
-- [ ] **M6.5** Record payments (D8): cash, card, UPI, other; a tip per payment; change due. A UPI QR for the exact amount on the bill (a `upi://pay` link), with staff confirming it arrived.
-- [ ] **M6.6** DB: `close_tab()` on the server checks paid ≥ total, assigns the invoice number (sequential per financial year), records spend per linked guest (verified venues; D3), frees the table and triggers stock depletion (M9).
+- [~] **M6.4** Split: evenly, by seat, by item, or custom; each part paid separately; optionally send the split to the guests' Split. *(Split evenly 1–6 ways, each part paid separately; by seat/item next.)*
+- [x] **M6.5** Record payments (D8): cash, card, UPI, other; a tip per payment; change due. A UPI QR for the exact amount on the bill (a `upi://pay` link), with staff confirming it arrived. *(The maintainer's call: STAFF DECIDE — any method in their own words, any split, an optional tip; brewdiary records it and never checks it.)*
+- [~] **M6.6** DB: `close_tab()` on the server checks paid ≥ total, assigns the invoice number (sequential per financial year), records spend per linked guest (verified venues; D3), frees the table and triggers stock depletion (M9). *(close_tab() snapshots the subtotal and records the payments; it deliberately does NOT enforce paid ≥ total (staff decide).)*
 - [ ] **M6.7** Refund, and reopen a closed tab: manager only, with a reason, audited.
 - [ ] **M6.8** Receipts: printed (ESC/POS) and in the linked guest's app with "add these to my diary"; the guest writes their own entries. No offers or marketing on receipts.
 - [ ] **M6.9** Cash drawer: float, pay-ins and pay-outs, drops, a blind count at close, expected against counted, variance with a reason.
@@ -477,7 +477,7 @@ That is the lawful version of the question (M12.6).
 - [ ] **M11.1** DB: `reservations` (in-app or phone booking; party size, time, duration, area, table, notes; status booked / confirmed / arrived / seated / no-show / cancelled).
 - [ ] **M11.2** Host screen: today's bookings on a timeline, clashes, seat from a booking.
 - [ ] **M11.3** Contact data (D9): in-app bookings use push; phone numbers live only on the booking and are deleted automatically.
-- [ ] **M11.4** Waitlist: add, quoted wait, notify (push for app users; SMS/WhatsApp needs a provider), seat.
+- [~] **M11.4** Waitlist: add, quoted wait, notify (push for app users; SMS/WhatsApp needs a provider), seat. *(Host waitlist: name or "party of 4", quote, seat, gone — forgets names within a day. Notify-by-push next.)*
 - [ ] **M11.5** Deposits and no-show fees: blocked on payments.
 - [ ] **M11.6** Door: a live headcount against the licensed capacity; an ID-check tally (passed/refused counts only, with no photo, date of birth or ID number).
 - [ ] **M11.7** Events: tonight's room, venue-hosted plans (docs/12 §7.7), guest lists with host approval (007). A listing, never an offer.
@@ -485,7 +485,7 @@ That is the lawful version of the question (M12.6).
 
 ### M12 — Manager: live board, reports, insights
 
-- [ ] **M12.1** Live now: covers, occupancy against capacity, open tabs, sales so far, tickets waiting and average ticket time per station, staff on shift and labour cost so far, the 86 list, low stock, bookings in the next 2 hours, waitlist, approvals waiting, unanswered table requests, incidents.
+- [~] **M12.1** Live now: covers, occupancy against capacity, open tabs, sales so far, tickets waiting and average ticket time per station, staff on shift and labour cost so far, the 86 list, low stock, bookings in the next 2 hours, waitlist, approvals waiting, unanswered table requests, incidents. *(Live board: open tabs, covers, sales and tips today, bar/kitchen waits and times, voids, requests, calls, waitlist, the payment mix.)*
 - [ ] **M12.2** Sales: by day, hour and weekday; by category and item; by area; by payment type; taxes; service charge; comps, voids and refunds; covers; average check per cover (hidden under 5 tabs); table turns; dwell time.
 - [ ] **M12.3** Labour: hours, cost %, overtime, rota against actual.
 - [ ] **M12.4** Stock: variance, pour cost, waste, shrinkage, stock value, days on hand.
@@ -543,11 +543,11 @@ That is the lawful version of the question (M12.6).
 ### M17 — Guest side (user app + website) the bar app needs
 
 - [~] **M17.1** Per-table links: website route `/m/<slug>/t/<code>`, user-app deep-link parsing (`menuSlugFrom`), and the `assetlinks.json` / `apple-app-site-association` paths. *(The two app-link files are served for both apps from env (`src/lib/appLinks.ts`, docs/14 §6); per-table routes still to do.)*
-- [ ] **M17.2** "Join this table" with plain consent wording, and "Leave".
-- [ ] **M17.3** The menu and tonight's room in one tap (docs/12 §7.1).
+- [~] **M17.2** "Join this table" with plain consent wording, and "Leave". *(Ordering from the table: a request the staff accept onto the tab or decline with a reason; signed-in, rate-limited; the venue switches it on.)*
+- [x] **M17.3** The menu and tonight's room in one tap (docs/12 §7.1). *(The table link opens the menu with the table known.)*
 - [ ] **M17.4** Taste share for tonight from the taste card (M7.5): pick the lines, alcohol-free first, allergies; see and revoke it.
 - [ ] **M17.5** Guest code / "my card" QR (M7.2).
-- [ ] **M17.6** Table requests: call staff, bill please, water.
+- [x] **M17.6** Table requests: call staff, bill please, water. *(Call staff, bill please, water — once however often it's tapped.)*
 - [ ] **M17.7** "My tab" (your own lines only), a receipts inbox with "add to diary", send a split to Split.
 - [ ] **M17.8** Book a table from the venue's page. Discover stays a directory, never an offer.
 - [ ] **M17.9** Data rights: tabs, receipts, bookings, table links and taste shares in export and deletion (and fix 1.4 #6).
@@ -613,7 +613,7 @@ where the website needs one, and Dart parity tests where the app mirrors logic.
 | `048_area_map.sql` | **Done.** The area heat map: two guest opt-ins + a venue opt-in, cells of 5+ people and 3+ venues, rounded to 5s, fixed windows, spend bands (D20) |
 | `049_area_signals.sql` | **Done.** Server-only outside signals: places and happenings, never people; cleaned twice; staff read their own area (D21) |
 | `050_shop_counter.sql` | **Done.** The counter: products (MRP), stock ledger, suppliers, `ring_sale()`, retail alcohol rules + dry days (deny-by-default), the excise register |
-| `051_floor.sql` | Areas, tables, table tag codes |
+| `051_service.sql` | **Done.** Areas, tables and table codes; tabs, lines, stations, bills (staff-recorded payments), the table link (requests, calls), the waitlist, the live board, diet marks and allergens |
 | `052_service_day.sql` | Service days (open/close, auto-opened room), table sessions, `join_table()`, linked guests, guest codes |
 | `053_menu_v2.sql` | Sizes, modifiers, allergens, stations and routing (still no discount column) |
 | `054_orders.sql` | Tabs, order lines, line events, the status view, the tab flag |
@@ -688,7 +688,7 @@ with its source, the way `jurisdiction_policy` works.
 | --- | --- | --- |
 | R1 ✓ | M0, M1, M2, M16.4 | Everything the web dashboard does, from a phone; roles fixed; every kind of shop |
 | R1.5 | M12.10–11, M8.10–11, M20.5–6 | The area heat map, outside signals, Ninkasi for hosts, the connection docs |
-| R2 | M3, M4, M5, M6 (record-only payments), M13 (printing, push, offline) | A real night of service: tables, orders, stations, bills |
+| R2 ◐ | M3, M4, M5, M6 (record-only payments), M13 (printing, push, offline) | A real night of service: tables, orders, stations, bills — the core is built (051); printing, push, offline next |
 | R3 | M7, M8, M17 | Guests link themselves; usuals, taste shares, AI tips; table requests; receipts |
 | R4 | M9 | Stock, recipes, counts, variance |
 | R5 | M10, M11 | Rota, time clock, tips; bookings, waitlist, door |

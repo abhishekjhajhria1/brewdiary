@@ -15,7 +15,13 @@ class MenuItem {
   /// The diary's DrinkType names plus 'food'.
   final String? kind;
   final bool noAlcohol;
-  const MenuItem({required this.id, required this.section, required this.name, this.description, this.price, this.kind, this.noAlcohol = false});
+
+  /// India's menu mark (051): veg, non_veg, egg or vegan.
+  final String? diet;
+
+  /// From the EU's 14 (051).
+  final List<String> allergens;
+  const MenuItem({required this.id, required this.section, required this.name, this.description, this.price, this.kind, this.noAlcohol = false, this.diet, this.allergens = const []});
 
   /// The DrinkType to log this as (food logs nothing).
   DrinkType? get drinkType => kind == null || kind == 'food' ? null : DrinkType.parse(kind);
@@ -47,6 +53,18 @@ String? menuSlugFrom(Uri uri) {
   return RegExp(r'^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])$').hasMatch(slug) ? slug : null;
 }
 
+/// A table's own link (`/t/<code>`, 051) → its 8-character code, or null. The twin of
+/// parseTableCode() in src/lib/tableOrder.ts.
+String? tableCodeFrom(Uri uri) {
+  final seg = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+  if (seg.length < 2 || seg[0] != 't') return null;
+  final code = seg[1].trim().toLowerCase();
+  return RegExp(r'^[0-9a-z]{8}$').hasMatch(code) ? code : null;
+}
+
+/// The URL a table's QR / NFC tag carries.
+String tableUrl(String code, [String origin = 'https://bwdy.site']) => '${origin.replaceAll(RegExp(r'/$'), '')}/t/$code';
+
 /// Rows from venue_menu() → a menu, sections in first-seen order.
 Menu? groupMenu(List<Map<String, dynamic>> rows) {
   if (rows.isEmpty) return null;
@@ -71,6 +89,8 @@ Menu? groupMenu(List<Map<String, dynamic>> rows) {
       price: price == null ? null : (price is num ? price.toDouble() : double.tryParse('$price')),
       kind: r['kind'] as String?,
       noAlcohol: r['no_alcohol'] == true,
+      diet: r['diet'] as String?,
+      allergens: [for (final a in (r['allergens'] as List?) ?? const []) '$a'],
     ));
   }
   return Menu(

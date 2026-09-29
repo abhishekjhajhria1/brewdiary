@@ -22,7 +22,7 @@ interface App {
   androidCerts: keyof AppLinkEnv;
 }
 
-const GUEST: App = { id: "site.bwdy.brewdiary", paths: ["/p/*", "/u/*", "/party/*", "/m/*"], androidCerts: "ANDROID_CERT_SHA256_GUEST" };
+const GUEST: App = { id: "site.bwdy.brewdiary", paths: ["/p/*", "/u/*", "/party/*", "/m/*", "/t/*"], androidCerts: "ANDROID_CERT_SHA256_GUEST" };
 const BAR: App = { id: "site.bwdy.bar", paths: ["/join/*"], androidCerts: "ANDROID_CERT_SHA256_BAR" };
 
 export function appForHost(host: string): App {

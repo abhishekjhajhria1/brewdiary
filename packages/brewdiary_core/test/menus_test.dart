@@ -83,4 +83,19 @@ void main() {
       expect(menuPicks(menu, [entry('dry day', DrinkType.none)]), isEmpty);
     });
   });
+
+  test('a table\'s own link (051) — the same answers as tests/tableOrder.test.ts', () {
+    expect(tableCodeFrom(Uri.parse('https://bwdy.site/t/AbC12345')), 'abc12345');
+    expect(tableCodeFrom(Uri.parse('https://bwdy.site/t/abc1234')), isNull);
+    expect(tableCodeFrom(Uri.parse('https://bwdy.site/m/abc12345')), isNull);
+    expect(tableUrl('abc12345'), 'https://bwdy.site/t/abc12345');
+  });
+
+  test('menus carry the diet mark and allergens (051)', () {
+    final m = groupMenu([
+      {'venue_name': 'V', 'currency': 'INR', 'item_id': 'x', 'section': 'Food', 'name': 'Paneer Tikka', 'kind': 'food', 'no_alcohol': true, 'diet': 'veg', 'allergens': ['milk']},
+    ])!;
+    expect(m.sections.first.items.first.diet, 'veg');
+    expect(m.sections.first.items.first.allergens, ['milk']);
+  });
 }

@@ -45,6 +45,9 @@ If you can read a recipe, you can read this.
     — the till's checkout (priced by the server, sold by weight too), stock that follows every sale,
     suppliers, the law on a bottle (ID check, dry days, legal hours, per-sale limits, MRP — all
     deny-by-default), how to open a state for alcohol sales, and the excise register.
+16. **[16 — Service and ordering](16-service-and-ordering.md)** — the floor, tabs, the bar and kitchen
+    screens, the bill (staff decide how it's paid), the host's waitlist, the live board, and the table's
+    own QR: the menu with the veg mark and allergens, ordering from the table, "call staff / bill please".
 
 ## The one-paragraph version
 brewdiary is a **drink diary**. You open it, tap tonight's date on a calendar, and jot down what you

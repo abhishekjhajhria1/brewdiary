@@ -112,5 +112,7 @@ Menu sampleMenu() => groupMenu([
           'price': r.$5,
           'kind': r.$6,
           'no_alcohol': r.$7,
+          if (r.$1 == 'm6') 'diet': 'veg',
+          if (r.$1 == 'm6') 'allergens': ['gluten'],
         },
     ])!;

@@ -26,6 +26,10 @@ export interface MenuItem {
   price?: number;
   kind?: MenuKind;
   noAlcohol: boolean;
+  /** India's menu mark (051): veg, non_veg, egg or vegan. */
+  diet?: "veg" | "non_veg" | "egg" | "vegan";
+  /** From the EU's 14 (051). */
+  allergens?: string[];
 }
 export interface MenuSection {
   name: string;
@@ -68,6 +72,8 @@ export function groupMenu(rows: Record<string, unknown>[]): Menu | null {
       price: r.price == null ? undefined : Number(r.price),
       kind: (r.kind as MenuKind) || undefined,
       noAlcohol: Boolean(r.no_alcohol),
+      diet: (r.diet as MenuItem["diet"]) || undefined,
+      allergens: Array.isArray(r.allergens) ? (r.allergens as string[]) : [],
     });
   }
   return {
