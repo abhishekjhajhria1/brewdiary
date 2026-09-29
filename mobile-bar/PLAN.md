@@ -10,7 +10,7 @@ How to read it:
 - Modules M0–M21 are the push units: one module is built, checked and pushed before the next.
 - **Section 4 lists decisions** that change what gets built. Each has a recommendation; the maintainer
   confirms or overrides it before the module that depends on it starts.
-- Database changes are new migrations in `supabase/` (044 onward). The maintainer runs them, then
+- Database changes are new migrations in `supabase/` (045 onward). The maintainer runs them, then
   `npm run db:audit` and `npm run db:verify`.
 - "Exists" means it is already in the repo and the app reuses it instead of rebuilding it.
 
@@ -130,6 +130,22 @@ Server routes the app can call today: `/api/venue-ai` (manager advisor), `/api/b
    own age (roughly 18 to 25). The door and ID-check features need state rows.
 8. **CI never runs Flutter.** `.github/workflows/ci.yml` runs lint/test/build and the database checks;
    `test_m_app`'s tests don't run anywhere automatically. Add jobs for `test_m_app` and `mobile-bar`.
+   *(Fixed: a `flutter` job now runs analyze + test.)*
+
+Found once the database checks could run on a local copy (`npm run db:local`), all fixed:
+
+9. **`db:verify` could not get past its first expected refusal.** A refused statement aborted the
+   whole transaction, so every later check crashed; the script had also drifted from the schema (a
+   verification request without the required contact, rooms opened by an owner who wasn't on the
+   team, checks written before claims and the 030 jurisdiction re-check). It now runs each expected
+   refusal inside a savepoint and passes end to end.
+10. **The guest card never loaded.** `venue_guest_card()` (040) read a column with the same name as
+    one of its outputs (`tags`), so every call failed with "column reference is ambiguous". Fixed in
+    `supabase/044_fix_guest_card.sql`.
+11. **Reporting a person failed in both apps.** They sent an upsert with a conflict target; Postgres
+    then also checks the new row against the table's read policies, and `reports` has none by
+    design, so every report was refused. Both apps now send a plain insert and treat the duplicate
+    error as success (dedup still silent).
 
 ---
 
@@ -547,27 +563,28 @@ That is the lawful version of the question (M12.6).
 
 ## 6. Database work, in order
 
-Numbering continues after `043_challenge_kinds.sql`. Each file lands whole or not at all, and the
-maintainer runs it. Every migration also gets a db:audit section, a db:verify scene, a `src/lib` mirror
+Numbering continues after `045_fix_guest_card.sql`. Each file lands whole or not at all, and the
+maintainer runs it; `npm run db:local` proves it applies to a fresh schema and passes db:audit and
+db:verify first. Every migration also gets a db:audit section, a db:verify scene, a `src/lib` mirror
 where the website needs one, and Dart parity tests where the app mirrors logic.
 
 | Migration | Adds |
 | --- | --- |
-| `044_staff_roles.sql` | New roles, `role_capabilities`, `venue_can()`, the staff RLS fixes, venue fields locked after verification, staff invites |
-| `045_capability_gates.sql` | Existing `is_venue_staff()` gates moved to capability checks |
-| `046_floor.sql` | Areas, tables, table tag codes |
-| `047_service_day.sql` | Service days (open/close, auto-opened room), table sessions, `join_table()`, linked guests, guest codes |
-| `048_menu_v2.sql` | Sizes, modifiers, allergens, stations and routing (still no discount column) |
-| `049_orders.sql` | Tabs, order lines, line events, the status view, the tab flag |
-| `050_payments.sql` | Tax profiles, service charge, payments, `close_tab()`, invoice numbers, receipts, refunds |
-| `051_cash.sql` | Drawers, cash movements, the day-close snapshot (Z) |
-| `052_guest_link.sql` | `taste_shares`, the usuals function, table requests |
-| `053_inventory.sql` | Items, locations, recipes, stock movements, counts, suppliers, purchase orders, deliveries |
-| `054_labour.sql` | Rota, time clock, availability, time off, swaps, tip pools |
-| `055_bookings.sql` | Reservations, waitlist, door tallies |
-| `056_compliance.sql` | Refusal log, incidents, licences, new jurisdiction columns and state rows |
-| `057_devices_audit.sql` | Staff devices, the audit log |
-| `058_reports.sql` | Live board, sales, labour and stock reports (derived), menu opens |
+| `045_staff_roles.sql` | New roles, `role_capabilities`, `venue_can()`, the staff RLS fixes, venue fields locked after verification, staff invites |
+| `046_capability_gates.sql` | Existing `is_venue_staff()` gates moved to capability checks |
+| `047_floor.sql` | Areas, tables, table tag codes |
+| `048_service_day.sql` | Service days (open/close, auto-opened room), table sessions, `join_table()`, linked guests, guest codes |
+| `049_menu_v2.sql` | Sizes, modifiers, allergens, stations and routing (still no discount column) |
+| `050_orders.sql` | Tabs, order lines, line events, the status view, the tab flag |
+| `051_payments.sql` | Tax profiles, service charge, payments, `close_tab()`, invoice numbers, receipts, refunds |
+| `052_cash.sql` | Drawers, cash movements, the day-close snapshot (Z) |
+| `053_guest_link.sql` | `taste_shares`, the usuals function, table requests |
+| `054_inventory.sql` | Items, locations, recipes, stock movements, counts, suppliers, purchase orders, deliveries |
+| `055_labour.sql` | Rota, time clock, availability, time off, swaps, tip pools |
+| `056_bookings.sql` | Reservations, waitlist, door tallies |
+| `057_compliance.sql` | Refusal log, incidents, licences, new jurisdiction columns and state rows |
+| `058_devices_audit.sql` | Staff devices, the audit log |
+| `059_reports.sql` | Live board, sales, labour and stock reports (derived), menu opens |
 
 ---
 

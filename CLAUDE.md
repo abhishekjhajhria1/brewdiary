@@ -40,11 +40,15 @@ wrong jurisdiction's rules. That has happened here. So after ANY migration:
 ```bash
 npm run db:audit   # READ-ONLY. Asserts the SHAPE of the live schema + every security invariant.
 npm run db:verify  # Plays a whole night against the real schema IN A TRANSACTION IT ROLLS BACK.
+npm run db:local   # Both, on a THROWAWAY local Postgres built from supabase/ (no secrets needed).
 ```
 
 `db:audit` is what caught `perk_policy()` judging every venue on earth by Massachusetts law —
 a bug no unit test could see, because every caller was a trigger and nothing ever threw.
-Both run in CI (`.github/workflows/ci.yml`) on every push to `main`.
+Both run in CI (`.github/workflows/ci.yml`) on every push to `main`. `db:local`
+(`scripts/db-local.sh`) applies schema.sql + every numbered migration to a fresh Postgres and runs
+the same two checks there — on every push and PR — so a new migration is proven before the
+maintainer runs it for real. It needs the Postgres server binaries (`initdb`, `pg_ctl`).
 
 ---
 

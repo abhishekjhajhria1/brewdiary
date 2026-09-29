@@ -37,6 +37,45 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
+  # The same audit + flow, on a THROWAWAY Postgres built from supabase/ — every migration
+  # applied in order to a fresh schema. Needs no secrets, so it runs on every push and PR:
+  # a migration that fails to apply, or a rule it breaks, shows up before the maintainer
+  # runs it for real. (scripts/db-local.sh; Postgres is preinstalled on the runner.)
+  database-local:
+    name: every migration · audit · flow (throwaway Postgres)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:local
+
+  # The Flutter apps. Their parity tests prove the Dart ports behave exactly like src/lib,
+  # so they belong in the gates too.
+  flutter:
+    name: flutter · analyze · test (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [test_m_app]
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.5
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
   database:
     name: schema audit · end-to-end flow
     runs-on: ubuntu-latest

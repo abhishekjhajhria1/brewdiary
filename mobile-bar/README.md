@@ -17,9 +17,9 @@ scanning the repo (section 1.4).
 ## How work lands here
 
 - One module at a time, pushed when its checks pass.
-- Database changes go in `supabase/` as new migrations (044 onward), with `scripts/db-audit.mjs` and
-  `scripts/verify-flow.mjs` updated alongside. The maintainer runs migrations, then `npm run db:audit`
-  and `npm run db:verify`.
+- Database changes go in `supabase/` as new migrations (045 onward), with `scripts/db-audit.mjs` and
+  `scripts/verify-flow.mjs` updated alongside and proven with `npm run db:local`. The maintainer runs
+  migrations for real, then `npm run db:audit` and `npm run db:verify`.
 - Logic shared with the guest app lives in one place (PLAN.md, decision D1), covered by parity tests.
 - UI work uses the `taste-engine` skill; charts use `dataviz`.
 - House rules from [`CLAUDE.md`](../CLAUDE.md) apply unchanged, above all: nothing rewards drinking

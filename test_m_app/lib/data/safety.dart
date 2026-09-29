@@ -4,6 +4,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../config.dart';
 import 'auth.dart';
@@ -59,17 +60,22 @@ class SafetyApi {
   }
 
   /// Write-only; reporting the same person twice is a silent no-op (dedup is never revealed).
+  ///
+  /// A plain insert: an upsert names a conflict target, and Postgres then checks the new
+  /// row against the SELECT policies too — reports has none (nobody reads a report back),
+  /// so every upsert was refused. A duplicate (unique_violation, 23505) is answered like a
+  /// success, so dedup is still never revealed.
   static Future<String?> report(String subjectUserId, ReportReason reason, {String? note, String? planId}) async {
     final c = db;
     final me = auth.meId;
     if (c == null || me == null) return 'offline';
     try {
-      await c.from('reports').upsert(
+      await c.from('reports').insert(
         {'reporter_id': me, 'subject_user_id': subjectUserId, 'plan_id': planId, 'reason': reason.name, 'note': (note?.trim().isEmpty ?? true) ? null : note!.trim()},
-        onConflict: 'reporter_id,subject_user_id',
-        ignoreDuplicates: true,
       );
       return null;
+    } on PostgrestException catch (e) {
+      return e.code == '23505' ? null : "Couldn't send the report — try again.";
     } catch (_) {
       return "Couldn't send the report — try again.";
     }
