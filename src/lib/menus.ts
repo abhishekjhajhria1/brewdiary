@@ -34,7 +34,8 @@ export interface MenuSection {
 export interface Menu {
   venueName: string;
   venueCity?: string;
-  venueKind: "bar" | "store";
+  /** One of venueKinds.ts's kinds (bar, club, restaurant, cafe, store, sweet_shop, …). */
+  venueKind: string;
   currency: string;
   sections: MenuSection[];
 }
@@ -72,7 +73,7 @@ export function groupMenu(rows: Record<string, unknown>[]): Menu | null {
   return {
     venueName: String(first.venue_name),
     venueCity: (first.venue_city as string) || undefined,
-    venueKind: first.venue_kind === "store" ? "store" : "bar",
+    venueKind: typeof first.venue_kind === "string" ? first.venue_kind : "bar",
     currency: String(first.currency ?? "INR"),
     sections,
   };

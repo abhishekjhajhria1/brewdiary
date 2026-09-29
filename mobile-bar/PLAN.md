@@ -1,8 +1,22 @@
 # mobile-bar — the venue staff app: everything that has to be built
 
-**Status (2026-09-29): planning.** Nothing is built in this folder yet. This is the full list of what a
-bar / restaurant staff app needs, written after scanning the whole repo: the docs, every venue migration,
-the web bar dashboard, the Ninkasi routes and the Flutter user app.
+**Status (2026-09-29): R1 built.** M0–M2 are in this folder (the app, its demo venue and tests) and in
+`supabase/044`–`047` (roles, capability gates, every kind of shop). This is the full list of what a
+bar / restaurant / shop staff app needs, written after scanning the whole repo: the docs, every venue
+migration, the web bar dashboard, the Ninkasi routes and the Flutter user app.
+
+**Standing requirements from the maintainer (apply to every module):**
+- **iOS and Android, phones and tablets.** Every screen works in portrait on a phone and in both
+  orientations on a tablet; station screens are tablet-first. Nothing platform-only unless it has a
+  fallback on the other platform.
+- **Everything connects seamlessly.** The guest app, the website, the bar web dashboard and this app
+  are windows onto one Supabase database; a change in one shows in the others without a manual step
+  (realtime where it matters, refresh-on-open everywhere else).
+- **Onboarding a venue is smooth and minimal.** Sign in with an emailed code → name + kind + country →
+  you're in, with a working room or till. Everything else (location, verification, perks, menu, team)
+  is offered later, one card at a time, never a long form up front.
+- **Every kind of place**: bars, clubs, restaurants, cafés, liquor stores, sweet shops, bakeries and
+  other shops (047). Words, tabs and legal rules follow the kind.
 
 How to read it:
 
@@ -10,8 +24,9 @@ How to read it:
 - Modules M0–M21 are the push units: one module is built, checked and pushed before the next.
 - **Section 4 lists decisions** that change what gets built. Each has a recommendation; the maintainer
   confirms or overrides it before the module that depends on it starts.
-- Database changes are new migrations in `supabase/` (045 onward). The maintainer runs them, then
-  `npm run db:audit` and `npm run db:verify`.
+- Database changes are new migrations in `supabase/` (048 onward now). `npm run db:local` proves each
+  one on a throwaway Postgres first; the maintainer runs them for real, then `npm run db:audit` and
+  `npm run db:verify`.
 - "Exists" means it is already in the repo and the app reuses it instead of rebuilding it.
 
 Contents: [0 Rules](#0-the-rules-this-app-inherits) · [1 What exists](#1-what-exists-today-from-the-scan) ·
@@ -105,17 +120,18 @@ Server routes the app can call today: `/api/venue-ai` (manager advisor), `/api/b
    policy has no column limits, and the guard trigger only protects `verified` and `created_by`.
    Changing the country can switch on perks the real location forbids. Changing the slug breaks every
    NFC tag and QR already printed. Lock these fields after verification (service role only), or send
-   the venue back through verification.
+   the venue back through verification. *(Fixed in 045: locked once verified, with `serves_alcohol` added in 047.)*
 2. **Staff roles have holes.** `venue_staff_insert` doesn't check the role, so a manager can add
    someone as `owner`. `venue_staff_delete` lets a manager remove the owner's row. There is no update
    path, so changing a role means removing and re-adding the person. Fix before adding roles.
+   *(Fixed in 045: `can_grant_role`, owner row protected, `set_staff_role`.)*
 3. **Every staff member can do everything any staff member can.** Nineteen gates call
    `is_venue_staff()`: nine functions (`record_spend`, `staff_award`, `redeem_perk`, `record_visit`,
    `set_guest_note`, `venue_guest_card`, `perk_status`, `room_guests`, `parties_guard_venue`) and ten
    policies (reads on venues, staff, parties, spend, redemptions, check-ins, verifications, menus and
    guest notes, plus the guest-note delete). New
    roles such as kitchen or host would inherit tab, perk and guest-book powers unless these become
-   capability checks.
+   capability checks. *(Fixed in 046: each gate now asks `venue_can()` for one capability.)*
 4. **A store can create a "visit" for anyone.** The till searches every user (`search_users`), and
    `record_visit()` needs no proof the guest is there. A punch counts as an interaction, which then
    allows writing a guest-book note on that person. Identify guests by a code they show from their own
@@ -151,9 +167,10 @@ Found once the database checks could run on a local copy (`npm run db:local`), a
 
 ## 2. The app at a glance
 
-- **Phones** (each person's own phone, signed in as themselves): servers, bartenders, hosts, managers.
-- **Tablets** (shared, mounted): bar screen, kitchen screen, host stand, till. The kiosk wall board
-  stays a web URL.
+- **Phones** (each person's own phone, iOS or Android, signed in as themselves): servers, bartenders,
+  hosts, managers, shop staff.
+- **Tablets** (iPad or Android, shared or mounted): bar screen, kitchen screen, host stand, till. Tablets
+  rotate; lists become two panes. The kiosk wall board stays a web URL.
 - **One app, many modes.** The role decides the home screen; a tablet can be switched into a station.
 
 ```
@@ -288,7 +305,10 @@ That is the lawful version of the question (M12.6).
 | D10 | Refusals and cut-offs | A "no more alcohol tonight" flag on the **tab** that ends with the tab. Refusal and incident logs have no guest id. | Nothing negative may reach a guest's profile (positive-only rule). |
 | D11 | Promotions | No happy-hour or discount engine. Price changes are menu edits; comps need a reason and approval; perks stay the only reward, gated by jurisdiction. | Time-limited drink discounts are banned in several markets and conflict with "nothing rewards drinking more". |
 | D12 | Ordering from the table | "Call staff" and "bill please" first. Guests ordering alcohol from their phone waits for payments and a new deny-by-default jurisdiction column. | docs/12 §7.3; responsible-service law varies. |
-| D13 | Stores (off-licence) | v1 store mode = till punch card (with the guest-code fix), shelf, stock, staff. No retail POS. | A store is not a quieter bar (030). |
+| D13 | Stores (off-licence) | Full liquor-store module (M16): till punch card (with the guest-code fix), shelf, stock by brand and pack, a checkout with an age check, dry days and legal hours, MRP and per-sale quantity limits (deny-by-default rows), excise registers, suppliers. | A store is not a quieter bar (030). The maintainer asked for full store scope. |
+| D19 | Other shops | Sweet shops, bakeries, cafés, restaurants and any shop use the same app (047). A place that sells no alcohol is outside alcohol-promotion law, but still deny-by-default on the country. Counters (store, sweet shop, bakery, shop) run a till and punch cards, not rooms. | One app, many kinds; the words follow the kind ("counter", "shelf", "menu"). |
+| D20 | The area heat map | Cells of a coarse geohash with 5+ consenting people each: spend as bands, taste mix, busy hours, taste "personas" (what people like), never age, gender, religion or anyone's identity. | "The kind of people outside" answered with consented, k-anonymous aggregates only. |
+| D21 | Outside data (web scraping) | Scraping is done by separate tools. What they produce comes in through a server-only import that keeps business-level public facts (venues, events, prices, opening hours, reviews as counts) and drops anything about a person. It feeds the heat map and Ninkasi for hosts. | No workaround for consent: public facts about places, never profiles of people. |
 | D14 | Groups of venues | Owners can roll up sales, stock and labour across their venues; guest data never crosses venues. | The guest consented to one venue. |
 | D15 | Offline | A local SQLite outbox (for example `drift`), client ids, idempotent server functions. Order entry and LAN printing work offline; payments, AI and reports need a connection. | Bars have basements and bad signal. |
 | D16 | Push | FCM (Android, and iOS through APNs), sent from the website server or a Supabase Edge Function; credentials server-side only. | The user app has local notifications only. |
@@ -301,49 +321,50 @@ That is the lawful version of the question (M12.6).
 
 ### M0 — Foundations
 
-- [ ] **M0.1** Scaffold the Flutter app in `mobile-bar/` (Android + iOS) with the same toolchain and lints as `test_m_app`.
-- [ ] **M0.2** App id, name and icons (D17). Android 12+ / iOS 17+ like the user app; phones portrait, tablets rotate.
-- [ ] **M0.3** Config like `test_m_app/lib/config.dart`: `--dart-define-from-file=env.json`, anon key only, `SITE_URL` for server routes, `env.example.json`, `env.json` git-ignored.
-- [ ] **M0.4** Demo mode when there's no env: a seeded, clearly labelled demo venue for screenshots, golden tests and demos. (No offline-only production mode: a venue app without the database isn't useful.)
+- [x] **M0.1** Scaffold the Flutter app in `mobile-bar/` (Android + iOS) with the same toolchain and lints as `test_m_app`.
+- [x] **M0.2** App id, name and icons (D17). Android 12+ / iOS 17+ like the user app; phones portrait, tablets rotate.
+- [x] **M0.3** Config like `test_m_app/lib/config.dart`: `--dart-define-from-file=env.json`, anon key only, `SITE_URL` for server routes, `env.example.json`, `env.json` git-ignored.
+- [x] **M0.4** Demo mode when there's no env: a seeded, clearly labelled demo venue for screenshots, golden tests and demos. (No offline-only production mode: a venue app without the database isn't useful.)
 - [x] **M0.5** Shared core (D1): `packages/brewdiary_core` — dates, money (`₹1,23,456`; currency from the venue), the jurisdiction mirror, drink canonicalisation, menus — used by both apps, with the parity tests.
-- [ ] **M0.6** Theme: reuse the liquid-glass tokens (`test_m_app/lib/ui/theme.dart`), fonts (Hanken Grotesk, Newsreader), Phosphor icons. Add staff tokens: status colours with shapes and labels, a station type scale, and a reduced-blur mode for cheap tablets.
-- [ ] **M0.7** Data plumbing like `test_m_app/lib/data/base.dart` (`db`, `Rev`, `rows()`), plus a realtime helper and the outbox (M13.3).
-- [ ] **M0.8** Shell: role-based navigation; phone tabs and tablet station layouts; states for loading, empty, offline, "couldn't reach brewdiary" with retry, and "your role can't do this".
+- [~] **M0.6** Theme: reuse the liquid-glass tokens (`test_m_app/lib/ui/theme.dart`), fonts (Hanken Grotesk, Newsreader), Phosphor icons. Add staff tokens: status colours with shapes and labels, a station type scale, and a reduced-blur mode for cheap tablets. *(Done: tokens, fonts, icons, status tones. Left: station type scale, reduced blur.)*
+- [~] **M0.7** Data plumbing like `test_m_app/lib/data/base.dart` (`db`, `Rev`, `rows()`), plus a realtime helper and the outbox (M13.3). *(Done: `Backend` with Supabase and demo implementations, `Rev` signals. Left: realtime, outbox.)*
+- [~] **M0.8** Shell: role-based navigation; phone tabs and tablet station layouts; states for loading, empty, offline, "couldn't reach brewdiary" with retry, and "your role can't do this". *(Done: phone tabs by capability, loading/empty/retry. Left: tablet station layouts, offline state.)*
 - [ ] **M0.9** Translation scaffolding (English first); number and date formats from the venue's country.
 - [ ] **M0.10** Crash reporting with no personal data (choose a provider); off in demo mode.
-- [ ] **M0.11** CI: `flutter analyze` + `flutter test` jobs for `mobile-bar` and `test_m_app` (fixes 1.4 #8).
-- [ ] **M0.12** `mobile-bar/README.md`: run, build, test.
+- [x] **M0.11** CI: `flutter analyze` + `flutter test` jobs for `mobile-bar` and `test_m_app` (fixes 1.4 #8).
+- [x] **M0.12** `mobile-bar/README.md`: run, build, test.
 
 ### M1 — Sign-in, venues, roles
 
-- [ ] **M1.1** Sign in with an email code or password, using the same accounts as the website (the patterns in `test_m_app/lib/data/auth.dart`). Password reset finishes on the website.
-- [ ] **M1.2** Venue picker from `venue_staff` (like `useMyVenues`); remember the last venue; switch venues.
-- [ ] **M1.3** Create a venue (name, slug, city, bar/store, country/region), showing the jurisdiction note before saving.
-- [ ] **M1.4** Verification: request, withdraw, status, and what unlocks once verified.
-- [ ] **M1.5** DB: extend the role check (supervisor, server, host, kitchen). Add `venue_can(venue, user, capability)`, a definer function backed by a seeded, server-only `role_capabilities` table (data, like `jurisdiction_policy`). db:audit pins the critical rows (kitchen can't record spend, and so on).
-- [ ] **M1.6** DB: close the staff holes (1.4 #2). Only an owner adds or removes managers; nobody can add an owner from the app; a role-change path that can't grant above your own rank.
-- [ ] **M1.7** DB: lock country, region, kind and slug after verification (1.4 #1).
-- [ ] **M1.8** DB: move the `is_venue_staff()` gates to capability checks wherever the role matters (1.4 #3).
-- [ ] **M1.9** Staff invites: by handle (exists) and by an invite link / QR carrying a role and an expiry; accept it in the app.
-- [ ] **M1.10** Team screen: roster, change role, remove, leave the venue, my "take thanks" switch (`thankable`).
+- [x] **M1.1** Sign in with an email code or password, using the same accounts as the website (the patterns in `test_m_app/lib/data/auth.dart`). Password reset finishes on the website.
+- [x] **M1.2** Venue picker from `venue_staff` (like `useMyVenues`); remember the last venue; switch venues.
+- [x] **M1.3** Create a venue (name, slug, city, bar/store, country/region), showing the jurisdiction note before saving.
+- [x] **M1.4** Verification: request, withdraw, status, and what unlocks once verified.
+- [x] **M1.5** DB: extend the role check (supervisor, server, host, kitchen). Add `venue_can(venue, user, capability)`, a definer function backed by a seeded, server-only `role_capabilities` table (data, like `jurisdiction_policy`). db:audit pins the critical rows (kitchen can't record spend, and so on).
+- [x] **M1.6** DB: close the staff holes (1.4 #2). Only an owner adds or removes managers; nobody can add an owner from the app; a role-change path that can't grant above your own rank.
+- [x] **M1.7** DB: lock country, region, kind and slug after verification (1.4 #1).
+- [x] **M1.8** DB: move the `is_venue_staff()` gates to capability checks wherever the role matters (1.4 #3).
+- [x] **M1.9** Staff invites: by handle (exists) and by an invite link / QR carrying a role and an expiry; accept it in the app.
+- [x] **M1.10** Team screen: roster, change role, remove, leave the venue, my "take thanks" switch (`thankable`).
 - [ ] **M1.11** Shared-device mode (D2): add a person to this device, PIN switch, auto-lock when idle, a "signed in as" banner, sign everyone out.
-- [ ] **M1.12** Removal takes effect at once (RLS checks every call). Test it; the app says "you're no longer on this team" and clears cached data.
-- [ ] **M1.13** Capability-aware UI: screens and buttons appear only for roles that can use them; the server refuses the rest anyway.
+- [~] **M1.12** Removal takes effect at once (RLS checks every call). Test it; the app says "you're no longer on this team" and clears cached data.
+- [ ] **M1.14** Minimal onboarding: first run is sign in → name, kind, country → in. A short "next steps" card list (location, verify, first perk, menu, invite the team) that disappears as each is done; nothing blocks service on day one.
+- [x] **M1.13** Capability-aware UI: screens and buttons appear only for roles that can use them; the server refuses the rest anyway.
 
 ### M2 — Everything the web dashboard does, on the phone
 
-- [ ] **M2.1** Tonight: open a room (board 4/6/8 h), room code, QR, kiosk link, share link.
-- [ ] **M2.2** Room guests (`room_guests`), give vibe (four positive staff reasons), record a tab (`record_spend`), perk tiers and claim (`perk_status`, `redeem_perk`).
-- [ ] **M2.3** Store till: punch a card (`record_visit`) using the guest code (M7.2), not a search of all users.
-- [ ] **M2.4** Menu / shelf editor (`venue_menu_items`, 400-item cap): availability, order, sections.
-- [ ] **M2.5** Write NFC tags natively (Android and iOS, e.g. `nfc_manager`); share and print the QR.
-- [ ] **M2.6** Perks editor: up to 3 tiers, visits or spend, alcoholic reward only where allowed, the jurisdiction note; quiet nights.
-- [ ] **M2.7** Insights (`venue_insights` v2): hidden values show "—", never 0; weekday chart; trend against the previous window; average tab only when there are 5+ tabs.
-- [ ] **M2.8** Ninkasi advisor (`/api/venue-ai`) with its scripted fallback when the AI is off.
-- [ ] **M2.9** Area trends: set the venue location once (device → coarse geohash, precision 4); show `area_taste_trends`.
-- [ ] **M2.10** Guest book: guest card, notes and tags, only for guests who have been here.
-- [ ] **M2.11** Kudos: my thanks (`my_kudos`), the team total (`venue_kudos_total`).
-- [ ] **M2.12** Setup: edit name/city, location, verification, delete the venue (owner only).
+- [x] **M2.1** Tonight: open a room (board 4/6/8 h), room code, QR, kiosk link, share link.
+- [x] **M2.2** Room guests (`room_guests`), give vibe (four positive staff reasons), record a tab (`record_spend`), perk tiers and claim (`perk_status`, `redeem_perk`).
+- [~] **M2.3** Store till: punch a card (`record_visit`) using the guest code (M7.2), not a search of all users. *(Built on the name search for now; the guest-code handshake is next.)*
+- [x] **M2.4** Menu / shelf editor (`venue_menu_items`, 400-item cap): availability, order, sections.
+- [~] **M2.5** Write NFC tags natively (Android and iOS, e.g. `nfc_manager`); share and print the QR. *(QR and share done; native NFC writing left.)*
+- [x] **M2.6** Perks editor: up to 3 tiers, visits or spend, alcoholic reward only where allowed, the jurisdiction note; quiet nights.
+- [x] **M2.7** Insights (`venue_insights` v2): hidden values show "—", never 0; weekday chart; trend against the previous window; average tab only when there are 5+ tabs.
+- [x] **M2.8** Ninkasi advisor (`/api/venue-ai`) with its scripted fallback when the AI is off.
+- [x] **M2.9** Area trends: set the venue location once (device → coarse geohash, precision 4); show `area_taste_trends`.
+- [x] **M2.10** Guest book: guest card, notes and tags, only for guests who have been here.
+- [x] **M2.11** Kudos: my thanks (`my_kudos`), the team total (`venue_kudos_total`).
+- [x] **M2.12** Setup: edit name/city, location, verification, delete the venue (owner only).
 - [ ] **M2.13** Parity check: the same fixture gives the same numbers on the web and the phone.
 
 ### M3 — Floor and tables
@@ -420,6 +441,8 @@ That is the lawful version of the question (M12.6).
 - [ ] **M8.7** Reorder suggestions from par levels and sales (deterministic first, AI wording optional).
 - [ ] **M8.8** An end-of-night summary for managers.
 - [ ] **M8.9** Switches: off until `AI_API_KEY` is set, opt-in per venue, a kill switch.
+- [ ] **M8.10** Ninkasi for hosts: one assistant for every role that knows the venue's live state (open room, 86 list, menu, stock, bookings), the area heat map and the imported outside signals (D21), and answers "what should I know tonight?" — events nearby, what the area is drinking, what's running low.
+- [ ] **M8.11** A heat-map guide: Ninkasi explains the map in plain words ("the cells east of you lean coffee and dessert on weekday evenings; spend there is mostly ₹500–1,000") and suggests menu or hours changes, never targeting a person.
 
 ### M9 — Inventory
 
@@ -466,6 +489,8 @@ That is the lawful version of the question (M12.6).
 - [ ] **M12.3** Labour: hours, cost %, overtime, rota against actual.
 - [ ] **M12.4** Stock: variance, pour cost, waste, shrinkage, stock value, days on hand.
 - [ ] **M12.5** Guests: the existing k-anonymous insights, the share of covers from linked guests, perk use, booking no-show rate, the team kudos total.
+- [ ] **M12.10** The area heat map (D20): cells at geohash precision 5–6 around the venue, each shown only with 5+ consenting people; layers for footfall by hour, spend band, taste mix and taste personas; a plain guide under the map.
+- [ ] **M12.11** Outside signals (D21): events, openings, holidays and public venue facts from the import, on the map and in the briefing.
 - [ ] **M12.6** The area ("the kind of people outside"): area taste trends (5+ people per row) and menu opens by hour (docs/12 §7.4, counts of 5+). Never who is nearby, never demographics.
 - [ ] **M12.7** Exports: CSV/PDF, an accountant export, a scheduled emailed summary (server-side).
 - [ ] **M12.8** A roll-up for owners of several venues (D14).
@@ -500,11 +525,19 @@ That is the lawful version of the question (M12.6).
 - [ ] **M15.6** Roles and capabilities (read-only view), devices, notifications.
 - [ ] **M15.7** Export the venue's own business records; delete the venue (owner, with a confirmation step).
 
-### M16 — Store mode (off-licence)
+### M16 — Shops: liquor stores, sweet shops, bakeries, any shop
 
-- [ ] **M16.1** Till: guest code → punch card once a day (`record_visit`); perk status and claim (visits only, never an alcoholic reward).
+- [~] **M16.1** Till: guest code → punch card once a day (`record_visit`); perk status and claim (visits only, never an alcoholic reward). *(Till built on name search; guest code next.)*
 - [ ] **M16.2** Shelf (menu), stock (M9), staff (M10), insights.
-- [ ] **M16.3** No tables, rooms, kiosk, tabs or spend perks. The database already refuses rooms for stores.
+- [x] **M16.3** No tables, rooms, kiosk, tabs or spend perks. The database refuses rooms for every counter kind (047).
+- [x] **M16.4** Every kind of shop (047): sweet shop, bakery, café, restaurant, club, other shop; `serves_alcohol` decides the legal class; the web dashboard and the app both offer them.
+- [ ] **M16.5** Liquor store checkout: scan or pick by brand and pack size, the bill, how it was paid; stock moves with it.
+- [ ] **M16.6** Age check at the counter: a prompt when a line is alcohol, "ID checked" recorded on the sale (never the ID itself), refusals logged with no guest id.
+- [ ] **M16.7** Dry days, legal sale hours and per-sale quantity limits as deny-by-default rows per state; the till refuses outside them.
+- [ ] **M16.8** MRP: a sale above the printed maximum retail price is refused (India).
+- [ ] **M16.9** Excise registers: daily stock and sales by brand and pack, exported in the state's format.
+- [ ] **M16.10** Suppliers, purchase orders and deliveries (shared with M9).
+- [ ] **M16.11** Sweet shops and bakeries: sale by weight (per kg), made-today batches and waste, festival pre-orders.
 
 ### M17 — Guest side (user app + website) the bar app needs
 
@@ -550,6 +583,8 @@ That is the lawful version of the question (M12.6).
 - [ ] **M20.2** Update `CLAUDE.md` (a `mobile-bar/` row, roles, new libs and migrations) and docs/11–12 where rules change (taste shares, AI about a consenting guest, roles).
 - [ ] **M20.3** Keep `mobile-bar/README.md` current (run, build, test).
 - [ ] **M20.4** A printable one-page quick start per role, and a venue onboarding guide.
+- [ ] **M20.5** Connecting everything: one Supabase project, Cloudflare in front (DNS, hosting the website and its API routes, secrets, rate limits, app links), and how the guest app, the website and this app reach it.
+- [ ] **M20.6** The heat-map guide and the outside-data import, in plain English.
 
 ### M21 — Release and pilot
 
@@ -563,28 +598,33 @@ That is the lawful version of the question (M12.6).
 
 ## 6. Database work, in order
 
-Numbering continues after `045_fix_guest_card.sql`. Each file lands whole or not at all, and the
+Numbering continues after `047_all_shops.sql`. Each file lands whole or not at all, and the
 maintainer runs it; `npm run db:local` proves it applies to a fresh schema and passes db:audit and
 db:verify first. Every migration also gets a db:audit section, a db:verify scene, a `src/lib` mirror
 where the website needs one, and Dart parity tests where the app mirrors logic.
 
 | Migration | Adds |
 | --- | --- |
-| `045_staff_roles.sql` | New roles, `role_capabilities`, `venue_can()`, the staff RLS fixes, venue fields locked after verification, staff invites |
-| `046_capability_gates.sql` | Existing `is_venue_staff()` gates moved to capability checks |
-| `047_floor.sql` | Areas, tables, table tag codes |
-| `048_service_day.sql` | Service days (open/close, auto-opened room), table sessions, `join_table()`, linked guests, guest codes |
-| `049_menu_v2.sql` | Sizes, modifiers, allergens, stations and routing (still no discount column) |
-| `050_orders.sql` | Tabs, order lines, line events, the status view, the tab flag |
-| `051_payments.sql` | Tax profiles, service charge, payments, `close_tab()`, invoice numbers, receipts, refunds |
-| `052_cash.sql` | Drawers, cash movements, the day-close snapshot (Z) |
-| `053_guest_link.sql` | `taste_shares`, the usuals function, table requests |
-| `054_inventory.sql` | Items, locations, recipes, stock movements, counts, suppliers, purchase orders, deliveries |
-| `055_labour.sql` | Rota, time clock, availability, time off, swaps, tip pools |
-| `056_bookings.sql` | Reservations, waitlist, door tallies |
-| `057_compliance.sql` | Refusal log, incidents, licences, new jurisdiction columns and state rows |
-| `058_devices_audit.sql` | Staff devices, the audit log |
-| `059_reports.sql` | Live board, sales, labour and stock reports (derived), menu opens |
+| `044_fix_guest_card.sql` | **Done.** Fixes the ambiguous `tags` in `venue_guest_card` (1.4 #10) |
+| `045_staff_roles.sql` | **Done.** New roles, `role_capabilities`, `venue_can()`, the staff RLS fixes, venue fields locked after verification, staff invites, `set_thankable` |
+| `046_capability_gates.sql` | **Done.** Existing `is_venue_staff()` gates moved to capability checks |
+| `047_all_shops.sql` | **Done.** Eight kinds of venue, `serves_alcohol`, legal class, counters |
+| `048_area_map.sql` | The area heat map: consented, k-anonymous cells (D20) |
+| `049_area_signals.sql` | Server-only outside signals from the import (D21) |
+| `050_floor.sql` | Areas, tables, table tag codes |
+| `051_service_day.sql` | Service days (open/close, auto-opened room), table sessions, `join_table()`, linked guests, guest codes |
+| `052_menu_v2.sql` | Sizes, modifiers, allergens, stations and routing (still no discount column) |
+| `053_orders.sql` | Tabs, order lines, line events, the status view, the tab flag |
+| `054_payments.sql` | Tax profiles, service charge, payments, `close_tab()`, invoice numbers, receipts, refunds |
+| `055_cash.sql` | Drawers, cash movements, the day-close snapshot (Z) |
+| `056_guest_link.sql` | `taste_shares`, the usuals function, table requests |
+| `057_inventory.sql` | Items, locations, recipes, stock movements, counts, suppliers, purchase orders, deliveries |
+| `058_store.sql` | Liquor-store rules: sale hours, dry days, quantity limits, MRP, excise registers |
+| `059_labour.sql` | Rota, time clock, availability, time off, swaps, tip pools |
+| `060_bookings.sql` | Reservations, waitlist, door tallies |
+| `061_compliance.sql` | Refusal log, incidents, licences, new jurisdiction columns and state rows |
+| `062_devices_audit.sql` | Staff devices, the audit log |
+| `063_reports.sql` | Live board, sales, labour and stock reports (derived), menu opens |
 
 ---
 
@@ -593,7 +633,8 @@ where the website needs one, and Dart parity tests where the app mirrors logic.
 | Route / job | Status |
 | --- | --- |
 | `/api/venue-ai` (manager advisor, totals only) | exists |
-| `/api/staff-ai` (guest tip from a consented share) | new (M8.3) |
+| `/api/staff-ai` (guest tip from a consented share; Ninkasi for hosts) | new (M8.3, M8.10) |
+| Outside-data import (scraped public facts → `area_signals`) | new (D21) |
 | Push sender | new (M13.1) |
 | Receipt PDF / email | new (M6.8) |
 | Scheduled reports | new (M12.7) |
@@ -643,7 +684,8 @@ with its source, the way `jurisdiction_policy` works.
 
 | Release | Modules | What a venue gets |
 | --- | --- | --- |
-| R1 | M0, M1, M2 | Everything the web dashboard does, from a phone; roles fixed |
+| R1 ✓ | M0, M1, M2, M16.4 | Everything the web dashboard does, from a phone; roles fixed; every kind of shop |
+| R1.5 | M12.10–11, M8.10–11, M20.5–6 | The area heat map, outside signals, Ninkasi for hosts, the connection docs |
 | R2 | M3, M4, M5, M6 (record-only payments), M13 (printing, push, offline) | A real night of service: tables, orders, stations, bills |
 | R3 | M7, M8, M17 | Guests link themselves; usuals, taste shares, AI tips; table requests; receipts |
 | R4 | M9 | Stock, recipes, counts, variance |
@@ -656,7 +698,7 @@ with its source, the way `jurisdiction_policy` works.
 
 ## 11. Blocked on keys or resources (not code)
 
-- [ ] **A Flutter SDK in the cloud environment.** This container has none, so the app can't be built or tested here until the environment's setup script installs Flutter. Building locally works too.
+- [x] **A Flutter SDK in the cloud environment.** Available now; CI runs `flutter analyze` and `flutter test` for both apps.
 - [ ] A payments provider account and keys (D8).
 - [ ] Push: a Firebase project and an Apple Developer account (APNs key).
 - [ ] An SMS/WhatsApp provider for waitlist messages to people without the app (optional).

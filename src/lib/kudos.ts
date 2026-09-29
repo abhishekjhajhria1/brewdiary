@@ -131,9 +131,14 @@ export function useVenueKudosTotal(venueId: string | null, days = 30): number {
   return total;
 }
 
-/** A staff member turns thanks off (or back on) for themselves. */
+/** A staff member turns thanks off (or back on) for themselves.
+ *
+ *  Through set_thankable() (045), which touches only the caller's own row. This used to
+ *  be a plain UPDATE on venue_staff — which has no update policy, so RLS matched no row
+ *  and the opt-out silently did nothing. `meId` is kept for the call sites; the server
+ *  uses the session's own id. */
 export async function setThankable(venueId: string, meId: string, value: boolean) {
-  if (!supabase) return;
-  await supabase.from("venue_staff").update({ thankable: value }).eq("venue_id", venueId).eq("user_id", meId);
+  if (!supabase || !meId) return;
+  await supabase.rpc("set_thankable", { vid: venueId, on_off: value });
   bump();
 }

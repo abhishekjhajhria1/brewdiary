@@ -399,8 +399,8 @@ try {
 
   // A book may only be opened on a guest who actually came (interaction gate) by staff.
   const sgDef = await one(`select pg_get_functiondef('public.set_guest_note(uuid,uuid,text,text[])'::regprocedure) d`);
-  ok("set_guest_note(): gated on has_venue_interaction + is_venue_staff",
-    sgDef && /has_venue_interaction/.test(sgDef.d) && /is_venue_staff/.test(sgDef.d));
+  ok("set_guest_note(): gated on has_venue_interaction + a staff capability",
+    sgDef && /has_venue_interaction/.test(sgDef.d) && /(is_venue_staff|venue_can\s*\(\s*vid\s*,\s*me\s*,\s*'guests\.notes')/.test(sgDef.d));
 
   // ── menus (042): the paper menu on the table, never an offer ──────────────
   const vmDef = await one(`
@@ -435,6 +435,120 @@ try {
   } else {
     console.log("  ~ challenge_board_v2 (043) not applied — skipping");
   }
+
+  // ── staff roles (045) + capability gates (046) ───────────────────────────
+  // Checked once 045 is applied; before that the live schema simply predates it.
+  if (!have.includes("role_capabilities")) {
+    console.log("  ~ staff roles (045) not applied — skipping");
+  } else {
+    console.log("\n── staff roles: who may do what, decided by the DB (045/046) ──");
+    for (const f of ["venue_role", "venue_can", "can_grant_role", "set_staff_role", "set_thankable",
+                     "create_staff_invite", "accept_staff_invite"]) {
+      ok(`fn ${f}()`, fns.includes(f), "— MISSING");
+    }
+    ok("table staff_invites", have.includes("staff_invites"), "— MISSING");
+    const rcw = await all(`select policyname from pg_policies where schemaname='public' and tablename='role_capabilities' and cmd <> 'SELECT'`);
+    ok("role_capabilities: NO client write policy (the matrix is data we write, not the venue)", rcw.length === 0);
+    const caps = await all(`select role, capability from public.role_capabilities`);
+    const has = (role, cap) => caps.some((r) => r.role === role && r.capability === cap);
+    const every = [...new Set(caps.map((r) => r.capability))];
+    ok("owner holds every capability", every.every((c) => has("owner", c)));
+    ok("a manager holds everything but deleting the venue",
+      every.filter((c) => c !== "venue.delete").every((c) => has("manager", c)) && !has("manager", "venue.delete"));
+    for (const role of ["kitchen", "host"]) {
+      ok(`${role}: can't touch a guest's tab, perks, card or notes`,
+        ["spend.record", "perks.redeem", "guests.card", "guests.notes"].every((c) => !has(role, c)));
+    }
+    ok("only owner/manager run the team, the reports, the menu, the perks and the settings",
+      ["team.manage", "reports.view", "menu.edit", "perks.edit", "settings.edit"].every(
+        (c) => caps.filter((r) => r.capability === c).every((r) => r.role === "owner" || r.role === "manager")));
+    ok("today's bartender keeps every power it had (tab, vibe, perks, room, guest book)",
+      ["spend.record", "guests.vibe", "perks.redeem", "rooms.open", "guests.card", "guests.notes", "guests.at_tables"].every((c) => has("bartender", c)));
+
+    const vsPol = await all(`select policyname, cmd, coalesce(qual,'') q, coalesce(with_check,'') w
+                               from pg_policies where schemaname='public' and tablename='venue_staff'`);
+    ok("venue_staff: still NO update policy (roles change via set_staff_role only)", !vsPol.some((p) => p.cmd === "UPDATE" || p.cmd === "ALL"));
+    const ins = vsPol.find((p) => p.cmd === "INSERT");
+    ok("venue_staff insert: a role is granted only by someone senior enough (can_grant_role)", ins && /can_grant_role/.test(ins.w));
+    const del = vsPol.find((p) => p.cmd === "DELETE");
+    ok("venue_staff delete: the owner's row can't be removed from a client", del && /owner/.test(del.q) && /can_grant_role/.test(del.q));
+    const cg = await one(`select pg_get_functiondef('public.can_grant_role(uuid,uuid,text)'::regprocedure) d`);
+    ok("can_grant_role(): 'owner' is never granted from an app", cg && /<>\s*'owner'/.test(cg.d));
+    const ssr = await one(`select pg_get_functiondef('public.set_staff_role(uuid,uuid,text)'::regprocedure) d`);
+    ok("set_staff_role(): nobody changes their own role", ssr && /own role/.test(ssr.d));
+    const st = await one(`select pg_get_functiondef('public.set_thankable(uuid,boolean)'::regprocedure) d`);
+    ok("set_thankable(): only ever your OWN row (the opt-out that actually works)", st && /user_id\s*=\s*auth\.uid\(\)/.test(st.d));
+    const ga = await one(`select pg_get_functiondef('public.venues_guard_admin_fields()'::regprocedure) d`);
+    ok("venues: a VERIFIED venue can't move country/region, change kind or slug by itself",
+      ga && ["country", "region", "kind", "slug"].every((c) => new RegExp(`new\\.${c}\\s+is distinct from`).test(ga.d)));
+    const iw = await all(`select policyname from pg_policies where schemaname='public' and tablename='staff_invites' and cmd <> 'SELECT'`);
+    ok("staff_invites: NO client write policy (created and accepted through functions)", iw.length === 0);
+
+    const gated = {
+      "record_spend(uuid,uuid,numeric)": "spend.record",
+      "staff_award(uuid,uuid,text)": "guests.vibe",
+      "redeem_perk(uuid,uuid)": "perks.redeem",
+      "record_visit(uuid,uuid)": "perks.redeem",
+      "perk_status(uuid,uuid)": "perks.redeem",
+      "set_guest_note(uuid,uuid,text,text[])": "guests.notes",
+      "venue_guest_card(uuid,uuid)": "guests.card",
+      "room_guests(uuid)": "guests.at_tables",
+      "parties_guard_venue()": "rooms.open",
+    };
+    for (const [sig, cap] of Object.entries(gated)) {
+      const d = await one(`select pg_get_functiondef('public.${sig}'::regprocedure) d`);
+      ok(`${sig.split("(")[0]}(): asks the '${cap}' capability, not just "on the team"`,
+        d && d.d.includes(`'${cap}'`) && /venue_can\s*\(/.test(d.d) && !/is_venue_staff\s*\(/.test(d.d));
+    }
+    for (const [t, cap] of [["spend_events", "spend.record"], ["perk_redemptions", "perks.redeem"],
+                            ["venue_checkins", "perks.redeem"], ["venue_guest_notes", "guests.card"]]) {
+      const r = await one(`select coalesce(qual,'') q from pg_policies where schemaname='public' and tablename=$1 and cmd='SELECT'`, [t]);
+      ok(`${t}: staff read it with the '${cap}' capability`, r && r.q.includes(cap));
+    }
+  }
+
+  // ── every kind of shop (047): the law follows what a place SELLS ──────────
+  if (!fns.includes("venue_legal_class")) {
+    console.log("  ~ every kind of shop (047) not applied — skipping");
+  } else {
+    console.log("\n── every kind of shop: the law follows what's sold (047) ──");
+    const kc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'venues_kind_check'`);
+    ok("venues.kind: bar, club, restaurant, cafe, store, sweet_shop, bakery, shop",
+      kc && ["bar", "club", "restaurant", "cafe", "store", "sweet_shop", "bakery", "shop"].every((k) => kc.d.includes(`'${k}'`)));
+    const lc = await all(`select k, a, public.venue_legal_class(k, a) c from (values
+      ('bar', false), ('club', false), ('store', false), ('cafe', true), ('cafe', false),
+      ('restaurant', true), ('sweet_shop', true), ('bakery', false), ('shop', true)) t(k, a)`);
+    const cls = Object.fromEntries(lc.map((r) => [`${r.k}:${r.a}`, r.c]));
+    ok("a bar or club is on-trade whatever it claims", cls["bar:false"] === "on_trade" && cls["club:false"] === "on_trade");
+    ok("a liquor store is off-trade", cls["store:false"] === "off_trade");
+    ok("a café or restaurant is on-trade only if it serves alcohol",
+      cls["cafe:true"] === "on_trade" && cls["cafe:false"] === "no_alcohol" && cls["restaurant:true"] === "on_trade");
+    ok("a sweet shop, bakery or shop never sells alcohol (a shop that does is a store)",
+      cls["sweet_shop:true"] === "no_alcohol" && cls["bakery:false"] === "no_alcohol" && cls["shop:true"] === "no_alcohol");
+    const pg = await one(`select pg_get_functiondef('public.venue_perks_guard()'::regprocedure) d`);
+    ok("venue_perks_guard(): decides by legal class, and a no-alcohol card still can't reward alcohol",
+      pg && /venue_legal_class/.test(pg.d) && /no_alcohol/.test(pg.d) && /reward_alcoholic/.test(pg.d));
+    ok("venue_perks_guard(): an unresearched country is still NO for every kind", pg && /pol is null/.test(pg.d));
+    const rg = await one(`select pg_get_functiondef('public.parties_guard_venue_kind()'::regprocedure) d`);
+    ok("a COUNTER (store, sweet shop, bakery, shop) runs no rooms", rg && /venue_is_counter/.test(rg.d));
+    const ga2 = await one(`select pg_get_functiondef('public.venues_guard_admin_fields()'::regprocedure) d`);
+    ok("a verified venue can't flip its alcohol licence by itself", ga2 && /new\.serves_alcohol\s+is distinct from/.test(ga2.d));
+    const sa = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'venues_serves_alcohol_check'`);
+    ok("the venues table can't hold a sober bar or a licensed bakery", Boolean(sa));
+  }
+
+  // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
+  // pinned to search_path=public that calls one unqualified works on a laptop and fails
+  // in production. None may.
+  // (OFFSET 0 keeps the schema filter first: pg_get_functiondef() refuses aggregates.)
+  const unq = await all(`
+    select f.proname from (
+      select p.oid, p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.prokind = 'f' offset 0
+    ) f
+    where pg_get_functiondef(f.oid) ~ '(^|[^.])(gen_random_bytes|digest|crypt|gen_salt|hmac)\\s*\\('`);
+  ok("no public function calls a pgcrypto function without its schema", unq.length === 0,
+    `— ${unq.map((r) => r.proname).join(", ")}`);
 
   console.log("\n── orphans / drift ──────────────────────────────────");
   const badCurrency = await one(`

@@ -68,6 +68,9 @@ jobs:
           - dir: test_m_app                # the guest app
             analyze: flutter analyze
             test: flutter test
+          - dir: mobile-bar                # the venue staff app (its tests read supabase/045)
+            analyze: flutter analyze
+            test: flutter test
     defaults:
       run:
         working-directory: ${{ matrix.dir }}

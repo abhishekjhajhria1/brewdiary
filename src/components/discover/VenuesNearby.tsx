@@ -19,6 +19,7 @@
 import { useEffect, useState } from "react";
 import { useDiscoverVenues } from "@/lib/venues";
 import { savedCountry } from "@/lib/age";
+import { VENUE_KIND_LABEL } from "@/lib/venueKinds";
 
 export function VenuesNearby() {
   const [country, setCountry] = useState<string | null>(null);
@@ -38,8 +39,8 @@ export function VenuesNearby() {
               <p className="text-xs text-muted">
                 {/* A shop, not a bar — worth saying, because you can't sit down in one.
                     Still just a directory fact: never what it sells or what it offers. */}
-                {v.kind === "store" ? "Bottle shop" : v.city || "A brewdiary venue"}
-                {v.kind === "store" && v.city && <> · {v.city}</>}
+                {v.kind === "bar" ? v.city || "A brewdiary venue" : VENUE_KIND_LABEL[v.kind]}
+                {v.kind !== "bar" && v.city && <> · {v.city}</>}
                 {v.openTonight && <span className="text-accent"> · a room is open</span>}
               </p>
             </div>

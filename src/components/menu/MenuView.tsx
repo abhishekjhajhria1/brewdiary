@@ -96,7 +96,11 @@ export function MenuView({ slug }: { slug: string }) {
   return (
     <main className="flex-1">
       <header className="mb-6 border-b border-line pb-5">
-        <p className="label mb-1 text-faint">{menu.venueKind === "store" ? "On the shelf" : "The menu"}</p>
+        <p className="label mb-1 text-faint">{menu.venueKind === "store" || menu.venueKind === "shop"
+            ? "On the shelf"
+            : menu.venueKind === "sweet_shop" || menu.venueKind === "bakery"
+              ? "At the counter"
+              : "The menu"}</p>
         <h1 className="font-display text-4xl leading-tight tracking-tight text-ink">{menu.venueName}</h1>
         {menu.venueCity && <p className="mt-1.5 text-sm text-faint">{menu.venueCity}</p>}
       </header>

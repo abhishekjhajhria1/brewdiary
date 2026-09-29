@@ -1051,6 +1051,129 @@ try {
     (await as(priya, `select public.plan_going_count($1) n`, [planInv])).rows[0].n === 1);
   await as(priya, `select public.uninvite_from_plan($1,$2)`, [planInv, guestA]);
   ok("uninviting removes the guest's view of the plan", (await countsPlan(guestA, planInv)) === 0);
+
+  // ── 16. staff roles (045/046): the database decides who may do what ──────────
+  if ((await db.query(`select to_regclass('public.role_capabilities') t`)).rows[0].t) {
+    console.log("\n── 16. staff roles: who may do what (045/046) ───────");
+    const mgr = await mkUser("Manager", `vf-mgr-${Date.now()}`);
+    const srv = await mkUser("Server", `vf-srv-${Date.now()}`);
+    const cook = await mkUser("Cook", `vf-cook-${Date.now()}`);
+    const hostP = await mkUser("Host", `vf-host-${Date.now()}`);
+    const addAs = (who, uid, role) =>
+      as(who, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,$3)`, [vid, uid, role]);
+    const roleOf = async (uid) =>
+      (await db.query(`select role from public.venue_staff where venue_id=$1 and user_id=$2`, [vid, uid])).rows[0]?.role;
+
+    await addAs(owner, mgr, "manager");
+    ok("the owner can add a manager", (await roleOf(mgr)) === "manager");
+    await addAs(mgr, srv, "server");
+    ok("a manager can add a server", (await roleOf(srv)) === "server");
+    ok("a manager CANNOT add another manager", await refused(() => addAs(mgr, rohan, "manager")));
+    ok("a manager CANNOT crown an owner", await refused(() => addAs(mgr, rohan, "owner")));
+    ok("nobody grants 'owner' from an app — not even the owner", await refused(() => addAs(owner, rohan, "owner")));
+    ok("a server CANNOT add anyone", await refused(() => addAs(srv, rohan, "bartender")));
+    await refused(() => as(mgr, `delete from public.venue_staff where venue_id=$1 and user_id=$2`, [vid, owner]));
+    ok("a manager CANNOT remove the owner", (await roleOf(owner)) === "owner");
+
+    const code = (await as(mgr, `select public.create_staff_invite($1,'kitchen') c`, [vid])).rows[0].c;
+    ok("a manager can invite someone to the kitchen", /^[a-z0-9]{10}$/.test(code));
+    ok("a manager CANNOT invite a manager",
+      await refused(() => as(mgr, `select public.create_staff_invite($1,'manager')`, [vid])));
+    const venueName = (await as(cook, `select public.accept_staff_invite($1) n`, [code])).rows[0].n;
+    ok("accepting an invite joins the team at the invite's role",
+      venueName === "Verify Tap Room" && (await roleOf(cook)) === "kitchen");
+    ok("an invite works once", await refused(() => as(hostP, `select public.accept_staff_invite($1)`, [code])));
+
+    ok("the KITCHEN can't record a guest's tab",
+      await refused(() => as(cook, `select public.record_spend($1,$2,100)`, [pid, anita])));
+    ok("…can't read a guest's card",
+      await refused(() => as(cook, `select * from public.venue_guest_card($1,$2)`, [vid, anita])));
+    ok("…can't see where a guest is up to on the perks",
+      await refused(() => as(cook, `select * from public.perk_status($1,$2)`, [vid, anita])));
+    ok("…and doesn't get tonight's guest list", (await as(cook, `select * from public.room_guests($1)`, [pid])).rows.length === 0);
+
+    await addAs(owner, hostP, "host");
+    ok("a HOST sees who's in tonight's room (to seat them)",
+      (await as(hostP, `select * from public.room_guests($1)`, [pid])).rows.length >= 2);
+    ok("…but can't record a tab", await refused(() => as(hostP, `select public.record_spend($1,$2,100)`, [pid, anita])));
+    ok("…or read the guest book", await refused(() => as(hostP, `select * from public.venue_guest_card($1,$2)`, [vid, anita])));
+
+    await as(srv, `select public.record_spend($1,$2,650)`, [pid, rohan]);
+    ok("a SERVER records a tab", true);
+    await as(mgr, `select public.set_staff_role($1,$2,'supervisor')`, [vid, srv]);
+    ok("a manager promotes a server to supervisor", (await roleOf(srv)) === "supervisor");
+    ok("a manager CANNOT promote anyone to manager",
+      await refused(() => as(mgr, `select public.set_staff_role($1,$2,'manager')`, [vid, srv])));
+    ok("a manager CANNOT demote the owner",
+      await refused(() => as(mgr, `select public.set_staff_role($1,$2,'bartender')`, [vid, owner])));
+    ok("nobody changes their own role",
+      await refused(() => as(mgr, `select public.set_staff_role($1,$2,'bartender')`, [vid, mgr])));
+
+    const off = (await as(barman, `select public.set_thankable($1,false) v`, [vid])).rows[0].v;
+    const thankableNow = (await db.query(`select thankable from public.venue_staff where venue_id=$1 and user_id=$2`, [vid, barman])).rows[0].thankable;
+    ok("a bartender can switch thanks OFF (the opt-out that never worked now does)", off === true && thankableNow === false);
+    ok("…and then cannot be thanked",
+      await refused(() => as(anita, `select public.thank_staff($1,$2,'quick and kind')`, [pid, barman])));
+    await as(barman, `select public.set_thankable($1,true)`, [vid]);
+
+    ok("a VERIFIED venue can't move itself to another country",
+      await refused(() => as(owner, `update public.venues set country='GB' where id=$1`, [vid])));
+    ok("…nor change its web address (it's printed on the tables)",
+      await refused(() => as(owner, `update public.venues set slug='somewhere-else' where id=$1`, [vid])));
+    await as(owner, `update public.venues set name='Verify Tap Room' where id=$1`, [vid]);
+    ok("…but it can still edit its name", true);
+
+    await as(cook, `delete from public.venue_staff where venue_id=$1 and user_id=$2`, [vid, cook]);
+    ok("staff can leave a team", (await roleOf(cook)) === undefined);
+    await as(owner, `delete from public.venue_staff where venue_id=$1 and user_id=$2`, [vid, owner]);
+    ok("the owner can't walk out of their own venue (delete the venue instead)", (await roleOf(owner)) === "owner");
+  }
+
+  // ── 17. every kind of shop (047): the law follows what a place SELLS ─────────
+  if ((await db.query(`select to_regprocedure('public.venue_legal_class(text,boolean)') f`)).rows[0].f) {
+    console.log("\n── 17. every kind of shop: sweet shops, bakeries, cafés (047) ──");
+    const mkVenue = async (who, name, kind, country, extra = {}) => {
+      const id = randomUUID();
+      const cols = { id, name, slug: `vf-${kind.replace("_", "")}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`.slice(0, 40), created_by: who, kind, country, ...extra };
+      const keys = Object.keys(cols);
+      await as(who, `insert into public.venues (${keys.join(",")}) values (${keys.map((_, i) => `$${i + 1}`).join(",")})`, keys.map((k) => cols[k]));
+      await as(who, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [id, who]);
+      return id;
+    };
+    const sweets = await mkVenue(owner, "Verify Mithai", "sweet_shop", "IN", { serves_alcohol: true });
+    const sa = (await db.query(`select serves_alcohol from public.venues where id=$1`, [sweets])).rows[0].serves_alcohol;
+    ok("a sweet shop never sells alcohol — even if the app says it does", sa === false);
+    await db.query(`update public.venues set verified = true where id = $1`, [sweets]);
+
+    await as(owner, `insert into public.venue_perks (venue_id, kind, threshold, reward) values ($1,'spend',1000,'a box of kaju katli')`, [sweets]);
+    ok("a sweet shop may count SPEND (it sells no alcohol, so it's just a loyalty card)", true);
+    ok("…but its reward can never be alcohol",
+      await refused(() => as(owner, `insert into public.venue_perks (venue_id, kind, threshold, reward, reward_alcoholic) values ($1,'visits',5,'a beer',true)`, [sweets])));
+    ok("a sweet shop runs no rooms (a counter punches cards instead)",
+      await refused(() => as(owner, `insert into public.parties (id, name, host_id, date, venue_id) values ($1,'x',$2,current_date,$3)`, [randomUUID(), owner, sweets])));
+
+    await as(owner, `insert into public.venue_perks (venue_id, kind, threshold, reward) values ($1,'visits',2,'a ladoo')`, [sweets]);
+    await as(owner, `select public.record_visit($1,$2)`, [sweets, anita]);
+    const sweetSt = (await as(anita, `select * from public.perk_status($1,$2) where kind = 'visits'`, [sweets, anita])).rows[0];
+    ok("a punched card counts toward the sweet shop's visits tier", sweetSt && Number(sweetSt.progress) >= 1);
+
+    ok("a BAKERY can open in a prohibition country (it sells no alcohol)",
+      !(await refused(() => mkVenue(owner, "Verify Riyadh Bakery", "bakery", "SA"))));
+    ok("…a BAR can't", await refused(() => mkVenue(owner, "Verify Riyadh Bar", "bar", "SA")));
+    ok("an unresearched country is still closed to every kind", await refused(() => mkVenue(owner, "Verify Harare Bakery", "bakery", "ZW")));
+
+    const bkk = await mkVenue(owner, "Verify Bangkok Bakery", "bakery", "TH");
+    await db.query(`update public.venues set verified = true where id = $1`, [bkk]);
+    await as(owner, `insert into public.venue_perks (venue_id, kind, threshold, reward) values ($1,'visits',5,'a croissant')`, [bkk]);
+    ok("THAILAND bans ALCOHOL promotions — a bakery's card is not one", true);
+    const listed = (await anon(`select * from public.discover_venues('TH', 30)`)).rows.map((r) => r.name);
+    ok("Discover lists a verified bakery in Thailand (no alcohol, no advertising problem)", listed.includes("Verify Bangkok Bakery"));
+
+    const cafe = await mkVenue(owner, "Verify Café", "cafe", "IN", { serves_alcohol: false });
+    await db.query(`update public.venues set verified = true where id = $1`, [cafe]);
+    ok("a verified café can't turn itself into a licensed bar by itself",
+      await refused(() => as(owner, `update public.venues set serves_alcohol = true where id=$1`, [cafe])));
+  }
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

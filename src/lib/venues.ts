@@ -14,9 +14,10 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { useAuth } from "./profile";
-import type { VenueKind } from "./perks";
+import { alcoholIsChoice, parseVenueKind, sellsAlcohol, type VenueKind } from "./venueKinds";
 
-export type StaffRole = "owner" | "manager" | "bartender";
+// The roles (045). What each may do is data in public.role_capabilities; see roles.ts.
+export type StaffRole = "owner" | "manager" | "supervisor" | "bartender" | "server" | "host" | "kitchen";
 
 export interface Venue {
   id: string;
@@ -28,6 +29,9 @@ export interface Venue {
    *  it runs no rooms, and its loyalty card needs a separate legal permission,
    *  because at a shop the visit IS the purchase. See perks.ts / 030. */
   kind: VenueKind;
+  /** Does it serve/sell alcohol? Server-normalised for fixed kinds; the owner's choice
+   *  for a restaurant or café (047). With `kind`, decides which law shapes its card. */
+  servesAlcohol: boolean;
   /** ISO-3166 alpha-2. Decides what kind of perk is LAWFUL here — see perks.ts. */
   country: string;
   /** Sub-national code where it matters (US states 'MA'/'UT'; 'NIR'/'SCT' in GB). */
@@ -108,7 +112,8 @@ export function useMyVenues(): { venues: Venue[]; loading: boolean } {
     (async () => {
       const { data } = await supabase!
         .from("venue_staff")
-        .select("role, venue:venues(id, name, slug, created_by, city, kind, country, region, quiet_nights, geohash, verified)")
+        // venues(*): tolerant of a schema a migration behind (a missing column is just absent).
+        .select("role, venue:venues(*)")
         .eq("user_id", me);
       if (!active) return;
       setVenues(
@@ -122,7 +127,9 @@ export function useMyVenues(): { venues: Venue[]; loading: boolean } {
               slug: vv.slug as string,
               createdBy: vv.created_by as string,
               city: (vv.city as string) ?? undefined,
-              kind: ((vv.kind as string) ?? "bar") as VenueKind,
+              kind: parseVenueKind(vv.kind),
+              servesAlcohol:
+                typeof vv.serves_alcohol === "boolean" ? vv.serves_alcohol : sellsAlcohol(parseVenueKind(vv.kind), true),
               country: (vv.country as string) ?? "IN",
               region: (vv.region as string) ?? undefined,
               quietNights: (vv.quiet_nights as number[]) ?? [],
@@ -163,7 +170,9 @@ export function useVenueStaff(venueId: string | null): { staff: VenueStaff[]; lo
         .select("role, member:profiles(id, handle, display_name)")
         .eq("venue_id", venueId);
       if (!active) return;
-      const ROLE_RANK: Record<StaffRole, number> = { owner: 0, manager: 1, bartender: 2 };
+      const ROLE_RANK: Record<StaffRole, number> = {
+        owner: 0, manager: 1, supervisor: 2, bartender: 3, server: 3, host: 3, kitchen: 3,
+      };
       setStaff(
         (data ?? [])
           .map((r: Record<string, unknown>) => {
@@ -251,7 +260,7 @@ export async function withdrawVerification(venueId: string) {
 // ── mutations ────────────────────────────────────────────────────────────────
 export async function createVenue(
   meId: string,
-  fields: { name: string; slug?: string; city?: string; kind?: VenueKind; country?: string; region?: string },
+  fields: { name: string; slug?: string; city?: string; kind?: VenueKind; servesAlcohol?: boolean; country?: string; region?: string },
 ): Promise<{ id: string; slug: string } | { error: string }> {
   if (!supabase) return { error: "offline" };
   const name = fields.name.trim();
@@ -273,6 +282,9 @@ export async function createVenue(
       // Bar or bottle shop. A store runs no rooms and needs its own legal permission
       // for a loyalty card — the DB refuses one where it isn't allowed (030).
       kind: fields.kind ?? "bar",
+      // Only a restaurant or café chooses; the server fixes it for every other kind (047),
+      // so it's sent only when it's a choice (and a bar/store insert works before 047 too).
+      ...(alcoholIsChoice(fields.kind ?? "bar") ? { serves_alcohol: Boolean(fields.servesAlcohol) } : {}),
       // Where the venue is decides what kind of perk it may lawfully offer (020).
       country: (fields.country || "IN").toUpperCase(),
       region: fields.region?.trim().toUpperCase() || null,
@@ -344,7 +356,7 @@ export function useDiscoverVenues(country?: string | null): { venues: DiscoverVe
           slug: r.slug as string,
           city: (r.city as string) ?? undefined,
           country: r.country as string,
-          kind: ((r.kind as string) ?? "bar") as VenueKind,
+          kind: parseVenueKind(r.kind),
           openTonight: Boolean(r.open_tonight),
         })),
         loading: false,

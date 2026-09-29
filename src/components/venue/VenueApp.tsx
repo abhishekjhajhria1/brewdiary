@@ -43,6 +43,7 @@ import {
   type VenueKind,
 } from "@/lib/perks";
 import { KNOWN_COUNTRIES } from "@/lib/jurisdiction";
+import { VENUE_KINDS, VENUE_KIND_LABEL, VENUE_KIND_BLURB, alcoholIsChoice, isCounter } from "@/lib/venueKinds";
 import { currencyForCountry, currencySymbol, formatMoney } from "@/lib/money";
 import { useRoomGuests, staffAwardVibe, recordSpend, STAFF_VIBE_REASONS } from "@/lib/points";
 import { todayKey } from "@/lib/date";
@@ -314,6 +315,7 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
   const [slug, setSlug] = useState("");
   const [city, setCity] = useState("");
   const [kind, setKind] = useState<VenueKind>("bar");
+  const [servesAlcohol, setServesAlcohol] = useState(false);
   const [country, setCountry] = useState("IN");
   const [region, setRegion] = useState("");
   const [busy, setBusy] = useState(false);
@@ -325,8 +327,8 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
 
   // Say NOW whether a loyalty card is even possible here, rather than letting them
   // set the shop up and hit a wall at the perk screen.
-  const policy = perkPolicy(country, region, kind);
-  const policyNote = perkPolicyNote(country, region, kind);
+  const policy = perkPolicy(country, region, kind, servesAlcohol);
+  const policyNote = perkPolicyNote(country, region, kind, servesAlcohol);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -337,6 +339,7 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
       slug: slug.trim() || undefined,
       city,
       kind,
+      servesAlcohol,
       country,
       region: region.trim() || undefined,
     });
@@ -356,28 +359,33 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
         <input value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} placeholder="web address (optional)" className={inputClass} aria-label="Web address slug" />
         <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City (optional)" className={inputClass} aria-label="City" />
 
-        {/* Bar or bottle shop. Not cosmetic: a shop runs no rooms, and its loyalty
-            card needs its own legal permission, because at a shop a visit is a sale. */}
+        {/* What kind of place. Not cosmetic: a counter (a liquor store, a sweet shop, a
+            bakery, a shop) runs no rooms; a liquor store's card needs its own legal
+            permission, because at a shop a visit is a sale; a place that sells no alcohol
+            is outside alcohol-promotion law altogether (047). */}
         <div className="glass grid grid-cols-2 gap-1 rounded-ctl p-1" role="group" aria-label="Venue kind">
-          {([
-            { id: "bar", label: "Bar", blurb: "People drink here" },
-            { id: "store", label: "Shop", blurb: "People carry out" },
-          ] as const).map((k) => (
+          {VENUE_KINDS.map((k) => (
             <button
-              key={k.id}
+              key={k}
               type="button"
-              onClick={() => setKind(k.id)}
-              aria-pressed={kind === k.id}
+              onClick={() => setKind(k)}
+              aria-pressed={kind === k}
               className={clsx(
                 "rounded-[7px] px-3 py-2 text-left transition-colors",
-                kind === k.id ? "bg-ink text-paper" : "text-faint hover:text-ink",
+                kind === k ? "bg-ink text-paper" : "text-faint hover:text-ink",
               )}
             >
-              <span className="block text-sm font-medium">{k.label}</span>
-              <span className={clsx("block text-[11px]", kind === k.id ? "opacity-70" : "text-faint")}>{k.blurb}</span>
+              <span className="block text-sm font-medium">{VENUE_KIND_LABEL[k]}</span>
+              <span className={clsx("block text-[11px]", kind === k ? "opacity-70" : "text-faint")}>{VENUE_KIND_BLURB[k]}</span>
             </button>
           ))}
         </div>
+        {alcoholIsChoice(kind) && (
+          <label className="flex items-center gap-2 px-1 text-sm text-muted">
+            <input type="checkbox" checked={servesAlcohol} onChange={(e) => setServesAlcohol(e.target.checked)} />
+            We serve alcohol (licensed)
+          </label>
+        )}
 
         <select
           value={country}
@@ -485,7 +493,7 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
 
   // A shop's first tab is the TILL, not the room — it has no rooms at all (the DB
   // refuses to attach one), because a bottle shop isn't a place you sit and drink.
-  const store = venue.kind === "store";
+  const store = isCounter(venue.kind);
 
   // A bartender only ever needs Tonight — the rest is a manager's job, so we don't
   // show them doors they can't open.
@@ -1413,8 +1421,8 @@ function VenuePerkEditor({ venue }: { venue: Venue }) {
   // A SHOP is judged by the shop's rules, not the bar's: its own jurisdiction
   // permission, visits only, and never an alcoholic reward — see perkPolicy(). Pass
   // the kind or a bottle shop inherits a pub's freedoms.
-  const policy = perkPolicy(venue.country, venue.region, venue.kind);
-  const note = perkPolicyNote(venue.country, venue.region, venue.kind);
+  const policy = perkPolicy(venue.country, venue.region, venue.kind, venue.servesAlcohol);
+  const note = perkPolicyNote(venue.country, venue.region, venue.kind, venue.servesAlcohol);
   const currency = currencyForCountry(venue.country);
 
   // Never leave the editor sitting on an option the venue can't lawfully use.

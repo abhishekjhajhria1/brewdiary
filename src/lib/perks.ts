@@ -9,8 +9,9 @@
 // only a bar's staff can record it (see record_spend in points.ts / 017).
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
-import { jurisdiction } from "./jurisdiction";
+import { jurisdiction, JURISDICTIONS } from "./jurisdiction";
 import { DEFAULT_CURRENCY } from "./money";
+import { isCounter, legalClass, type VenueKind } from "./venueKinds";
 
 export type PerkKind = "visits" | "spend";
 
@@ -54,8 +55,9 @@ export interface PerkPolicy {
   allowSpendPerk: boolean;
 }
 
-/** on-trade (drink here) vs off-trade (carry out). */
-export type VenueKind = "bar" | "store";
+// Every kind of place: a bar, a club, a restaurant, a café, a liquor store, a sweet shop,
+// a bakery, any shop (047). See venueKinds.ts — what the law sees is what a place SELLS.
+export type { VenueKind };
 
 // An OFF-LICENCE is not a quieter bar, and its perk isn't a milder version of a
 // bar's — it's a different legal object. At a bar you can turn up and buy nothing,
@@ -71,8 +73,27 @@ export type VenueKind = "bar" | "store";
 //
 // The DATABASE enforces all three (030's venue_perks_guard). This mirror exists so
 // the dashboard can explain the rule instead of just failing.
-export function perkPolicy(country?: string | null, region?: string | null, kind: VenueKind = "bar"): PerkPolicy {
+//
+// And a place that sells NO alcohol (a sweet shop, a bakery, an unlicensed café) is out of
+// alcohol-promotion law altogether: any card, visits or spend — only its reward can't be
+// alcohol. It still only runs where we've researched the country (deny by default). A
+// COUNTER's spend waits for the till to record it, so a counter's card counts visits.
+/** Have we researched this country at all? (No row → no venue layer, for any kind.) */
+function isResearched(country?: string | null): boolean {
+  return Boolean(JURISDICTIONS[(country ?? "").trim().toUpperCase()]);
+}
+
+export function perkPolicy(
+  country?: string | null,
+  region?: string | null,
+  kind: VenueKind = "bar",
+  servesAlcohol = false,
+): PerkPolicy {
   const j = jurisdiction(country, region);
+  if (legalClass(kind, servesAlcohol) === "no_alcohol") {
+    const researched = isResearched(country);
+    return { allowPerks: researched, allowAlcoholReward: false, allowSpendPerk: researched && !isCounter(kind) };
+  }
   if (kind === "store") {
     return {
       allowPerks: j.allowPerks && j.allowOfftradePerks,
@@ -89,8 +110,14 @@ export function perkPolicyNote(
   country?: string | null,
   region?: string | null,
   kind: VenueKind = "bar",
+  servesAlcohol = false,
 ): string | null {
   const j = jurisdiction(country, region);
+  if (legalClass(kind, servesAlcohol) === "no_alcohol") {
+    return isResearched(country)
+      ? "No alcohol is sold here, so your loyalty card is just a loyalty card — any reward that isn't alcohol."
+      : "We haven't researched this country yet, so loyalty cards are off here for now.";
+  }
   if (kind === "store" && j.allowPerks && !j.allowOfftradePerks) {
     return (
       "A loyalty card isn't permitted for an off-licence here — at a shop, a visit is a purchase, " +

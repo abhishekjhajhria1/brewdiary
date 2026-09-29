@@ -30,7 +30,12 @@ end $$;
 -- The connecting superuser must be able to `set role` into each of them.
 grant anon, authenticated, service_role to current_user;
 
-create extension if not exists pgcrypto;
+-- Supabase installs extensions into their own schema, not public — so a function pinned
+-- to `set search_path = public` cannot see pgcrypto there. Mirror that, so a migration that
+-- would only work locally fails locally too.
+create schema if not exists extensions;
+grant usage on schema extensions to anon, authenticated, service_role;
+create extension if not exists pgcrypto with schema extensions;
 
 -- ── auth ────────────────────────────────────────────────────────────────────
 create schema if not exists auth;
