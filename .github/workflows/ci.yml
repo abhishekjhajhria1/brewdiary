@@ -50,7 +50,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # Only the pure-JS `pg` driver is needed here. Skipping install scripts keeps
+      # onnxruntime-node's binary download (a network call this job never uses) from
+      # failing the database checks when that host times out.
+      - run: npm ci --ignore-scripts
       - run: npm run db:local
 
   # The Flutter apps. Their parity tests prove the Dart ports behave exactly like src/lib,
