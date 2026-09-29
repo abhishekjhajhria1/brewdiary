@@ -43,6 +43,9 @@ class Venue {
 
   /// Shares its anonymised totals with the area heat map, and so sees its spend layer (048).
   final bool areaShare;
+
+  /// Guests may order and call staff from the table's link (051). Off by default.
+  final bool tableService;
   final bool verified;
   final StaffRole myRole;
 
@@ -60,6 +63,7 @@ class Venue {
     this.quietNights = const [],
     this.geohash,
     this.areaShare = false,
+    this.tableService = false,
     this.verified = false,
     this.myRole = StaffRole.bartender,
   });
@@ -78,6 +82,7 @@ class Venue {
         quietNights: ((v['quiet_nights'] as List?) ?? const []).map((d) => _int(d)).toList(),
         geohash: v['geohash'] as String?,
         areaShare: v['area_share'] == true,
+        tableService: v['table_service'] == true,
         verified: v['verified'] == true,
         myRole: role,
       );
@@ -85,7 +90,7 @@ class Venue {
   LegalClass get legal => legalClass(kind, servesAlcohol: servesAlcohol);
   bool get sellsAlcohol => legal != LegalClass.noAlcohol;
 
-  Venue copyWith({String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? verified}) => Venue(
+  Venue copyWith({String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, bool? verified}) => Venue(
         id: id,
         name: name ?? this.name,
         slug: slug,
@@ -99,6 +104,7 @@ class Venue {
         quietNights: quietNights ?? this.quietNights,
         geohash: geohash ?? this.geohash,
         areaShare: areaShare ?? this.areaShare,
+        tableService: tableService ?? this.tableService,
         verified: verified ?? this.verified,
         myRole: myRole,
       );
@@ -233,7 +239,19 @@ class MenuItem {
     this.noAlcohol = false,
     this.available = true,
     this.position = 0,
+    this.station = 'bar',
+    this.diet,
+    this.allergens = const [],
   });
+
+  /// Where its ticket goes (051): the bar, the kitchen, or nowhere (served as is).
+  final String station;
+
+  /// India's menu mark: veg, non_veg, egg or vegan (null when unmarked).
+  final String? diet;
+
+  /// From the EU's 14.
+  final List<String> allergens;
 
   factory MenuItem.fromRow(Map<String, dynamic> r) => MenuItem(
         id: r['id'] as String,
@@ -245,9 +263,12 @@ class MenuItem {
         noAlcohol: r['no_alcohol'] == true,
         available: r['available'] != false,
         position: _int(r['position']),
+        station: (r['station'] as String?) ?? (r['kind'] == 'food' ? 'kitchen' : 'bar'),
+        diet: r['diet'] as String?,
+        allergens: [for (final a in (r['allergens'] as List?) ?? const []) '$a'],
       );
 
-  MenuItem copyWith({String? section, String? name, String? description, double? price, String? kind, bool? noAlcohol, bool? available, int? position}) => MenuItem(
+  MenuItem copyWith({String? section, String? name, String? description, double? price, String? kind, bool? noAlcohol, bool? available, int? position, String? station, String? diet, List<String>? allergens}) => MenuItem(
         id: id,
         section: section ?? this.section,
         name: name ?? this.name,
@@ -257,6 +278,9 @@ class MenuItem {
         noAlcohol: noAlcohol ?? this.noAlcohol,
         available: available ?? this.available,
         position: position ?? this.position,
+        station: station ?? this.station,
+        diet: diet ?? this.diet,
+        allergens: allergens ?? this.allergens,
       );
 }
 
@@ -473,4 +497,222 @@ class RegisterRow {
   final double? size;
   final int opening, received, sold, other, closing;
   const RegisterRow({required this.day, required this.productId, required this.name, this.brand, this.size, required this.opening, required this.received, required this.sold, required this.other, required this.closing});
+}
+
+// ── service (051) ───────────────────────────────────────────────────────────
+class VenueArea {
+  final String id;
+  final String name;
+  final int position;
+  const VenueArea({required this.id, required this.name, this.position = 0});
+}
+
+class VenueTable {
+  final String id;
+  final String? areaId;
+  final String label;
+  final int seats;
+
+  /// What the table's QR / NFC tag carries: bwdy.site/t/<code>.
+  final String code;
+  final bool active;
+  final int position;
+  const VenueTable({required this.id, this.areaId, required this.label, this.seats = 4, required this.code, this.active = true, this.position = 0});
+
+  factory VenueTable.fromRow(Map<String, dynamic> r) => VenueTable(
+        id: r['id'] as String,
+        areaId: r['area_id'] as String?,
+        label: r['label'] as String,
+        seats: _int(r['seats']),
+        code: r['code'] as String,
+        active: r['active'] != false,
+        position: _int(r['position']),
+      );
+}
+
+class ServiceTab {
+  final String id;
+  final String? tableId;
+  final String? name;
+  final int? covers;
+  final String status; // open | closed | void
+  final DateTime openedAt;
+  final double? subtotal;
+  final double? tip;
+  const ServiceTab({required this.id, this.tableId, this.name, this.covers, this.status = 'open', required this.openedAt, this.subtotal, this.tip});
+
+  factory ServiceTab.fromRow(Map<String, dynamic> r) => ServiceTab(
+        id: r['id'] as String,
+        tableId: r['table_id'] as String?,
+        name: r['name'] as String?,
+        covers: (r['covers'] as num?)?.toInt(),
+        status: (r['status'] as String?) ?? 'open',
+        openedAt: DateTime.parse(r['opened_at'] as String).toLocal(),
+        subtotal: _numOrNull(r['subtotal']),
+        tip: _numOrNull(r['tip']),
+      );
+}
+
+class OrderLine {
+  final String id;
+  final String tabId;
+  final String? menuItemId;
+  final String name;
+  final double unitPrice;
+  final int qty;
+  final String? note;
+  final int? seat;
+  final String station; // bar | kitchen | none
+  final String status; // sent | preparing | ready | served | void
+  final String source; // staff | guest
+  final DateTime createdAt;
+  final DateTime? readyAt;
+  final String? voidReason;
+
+  /// For station tickets: where it's going.
+  final String? tableLabel;
+  final String? tabName;
+  const OrderLine({
+    required this.id,
+    required this.tabId,
+    this.menuItemId,
+    required this.name,
+    required this.unitPrice,
+    required this.qty,
+    this.note,
+    this.seat,
+    this.station = 'bar',
+    this.status = 'sent',
+    this.source = 'staff',
+    required this.createdAt,
+    this.readyAt,
+    this.voidReason,
+    this.tableLabel,
+    this.tabName,
+  });
+
+  double get total => status == 'void' ? 0 : unitPrice * qty;
+
+  OrderLine copyWith({String? status, DateTime? readyAt, String? voidReason}) => OrderLine(
+        id: id,
+        tabId: tabId,
+        menuItemId: menuItemId,
+        name: name,
+        unitPrice: unitPrice,
+        qty: qty,
+        note: note,
+        seat: seat,
+        station: station,
+        status: status ?? this.status,
+        source: source,
+        createdAt: createdAt,
+        readyAt: readyAt ?? this.readyAt,
+        voidReason: voidReason ?? this.voidReason,
+        tableLabel: tableLabel,
+        tabName: tabName,
+      );
+
+  factory OrderLine.fromRow(Map<String, dynamic> r) {
+    final tab = r['tab'] as Map?;
+    final table = tab?['table'] as Map?;
+    return OrderLine(
+      id: r['id'] as String,
+      tabId: r['tab_id'] as String,
+      menuItemId: r['menu_item_id'] as String?,
+      name: r['name'] as String,
+      unitPrice: _numOrNull(r['unit_price']) ?? 0,
+      qty: _int(r['qty']),
+      note: r['note'] as String?,
+      seat: (r['seat'] as num?)?.toInt(),
+      station: (r['station'] as String?) ?? 'bar',
+      status: (r['status'] as String?) ?? 'sent',
+      source: (r['source'] as String?) ?? 'staff',
+      createdAt: DateTime.parse(r['created_at'] as String).toLocal(),
+      readyAt: r['ready_at'] == null ? null : DateTime.parse(r['ready_at'] as String).toLocal(),
+      voidReason: r['void_reason'] as String?,
+      tableLabel: table?['label'] as String?,
+      tabName: tab?['name'] as String?,
+    );
+  }
+}
+
+/// A guest's order request or a table call, as the floor's inbox shows it — never who.
+class InboxItem {
+  final String kind; // order | call
+  final String id;
+  final String tableId;
+  final String tableLabel;
+  final DateTime createdAt;
+  final List<({String item, String name, int qty, String? note, bool alcohol})> lines;
+  final String? note;
+  final String? callKind; // staff | bill | water
+  final bool hasAlcohol;
+  const InboxItem({required this.kind, required this.id, required this.tableId, required this.tableLabel, required this.createdAt, this.lines = const [], this.note, this.callKind, this.hasAlcohol = false});
+
+  factory InboxItem.fromRow(Map<String, dynamic> r) => InboxItem(
+        kind: r['item_kind'] as String,
+        id: r['id'] as String,
+        tableId: r['table_id'] as String,
+        tableLabel: (r['table_label'] as String?) ?? '',
+        createdAt: DateTime.parse(r['created_at'] as String).toLocal(),
+        lines: [
+          for (final l in (r['lines'] as List?) ?? const [])
+            (item: '${l['item']}', name: '${l['name']}', qty: (l['qty'] as num).toInt(), note: l['note'] as String?, alcohol: l['alcohol'] == true),
+        ],
+        note: r['note'] as String?,
+        callKind: r['call_kind'] as String?,
+        hasAlcohol: r['has_alcohol'] == true,
+      );
+}
+
+class WaitParty {
+  final String id;
+  final String name;
+  final int party;
+  final int? quotedMin;
+  final String? note;
+  final String status; // waiting | seated | left
+  final DateTime createdAt;
+  const WaitParty({required this.id, required this.name, required this.party, this.quotedMin, this.note, this.status = 'waiting', required this.createdAt});
+}
+
+/// The live board (service_board()): business numbers only.
+class ServiceBoard {
+  final int openTabs, covers, bills, barWaiting, kitchenWaiting, voids, requests, calls, waiting;
+  final double sales, tips;
+  final double? barMinutes, kitchenMinutes;
+  final Map<String, double> methods;
+  const ServiceBoard({
+    this.openTabs = 0,
+    this.covers = 0,
+    this.bills = 0,
+    this.barWaiting = 0,
+    this.kitchenWaiting = 0,
+    this.voids = 0,
+    this.requests = 0,
+    this.calls = 0,
+    this.waiting = 0,
+    this.sales = 0,
+    this.tips = 0,
+    this.barMinutes,
+    this.kitchenMinutes,
+    this.methods = const {},
+  });
+
+  factory ServiceBoard.fromJson(Map<String, dynamic> j) => ServiceBoard(
+        openTabs: _int(j['open_tabs']),
+        covers: _int(j['covers']),
+        bills: _int(j['bills']),
+        barWaiting: _int(j['bar_waiting']),
+        kitchenWaiting: _int(j['kitchen_waiting']),
+        voids: _int(j['voids']),
+        requests: _int(j['requests']),
+        calls: _int(j['calls']),
+        waiting: _int(j['waiting']),
+        sales: _numOrNull(j['sales']) ?? 0,
+        tips: _numOrNull(j['tips']) ?? 0,
+        barMinutes: _numOrNull(j['bar_minutes']),
+        kitchenMinutes: _numOrNull(j['kitchen_minutes']),
+        methods: {for (final e in ((j['methods'] as Map?) ?? const {}).entries) '${e.key}': _numOrNull(e.value) ?? 0},
+      );
 }

@@ -10,10 +10,12 @@ import '../data/models.dart';
 import '../data/session.dart';
 import '../logic/roles.dart';
 import '../logic/venue_kinds.dart';
+import 'screens/floor_screen.dart';
 import 'screens/guests_screen.dart';
 import 'screens/menu_screen.dart';
 import 'screens/more_screen.dart';
 import 'screens/numbers_screen.dart';
+import 'screens/station_screen.dart';
 import 'screens/tonight_screen.dart';
 import 'screens/till_screen.dart';
 import 'theme.dart';
@@ -25,7 +27,7 @@ enum BarTab { service, guests, menu, numbers, more }
 List<BarTab> tabsFor(Venue v) {
   bool can(Cap c) => roleCan(v.myRole, c);
   return [
-    if (can(Cap.floorView) || can(Cap.redeemPerk) || can(Cap.openRoom)) BarTab.service,
+    if (can(Cap.floorView) || can(Cap.redeemPerk) || can(Cap.openRoom) || can(Cap.kitchenStation)) BarTab.service,
     if (can(Cap.guestCard)) BarTab.guests,
     if (can(Cap.editMenu) || can(Cap.mark86)) BarTab.menu,
     if (can(Cap.reports)) BarTab.numbers,
@@ -34,7 +36,7 @@ List<BarTab> tabsFor(Venue v) {
 }
 
 String tabLabel(BarTab t, Venue v) => switch (t) {
-      BarTab.service => serviceWord(v.kind),
+      BarTab.service => v.kind.isCounter ? 'Till' : (roleCan(v.myRole, Cap.floorView) ? 'Floor' : (roleCan(v.myRole, Cap.kitchenStation) ? 'Kitchen' : serviceWord(v.kind))),
       BarTab.guests => 'Guests',
       BarTab.menu => menuWord(v.kind),
       BarTab.numbers => 'Numbers',
@@ -51,7 +53,13 @@ class _ShellState extends State<Shell> {
   BarTab _tab = BarTab.service;
 
   Widget _page(BarTab t, Venue v) => switch (t) {
-        BarTab.service => v.kind.isCounter ? TillScreen(venue: v) : TonightScreen(venue: v),
+        // Counters run a till; places with tables run the floor; a kitchen-only role
+        // lands on its tickets.
+        BarTab.service => v.kind.isCounter
+            ? TillScreen(venue: v)
+            : (roleCan(v.myRole, Cap.floorView)
+                ? FloorScreen(venue: v)
+                : (roleCan(v.myRole, Cap.kitchenStation) ? StationScreen(venue: v, station: 'kitchen', pushed: false) : TonightScreen(venue: v))),
         BarTab.guests => GuestsScreen(venue: v),
         BarTab.menu => MenuScreen(venue: v),
         BarTab.numbers => NumbersScreen(venue: v),

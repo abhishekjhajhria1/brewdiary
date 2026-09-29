@@ -23,7 +23,10 @@ const staffVibeReasons = ['great vibe', 'kept it classy', 'a pleasure to serve',
 
 class TonightScreen extends StatefulWidget {
   final Venue venue;
-  const TonightScreen({super.key, required this.venue});
+
+  /// Opened from the floor (a page of its own) rather than as a tab.
+  final bool pushed;
+  const TonightScreen({super.key, required this.venue, this.pushed = false});
   @override
   State<TonightScreen> createState() => _TonightScreenState();
 }
@@ -44,13 +47,15 @@ class _TonightScreenState extends State<TonightScreen> {
   Widget build(BuildContext context) {
     final bd = context.bd;
     final s = Session.instance;
-    return ScrollPage(
+    final page = ScrollPage(
       title: 'Tonight',
       subtitle: v.name,
+      back: widget.pushed,
+      tabBar: !widget.pushed,
       onRefresh: () async => roomsRev.bump(),
       children: [
         const DemoNote(),
-        ShiftCard(venue: v),
+        if (!widget.pushed) ShiftCard(venue: v),
         if (!v.verified)
           Padding(
             padding: const EdgeInsets.only(bottom: S.l),
@@ -83,6 +88,7 @@ class _TonightScreenState extends State<TonightScreen> {
         ),
       ],
     );
+    return widget.pushed ? Scaffold(body: Ambient(child: page)) : page;
   }
 }
 

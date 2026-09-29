@@ -49,7 +49,7 @@ abstract class Backend {
     required String country,
     String? region,
   });
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare});
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService});
   Future<void> deleteVenue(String venueId);
 
   Future<VerificationRequest?> verification(String venueId);
@@ -103,6 +103,44 @@ abstract class Backend {
   Future<List<AreaSignal>> areaSignals(String venueId, {int daysAhead = 14});
   Future<int> teamKudos(String venueId, {int days = 30});
   Future<List<KudosLine>> myKudos(String venueId);
+
+  // ── service (051): the floor, tabs, stations, the bill, the inbox ─────────
+  Future<List<VenueArea>> areas(String venueId);
+  Future<void> saveArea(String venueId, VenueArea area, {bool isNew = false});
+  Future<List<VenueTable>> tables(String venueId);
+  Future<void> saveTable(String venueId, VenueTable table, {bool isNew = false});
+
+  /// Retires every printed tag for the table; returns the new code.
+  Future<String> rotateTableCode(String tableId);
+
+  Future<List<ServiceTab>> openTabs(String venueId);
+  Future<void> openTab(String venueId, String tabId, {String? tableId, String? name, int? covers});
+
+  /// Every line on a tab (void ones too — the screen shows them struck through).
+  Future<List<OrderLine>> tabLines(String tabId);
+
+  /// [lines]: [{item, qty, note, seat}] — the server prices them.
+  Future<void> addLines(String tabId, List<Map<String, Object?>> lines);
+  Future<void> setLineStatus(String lineId, String status);
+  Future<void> voidLine(String lineId, String reason);
+
+  /// Staff say how it was paid ([payments]: [{method, amount}]); returns the subtotal.
+  Future<double> closeTab(String tabId, List<Map<String, Object>> payments, {double? tip});
+  Future<void> voidTab(String tabId, String reason);
+
+  /// The bar's or the kitchen's open tickets (sent, preparing, ready).
+  Future<List<OrderLine>> stationLines(String venueId, String station);
+
+  Future<List<InboxItem>> inbox(String venueId);
+  Future<void> acceptRequest(String requestId, String tabId);
+  Future<void> declineRequest(String requestId, {String? reason});
+  Future<void> resolveCall(String callId);
+
+  Future<List<WaitParty>> waitlist(String venueId);
+  Future<void> addToWaitlist(String venueId, WaitParty p);
+  Future<void> setWaitStatus(String partyId, String status);
+
+  Future<ServiceBoard> serviceBoard(String venueId);
 
   // ── the counter (050): products, stock, sales, the register ───────────────
   Future<List<ShopProduct>> products(String venueId);

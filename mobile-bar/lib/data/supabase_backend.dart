@@ -196,7 +196,7 @@ class SupabaseBackend implements Backend {
       });
 
   @override
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare}) => _run(() async {
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService}) => _run(() async {
         final patch = <String, dynamic>{};
         if (name != null) {
           if (name.trim().isEmpty) throw const BackendError('Name can\'t be empty.');
@@ -207,6 +207,7 @@ class SupabaseBackend implements Backend {
         if (geohash != null) patch['geohash'] = geohash.isEmpty ? null : geohash.substring(0, geohash.length.clamp(0, 12));
         if (servesAlcohol != null) patch['serves_alcohol'] = servesAlcohol;
         if (areaShare != null) patch['area_share'] = areaShare;
+        if (tableService != null) patch['table_service'] = tableService;
         if (patch.isEmpty) return;
         await _c.from('venues').update(patch).eq('id', venueId);
         venueRev.bump();
@@ -406,6 +407,11 @@ class SupabaseBackend implements Backend {
           'available': item.available,
           'position': item.position,
           'updated_at': DateTime.now().toUtc().toIso8601String(),
+          // 051's columns, sent only when set, so a menu still saves on a database
+          // that hasn't run 051 yet.
+          if (item.station != (item.kind == 'food' ? 'kitchen' : 'bar')) 'station': item.station,
+          if (item.diet != null) 'diet': item.diet,
+          if (item.allergens.isNotEmpty) 'allergens': item.allergens,
         };
         if (isNew) {
           await _c.from('venue_menu_items').insert({'id': item.id, 'venue_id': venueId, ...row});
@@ -504,6 +510,173 @@ class SupabaseBackend implements Backend {
         final clean = tags.map((t) => t.trim()).where((t) => t.isNotEmpty).map((t) => t.length > 24 ? t.substring(0, 24) : t).take(12).toList();
         await _c.rpc('set_guest_note', params: {'vid': venueId, 'uid': guestId, 'in_body': body.length > 2000 ? body.substring(0, 2000) : body, 'in_tags': clean});
         guestsRev.bump();
+      });
+
+  // ── service (051) ─────────────────────────────────────────────────────────
+  @override
+  Future<List<VenueArea>> areas(String venueId) => _run(() async {
+        final rows = await _c.from('venue_areas').select().eq('venue_id', venueId).order('position').order('name');
+        return [for (final r in rows) VenueArea(id: r['id'] as String, name: r['name'] as String, position: (r['position'] as num?)?.toInt() ?? 0)];
+      });
+
+  @override
+  Future<void> saveArea(String venueId, VenueArea area, {bool isNew = false}) => _run(() async {
+        if (area.name.trim().isEmpty) throw const BackendError('Give the area a name.');
+        if (isNew) {
+          await _c.from('venue_areas').insert({'id': area.id, 'venue_id': venueId, 'name': area.name.trim(), 'position': area.position});
+        } else {
+          await _c.from('venue_areas').update({'name': area.name.trim(), 'position': area.position}).eq('id', area.id);
+        }
+        floorRev.bump();
+      });
+
+  @override
+  Future<List<VenueTable>> tables(String venueId) => _run(() async {
+        final rows = await _c.from('venue_tables').select().eq('venue_id', venueId).order('position').order('label');
+        return [for (final r in rows) VenueTable.fromRow(r)];
+      });
+
+  @override
+  Future<void> saveTable(String venueId, VenueTable table, {bool isNew = false}) => _run(() async {
+        if (table.label.trim().isEmpty) throw const BackendError('Give the table a label.');
+        final row = {'area_id': table.areaId, 'label': table.label.trim(), 'seats': table.seats, 'active': table.active, 'position': table.position};
+        if (isNew) {
+          await _c.from('venue_tables').insert({'id': table.id, 'venue_id': venueId, ...row}); // the code is made by the database
+        } else {
+          await _c.from('venue_tables').update(row).eq('id', table.id);
+        }
+        floorRev.bump();
+      });
+
+  @override
+  Future<String> rotateTableCode(String tableId) => _run(() async {
+        final c = await _c.rpc('rotate_table_code', params: {'tid': tableId});
+        floorRev.bump();
+        return c as String;
+      });
+
+  @override
+  Future<List<ServiceTab>> openTabs(String venueId) => _run(() async {
+        final rows = await _c.from('tabs').select().eq('venue_id', venueId).eq('status', 'open').order('opened_at');
+        return [for (final r in rows) ServiceTab.fromRow(r)];
+      });
+
+  @override
+  Future<void> openTab(String venueId, String tabId, {String? tableId, String? name, int? covers}) => _run(() async {
+        await _c.rpc('open_tab', params: {'vid': venueId, 'tab': tabId, 'tbl': tableId, 'tab_name': name, 'cov': covers});
+        floorRev.bump();
+      });
+
+  @override
+  Future<List<OrderLine>> tabLines(String tabId) => _run(() async {
+        final rows = await _c.from('order_lines').select().eq('tab_id', tabId).order('created_at');
+        return [for (final r in rows) OrderLine.fromRow(r)];
+      });
+
+  @override
+  Future<void> addLines(String tabId, List<Map<String, Object?>> lines) => _run(() async {
+        await _c.rpc('add_order_lines', params: {'tab': tabId, 'lines': lines});
+        floorRev.bump();
+      });
+
+  @override
+  Future<void> setLineStatus(String lineId, String status) => _run(() async {
+        await _c.rpc('set_line_status', params: {'line': lineId, 'to_status': status});
+        floorRev.bump();
+      });
+
+  @override
+  Future<void> voidLine(String lineId, String reason) => _run(() async {
+        await _c.rpc('void_line', params: {'line': lineId, 'reason': reason});
+        floorRev.bump();
+      });
+
+  @override
+  Future<double> closeTab(String tabId, List<Map<String, Object>> payments, {double? tip}) => _run(() async {
+        final s = await _c.rpc('close_tab', params: {'tab': tabId, 'payments': payments, 'tip_amount': tip});
+        floorRev.bump();
+        return (s as num).toDouble();
+      });
+
+  @override
+  Future<void> voidTab(String tabId, String reason) => _run(() async {
+        await _c.rpc('void_tab', params: {'tab': tabId, 'reason': reason});
+        floorRev.bump();
+      });
+
+  @override
+  Future<List<OrderLine>> stationLines(String venueId, String station) => _run(() async {
+        final rows = await _c
+            .from('order_lines')
+            .select('*, tab:tabs(name, table:venue_tables(label))')
+            .eq('venue_id', venueId)
+            .eq('station', station)
+            .inFilter('status', ['sent', 'preparing', 'ready'])
+            .order('created_at');
+        return [for (final r in rows) OrderLine.fromRow(r)];
+      });
+
+  @override
+  Future<List<InboxItem>> inbox(String venueId) => _run(() async {
+        final rows = await _c.rpc('service_inbox', params: {'vid': venueId});
+        return [for (final r in (rows as List? ?? const [])) InboxItem.fromRow(Map<String, dynamic>.from(r as Map))];
+      });
+
+  @override
+  Future<void> acceptRequest(String requestId, String tabId) => _run(() async {
+        await _c.rpc('accept_request', params: {'req': requestId, 'tab': tabId});
+        floorRev.bump();
+      });
+
+  @override
+  Future<void> declineRequest(String requestId, {String? reason}) => _run(() async {
+        await _c.rpc('decline_request', params: {'req': requestId, 'reason': reason});
+        floorRev.bump();
+      });
+
+  @override
+  Future<void> resolveCall(String callId) => _run(() async {
+        await _c.rpc('resolve_call', params: {'call': callId});
+        floorRev.bump();
+      });
+
+  @override
+  Future<List<WaitParty>> waitlist(String venueId) => _run(() async {
+        final since = DateTime.now().subtract(const Duration(hours: 20)).toUtc().toIso8601String();
+        final rows = await _c.from('waitlist').select().eq('venue_id', venueId).gte('created_at', since).order('created_at');
+        return [
+          for (final r in rows)
+            WaitParty(
+              id: r['id'] as String,
+              name: r['name'] as String,
+              party: (r['party'] as num).toInt(),
+              quotedMin: (r['quoted_min'] as num?)?.toInt(),
+              note: r['note'] as String?,
+              status: r['status'] as String,
+              createdAt: DateTime.parse(r['created_at'] as String).toLocal(),
+            ),
+        ];
+      });
+
+  @override
+  Future<void> addToWaitlist(String venueId, WaitParty p) => _run(() async {
+        if (p.name.trim().isEmpty) throw const BackendError('A first name, or "party of 4".');
+        await _c.from('waitlist').insert({'id': p.id, 'venue_id': venueId, 'name': p.name.trim(), 'party': p.party, 'quoted_min': p.quotedMin, 'note': p.note});
+        floorRev.bump();
+      });
+
+  @override
+  Future<void> setWaitStatus(String partyId, String status) => _run(() async {
+        await _c.from('waitlist').update({'status': status, if (status == 'seated') 'seated_at': DateTime.now().toUtc().toIso8601String()}).eq('id', partyId);
+        floorRev.bump();
+      });
+
+  @override
+  Future<ServiceBoard> serviceBoard(String venueId) => _run(() async {
+        final now = DateTime.now();
+        final dayStart = DateTime(now.year, now.month, now.day).toUtc().toIso8601String();
+        final j = await _c.rpc('service_board', params: {'vid': venueId, 'day_start': dayStart});
+        return ServiceBoard.fromJson(Map<String, dynamic>.from(j as Map));
       });
 
   // ── the counter (050) ─────────────────────────────────────────────────────

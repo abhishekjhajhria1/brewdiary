@@ -27,12 +27,13 @@ void main() {
     await tapText(t, 'The Amber Room');
     expect(Session.instance.venue?.name, 'The Amber Room');
 
-    // Tonight: the demo room is live and its guests are listed.
+    // Before the shift: Ninkasi's briefing sits on top of the floor.
+    expect(find.text('BEFORE YOUR SHIFT'), findsOneWidget);
+
+    // Tonight's room is one tap from the floor: the demo room is live, its guests listed.
+    await tapText(t, 'Tonight\'s room');
     expect(find.textContaining('amberfox'), findsWidgets);
     expect(find.text('Anita'), findsOneWidget);
-
-    // Before the shift: Ninkasi's briefing sits on top.
-    expect(find.text('BEFORE YOUR SHIFT'), findsOneWidget);
 
     // Anita has earned the first tier — hand it over.
     await t.scrollUntilVisible(find.byTooltip('Anita\'s rewards'), 150, scrollable: find.byType(Scrollable).first);
@@ -170,6 +171,67 @@ void main() {
     await tapText(t, '250 g');
     expect(find.text('250 g Kaju Katli'), findsOneWidget);
     expect(find.text('Ring up ₹300'), findsOneWidget);
+  });
+
+  testWidgets('a night on the floor: an order from a table, the kitchen, the bill', (t) async {
+    await bootApp(t, size: const Size(390, 1600));
+    await tapText(t, 'The Amber Room');
+    expect(find.text('FLOOR'), findsWidgets);
+    expect(find.bySemanticsLabel(RegExp(r'^T3, asking')), findsOneWidget, reason: 'T3 ordered from its QR');
+    expect(find.bySemanticsLabel(RegExp(r'^T5, seated, 2 guests')), findsOneWidget);
+    expect(find.textContaining('1 order from tables'), findsOneWidget);
+
+    // The inbox: accept T3's order onto a new tab — it says to check ID (there's a beer).
+    await tapText(t, 'Open');
+    expect(find.text('alcohol — check ID at the table'), findsOneWidget);
+    expect(find.textContaining('never see who asked'), findsOneWidget);
+    await tapText(t, 'Accept');
+    await t.pumpAndSettle();
+    expect(find.text('T2 asks for the bill'), findsOneWidget);
+    await tapText(t, 'DONE');
+    expect(find.textContaining('Nothing waiting'), findsOneWidget);
+    await t.tap(find.byTooltip('Back'));
+    await t.pumpAndSettle();
+
+    // The kitchen: T5's fries, sent → making.
+    await tapText(t, 'Kitchen tickets');
+    expect(find.text('T5'), findsOneWidget);
+    await t.tap(find.bySemanticsLabel(RegExp(r'^1 Masala Fries, sent')));
+    await t.pumpAndSettle();
+    expect(find.bySemanticsLabel(RegExp(r'^1 Masala Fries, preparing')), findsOneWidget);
+    await t.tap(find.byTooltip('Back'));
+    await t.pumpAndSettle();
+
+    // T5's tab: add a Kokum Cooler, then settle two ways and close.
+    await t.tap(find.bySemanticsLabel(RegExp(r'^T5, seated')));
+    await t.pumpAndSettle();
+    await tapText(t, 'Add to the order');
+    await t.tap(find.byTooltip('Add Kokum Cooler'));
+    await t.pumpAndSettle();
+    await tapText(t, 'Send 1 item');
+    expect(find.text('1 × Kokum Cooler'), findsOneWidget);
+    await tapText(t, 'Settle and close');
+    await tapText(t, '2 ways');
+    expect(find.text('PART 2'), findsOneWidget);
+    await tapText(t, 'Close the tab');
+    await t.pumpAndSettle();
+    expect(find.bySemanticsLabel(RegExp(r'^T5, free')), findsOneWidget, reason: 'the table is free again');
+  });
+
+  testWidgets('setting up the floor: a table and its own QR', (t) async {
+    await bootApp(t, size: const Size(390, 1400));
+    await tapText(t, 'The Amber Room');
+    await tapText(t, 'MORE');
+    await tapText(t, 'Floor setup');
+    expect(find.text('Guests can order from the table'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Add a table'), 200, scrollable: find.byType(Scrollable).first);
+    await tapText(t, 'Add a table');
+    await t.enterText(find.byType(TextField).first, 'W1');
+    await tapText(t, 'Save');
+    await t.scrollUntilVisible(find.text('W1'), 200, scrollable: find.byType(Scrollable).first);
+    await tapText(t, 'W1');
+    expect(find.textContaining('bwdy.site/t/'), findsWidgets);
+    expect(find.text('Share the link'), findsOneWidget);
   });
 
   testWidgets('switching venue goes back to the list', (t) async {

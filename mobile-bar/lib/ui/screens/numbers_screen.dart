@@ -40,6 +40,10 @@ class _NumbersScreenState extends State<NumbersScreen> {
       onRefresh: () async => venueRev.bump(),
       children: [
         const DemoNote(),
+        if (!v.kind.isCounter && s.can(Cap.liveBoard)) ...[
+          LiveBoard(venue: v),
+          const SectionHeader('Over time'),
+        ],
         Segmented<int>(options: const [(7, '7 days'), (30, '30 days'), (90, '90 days')], value: _days, onChanged: (d) => setState(() => _days = d)),
         const SizedBox(height: S.m),
         Loader<VenueInsights?>(
@@ -133,6 +137,70 @@ class WeekdayBars extends StatelessWidget {
           ]),
         ),
       ),
+    );
+  }
+}
+
+/// Right now: open tabs, covers, today's sales and tips, how long the bar and kitchen
+/// are taking, what's waiting, and how people paid (the staff's words). Business
+/// numbers only — no guest, and no ranking of staff.
+class LiveBoard extends StatelessWidget {
+  final Venue venue;
+  const LiveBoard({super.key, required this.venue});
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Loader<ServiceBoard>(
+      load: () => Backend.i.serviceBoard(venue.id),
+      refresh: floorRev,
+      retry: true,
+      builder: (context, b, loading) {
+        if (b == null) return const Skeleton(height: 180);
+        String mins(double? m) => m == null ? '—' : '${m.toStringAsFixed(m < 10 ? 1 : 0)}m';
+        final methods = b.methods.entries.toList()..sort((x, y) => y.value.compareTo(x.value));
+        final paid = methods.fold<double>(0, (s, e) => s + e.value);
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Text('RIGHT NOW', style: T.label(bd)),
+            const Spacer(),
+            if (b.requests + b.calls > 0) ToneTag('${b.requests + b.calls} asking', Tone.late),
+          ]),
+          const SizedBox(height: S.s),
+          StatRow([
+            StatTile('Open tabs', '${b.openTabs}', hint: '${b.covers} guests seated'),
+            StatTile('Sales today', money(b.sales, venue.currency), hint: '${b.bills} bills · tips ${money(b.tips, venue.currency)}'),
+            StatTile('Bar', '${b.barWaiting} waiting', hint: 'avg ${mins(b.barMinutes)} to ready'),
+            StatTile('Kitchen', '${b.kitchenWaiting} waiting', hint: 'avg ${mins(b.kitchenMinutes)} to ready'),
+            StatTile('Waitlist', '${b.waiting}', hint: b.voids == 0 ? 'no voids today' : '${b.voids} ${b.voids == 1 ? 'void' : 'voids'} today'),
+          ]),
+          if (methods.isNotEmpty) ...[
+            const SizedBox(height: S.m),
+            Glass(
+              padding: const EdgeInsets.all(S.l),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Text('How people paid today', style: T.label(bd)),
+                const SizedBox(height: S.s),
+                for (final e in methods)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(children: [
+                      SizedBox(width: 70, child: Text(e.key.toUpperCase().length <= 4 ? e.key.toUpperCase() : e.key, style: T.sans(bd, size: 14))),
+                      Expanded(
+                        child: LayoutBuilder(builder: (context, c) => Align(
+                              alignment: Alignment.centerLeft,
+                              child: Container(height: 8, width: c.maxWidth * (paid == 0 ? 0 : e.value / paid), decoration: BoxDecoration(color: bd.accent.withValues(alpha: .7), borderRadius: BorderRadius.circular(99))),
+                            )),
+                      ),
+                      const SizedBox(width: S.s),
+                      Text(money(e.value, venue.currency), style: T.caption(bd).copyWith(fontFeatures: T.tnum)),
+                    ]),
+                  ),
+              ]),
+            ),
+          ],
+        ]);
+      },
     );
   }
 }

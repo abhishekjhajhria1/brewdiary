@@ -10,6 +10,7 @@ import 'package:brewdiary_bar/logic/host_brief.dart';
 import 'package:brewdiary_bar/logic/insights.dart';
 import 'package:brewdiary_bar/logic/perk_rules.dart';
 import 'package:brewdiary_bar/logic/roles.dart';
+import 'package:brewdiary_bar/logic/service.dart';
 import 'package:brewdiary_bar/logic/slug.dart';
 import 'package:brewdiary_bar/logic/venue_kinds.dart';
 import 'package:brewdiary_bar/ui/shell.dart';
@@ -51,7 +52,9 @@ void main() {
       Venue as(StaffRole r, [VenueKind k = VenueKind.bar]) => Venue(id: 'v', name: 'V', slug: 'v', createdBy: 'o', kind: k, myRole: r);
       expect(tabsFor(as(StaffRole.owner)), [BarTab.service, BarTab.guests, BarTab.menu, BarTab.numbers, BarTab.more]);
       expect(tabsFor(as(StaffRole.server)), [BarTab.service, BarTab.guests, BarTab.more]);
-      expect(tabsFor(as(StaffRole.kitchen)), [BarTab.menu, BarTab.more]);
+      expect(tabsFor(as(StaffRole.kitchen)), [BarTab.service, BarTab.menu, BarTab.more]);
+      expect(tabLabel(BarTab.service, as(StaffRole.kitchen)), 'Kitchen', reason: 'the kitchen lands on its tickets');
+      expect(tabLabel(BarTab.service, as(StaffRole.server)), 'Floor');
       expect(tabsFor(as(StaffRole.host)), [BarTab.service, BarTab.more]);
       expect(tabLabel(BarTab.service, as(StaffRole.owner, VenueKind.sweetShop)), 'Till');
       expect(tabLabel(BarTab.menu, as(StaffRole.owner, VenueKind.store)), 'Shelf');
@@ -292,6 +295,52 @@ void main() {
     test('the excise register exports as CSV', () {
       final csv = registerCsv([RegisterRow(day: DateTime(2026, 10, 1), productId: 'w', name: 'Single Malt', brand: 'Amrut', size: 750, opening: 12, received: 0, sold: 1, other: 0, closing: 11)]);
       expect(csv, 'date,brand,product,size_ml,opening,received,sold,other,closing\n2026-10-01,Amrut,Single Malt,750,12,0,1,0,11');
+    });
+  });
+
+  group('service: the same sums as close_tab()', () {
+    final now = DateTime(2026, 10, 1, 20, 0);
+    OrderLine l(String id, String tab, double price, int qty, {String status = 'sent', String station = 'bar', int ago = 0, String? table}) =>
+        OrderLine(id: id, tabId: tab, name: id, unitPrice: price, qty: qty, status: status, station: station, createdAt: now.subtract(Duration(minutes: ago)), tableLabel: table);
+
+    test('a void never counts toward the bill', () {
+      expect(tabTotal([l('a', 't', 320, 2), l('b', 't', 450, 1), l('c', 't', 90, 1, status: 'void')]), 1090);
+    });
+
+    test('an even split adds up to the paisa', () {
+      expect(splitEven(1000, 3), [333.33, 333.33, 333.34]);
+      expect(splitEven(1000, 3).reduce((a, b) => a + b), closeTo(1000, 1e-9));
+      expect(splitEven(1090, 1), [1090]);
+    });
+
+    test('a table at a glance: asking beats ready beats seated', () {
+      const t = VenueTable(id: 'x', label: 'T1', code: 'abcdefgh');
+      final tab = ServiceTab(id: 'tab', tableId: 'x', openedAt: now);
+      expect(tableState(t, const [], const {}, const []), TableState.free);
+      expect(tableState(t, [tab], {'tab': [l('a', 'tab', 100, 1)]}, const []), TableState.open);
+      expect(tableState(t, [tab], {'tab': [l('a', 'tab', 100, 1, status: 'ready')]}, const []), TableState.ready);
+      expect(tableState(t, [tab], {'tab': [l('a', 'tab', 100, 1, status: 'ready')]}, [InboxItem(kind: 'call', id: 'c', tableId: 'x', tableLabel: 'T1', createdAt: now)]), TableState.attention);
+    });
+
+    test('tickets group by tab, oldest first, and run late by station', () {
+      final ts = tickets([l('a', 't2', 1, 1, ago: 5, table: 'T2'), l('b', 't1', 1, 1, ago: 20, table: 'T1'), l('c', 't2', 1, 1, ago: 3, table: 'T2')]);
+      expect(ts.map((t) => t.where), ['T1', 'T2']);
+      expect(ts.last.lines.length, 2);
+      expect(lateness('bar', 5), 0);
+      expect(lateness('bar', 12), 2);
+      expect(lateness('kitchen', 12), 0, reason: 'a kitchen gets longer than a bar');
+      expect(lateness('kitchen', 30), 2);
+      expect(nextStationStatus('sent'), 'preparing');
+      expect(nextStationStatus('preparing'), 'ready');
+      expect(nextStationStatus('ready'), isNull);
+    });
+
+    test('the shared bill: lines, total, how it was paid', () {
+      final text = billText(venue: 'The Amber Room', where: 'T2', currency: 'INR', lines: [l('Negroni', 't', 450, 2), l('Fries', 't', 260, 1, status: 'void')], payments: const [{'method': 'UPI', 'amount': 900}]);
+      expect(text, contains('2 × Negroni  ₹900'));
+      expect(text, isNot(contains('Fries')));
+      expect(text, contains('Total  ₹900'));
+      expect(text, contains('Paid by UPI  ₹900'));
     });
   });
 }

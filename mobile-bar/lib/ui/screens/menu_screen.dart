@@ -43,7 +43,7 @@ class MenuScreen extends StatelessWidget {
       title: word,
       subtitle: venue.name,
       actions: [
-        IconBtn(Ph.qrCode, tooltip: 'Table tags', onTap: () => _tags(context)),
+        IconBtn(Ph.shareNetwork, tooltip: 'Share the menu', onTap: () => _tags(context)),
       ],
       onRefresh: () async => menuRev.bump(),
       children: [
@@ -82,16 +82,18 @@ class MenuScreen extends StatelessWidget {
 
   void _tags(BuildContext context) {
     final url = menuUrl(venue.slug, Config.siteUrl);
-    showBdSheet<void>(context, title: 'Table tags', builder: (ctx) {
+    showBdSheet<void>(context, title: 'Share the ${menuWord(venue.kind).toLowerCase()}', builder: (ctx) {
       final bd = ctx.bd;
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('One link for anywhere — your socials, a poster, a message. On a table, use the table\'s own QR (More › Floor setup): it opens this menu with the table known, so guests can order and call staff from it.', style: T.bodyMuted(bd)),
+        const SizedBox(height: S.m),
         Text('Every table gets one plain link. Write it to an NFC sticker (NTAG213 or better) and print this QR beside it for phones without NFC — with the app it opens in the app, without it the website.', style: T.bodyMuted(bd)),
         const SizedBox(height: S.l),
         Center(child: QrBox(url)),
         const SizedBox(height: S.m),
         SelectableText(url, textAlign: TextAlign.center, style: T.sans(bd, size: 14, color: bd.muted)),
         const SizedBox(height: S.l),
-        BdButton('Share the link', icon: Ph.shareNetwork, onTap: () => SharePlus.instance.share(ShareParams(text: url))),
+        BdButton('Share the link', icon: Ph.shareNetwork, onTap: () => SharePlus.instance.share(ShareParams(text: '${venue.name} — the ${menuWord(venue.kind).toLowerCase()}: $url'))),
       ]);
     });
   }
@@ -104,6 +106,9 @@ class MenuScreen extends StatelessWidget {
     final price = TextEditingController(text: item?.price == null ? '' : item!.price!.toStringAsFixed(item.price! % 1 == 0 ? 0 : 2));
     var kind = item?.kind ?? (venue.sellsAlcohol ? 'cocktail' : 'food');
     var noAlcohol = item?.noAlcohol ?? !venue.sellsAlcohol;
+    var station = item?.station ?? (kind == 'food' ? 'kitchen' : 'bar');
+    String? diet = item?.diet;
+    final allergens = {...?item?.allergens};
     await showBdSheet<void>(context, title: item == null ? 'New item' : 'Edit item', builder: (ctx) {
       final bd = ctx.bd;
       return StatefulBuilder(builder: (ctx, set) {
@@ -119,7 +124,30 @@ class MenuScreen extends StatelessWidget {
           const Label('Kind'),
           const SizedBox(height: 6),
           Wrap(spacing: S.s, runSpacing: S.s, children: [
-            for (final k in menuKinds) BdChip(k.$2, active: kind == k.$1, onTap: () => set(() => kind = k.$1)),
+            for (final k in menuKinds) BdChip(k.$2, active: kind == k.$1, onTap: () => set(() {
+                  kind = k.$1;
+                  station = kind == 'food' ? 'kitchen' : 'bar';
+                })),
+          ]),
+          if (!venue.kind.isCounter) ...[
+            const SizedBox(height: S.l),
+            const Label('Its ticket goes to'),
+            const SizedBox(height: 6),
+            Wrap(spacing: S.s, runSpacing: S.s, children: [
+              for (final st in const [('bar', 'The bar'), ('kitchen', 'The kitchen'), ('none', 'Nowhere — served as is')]) BdChip(st.$2, active: station == st.$1, onTap: () => set(() => station = st.$1)),
+            ]),
+          ],
+          const SizedBox(height: S.l),
+          const Label('Mark'),
+          const SizedBox(height: 6),
+          Wrap(spacing: S.s, runSpacing: S.s, children: [
+            for (final d in const [(null, 'None'), ('veg', 'Veg'), ('non_veg', 'Non-veg'), ('egg', 'Egg'), ('vegan', 'Vegan')]) BdChip(d.$2, active: diet == d.$1, onTap: () => set(() => diet = d.$1)),
+          ]),
+          const SizedBox(height: S.l),
+          const Label('Allergens'),
+          const SizedBox(height: 6),
+          Wrap(spacing: S.s, runSpacing: S.s, children: [
+            for (final a in menuAllergens) BdChip(a.$2, active: allergens.contains(a.$1), onTap: () => set(() => allergens.contains(a.$1) ? allergens.remove(a.$1) : allergens.add(a.$1))),
           ]),
           if (venue.sellsAlcohol)
             SettingRow(
@@ -142,6 +170,9 @@ class MenuScreen extends StatelessWidget {
               noAlcohol: venue.sellsAlcohol ? noAlcohol : true,
               available: item?.available ?? true,
               position: position,
+              station: station,
+              diet: diet,
+              allergens: [for (final a in menuAllergens) if (allergens.contains(a.$1)) a.$1],
             );
             final ok = await runAction(ctx, () => Backend.i.saveMenuItem(venue.id, next, isNew: item == null), done: 'Saved.');
             if (ok && ctx.mounted) Navigator.pop(ctx);
@@ -206,3 +237,21 @@ class _ItemRow extends StatelessWidget {
     return s.can(Cap.editMenu) ? Semantics(button: true, child: Pressable(onTap: onEdit, child: row)) : row;
   }
 }
+
+/// The EU's 14 allergens (051) — the widest list any market asks for.
+const menuAllergens = [
+  ('gluten', 'Gluten'),
+  ('crustaceans', 'Crustaceans'),
+  ('eggs', 'Eggs'),
+  ('fish', 'Fish'),
+  ('peanuts', 'Peanuts'),
+  ('soy', 'Soy'),
+  ('milk', 'Milk'),
+  ('nuts', 'Tree nuts'),
+  ('celery', 'Celery'),
+  ('mustard', 'Mustard'),
+  ('sesame', 'Sesame'),
+  ('sulphites', 'Sulphites'),
+  ('lupin', 'Lupin'),
+  ('molluscs', 'Molluscs'),
+];

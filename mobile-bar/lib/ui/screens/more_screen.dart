@@ -14,6 +14,7 @@ import '../widgets/bits.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
 import 'excise_screen.dart';
+import 'floor_setup_screen.dart';
 import 'perks_screen.dart';
 import 'setup_screen.dart';
 import 'stock_screen.dart';
@@ -35,6 +36,8 @@ class MoreScreen extends StatelessWidget {
         const DemoNote(),
         Group(children: [
           GroupTile(icon: Ph.usersThree, title: 'Team', subtitle: s.can(Cap.manageTeam) ? 'Roles, invites, who\'s on' : 'Who you work with', chevron: true, onTap: () => push(TeamScreen(venue: venue))),
+          if (!venue.kind.isCounter && (s.can(Cap.editSettings) || s.can(Cap.floorView)))
+            GroupTile(icon: Ph.squaresFour, title: 'Floor setup', subtitle: 'Areas, tables, table QRs, ordering from the table', chevron: true, onTap: () => push(FloorSetupScreen(venue: venue))),
           if (venue.kind.isCounter && (s.can(Cap.countStock) || s.can(Cap.receiveStock) || s.can(Cap.editMenu)))
             GroupTile(icon: Ph.package, title: 'Stock', subtitle: 'What you sell, deliveries, suppliers', chevron: true, onTap: () => push(StockScreen(venue: venue))),
           if (venue.kind == VenueKind.store && s.can(Cap.reports))
