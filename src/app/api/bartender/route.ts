@@ -138,7 +138,7 @@ export async function POST(req: Request) {
     // finished exchange into the SEPARATE AI database. Started now, awaited at close, so
     // it adds zero latency to the first token.
     const willCollect = collect && aiDbEnabled;
-    const userPromise = willCollect ? getServerUser() : Promise.resolve(null);
+    const userPromise = willCollect ? getServerUser(req) : Promise.resolve(null);
 
     const encoder = new TextEncoder();
     let full = "";

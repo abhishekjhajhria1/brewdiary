@@ -13,7 +13,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
 
-export function RoomQr({ url, code, onClose }: { url: string; code: string; onClose: () => void }) {
+export function RoomQr({
+  url,
+  code,
+  onClose,
+  caption,
+  hint = "Put this on the tables. Guests scan it to join tonight's room — no typing, no app store detour.",
+  fileName,
+}: {
+  url: string;
+  code: string;
+  onClose: () => void;
+  /** The line printed under the code (default: "Join with code …"). */
+  caption?: string;
+  hint?: string;
+  fileName?: string;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
 
@@ -55,13 +70,13 @@ export function RoomQr({ url, code, onClose }: { url: string; code: string; onCl
     ctx.fillStyle = "#000000";
     ctx.textAlign = "center";
     ctx.font = "600 34px 'Hanken Grotesk', sans-serif";
-    ctx.fillText(`Join with code ${code}`, dim / 2, dim + 40);
+    ctx.fillText(caption ?? `Join with code ${code}`, dim / 2, dim + 40);
     ctx.font = "24px 'Hanken Grotesk', sans-serif";
     ctx.fillStyle = "#666666";
     ctx.fillText("brewdiary", dim / 2, dim + 76);
 
     setReady(true);
-  }, [url, code]);
+  }, [url, code, caption]);
 
   useEffect(() => {
     draw();
@@ -81,7 +96,7 @@ export function RoomQr({ url, code, onClose }: { url: string; code: string; onCl
       const u = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = u;
-      a.download = `brewdiary-room-${code}.png`;
+      a.download = fileName ?? `brewdiary-room-${code}.png`;
       a.click();
       URL.revokeObjectURL(u);
     }, "image/png");
@@ -95,7 +110,7 @@ export function RoomQr({ url, code, onClose }: { url: string; code: string; onCl
         <canvas ref={canvasRef} className="w-full rounded-tile bg-white shadow-[0_8px_40px_rgba(0,0,0,0.35)]" />
 
         <p className="text-center text-xs leading-relaxed text-paper/80">
-          Put this on the tables. Guests scan it to join tonight&apos;s room — no typing, no app store detour.
+          {hint}
         </p>
 
         <div className="flex w-full gap-2">

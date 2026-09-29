@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mosaic_widget_label">This month on brewdiary</string>
+    <string name="mosaic_widget_description">This month\'s mosaic, darker the more you logged. Tap to open your diary.</string>
+    <string name="mosaic_widget_empty">Open brewdiary once to draw your month here.</string>
+    <string name="quick_water">+ Water</string>
+    <string name="quick_cig">+ Cigarette</string>
+    <string name="quick_water_label">Log a glass of water</string>
+    <string name="quick_cig_label">Log a cigarette</string>
+    <string name="quick_widget_label">Quick log</string>
+    <string name="quick_widget_description">Log a water or a cigarette for today in one tap.</string>
+    <string name="split_widget_label">Split</string>
+    <string name="split_widget_description">What you\'re owed and what you owe, at a glance.</string>
+    <string name="split_widget_empty">Open Split in brewdiary once to see your balance here.</string>
+</resources>

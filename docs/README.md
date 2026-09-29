@@ -29,6 +29,10 @@ If you can read a recipe, you can read this.
 11. **[11 — Rooms, points & venues](11-rooms-points-venues.md)** — the bar layer: sparks, vibe, house
     perks, the venue dashboard, the wall screen, the leaderboard, and every privacy switch. Diagrams
     of each workflow, a map of where all of it lives, and the rules that must not be broken.
+12. **[12 — The phone app, the server, and the bars](12-mobile-server-and-venues.md)** — connect the
+    Flutter app to Supabase and Ninkasi, turn on email-code sign-in, how bars connect to guests (table
+    menus, rooms, perks), how the data is linked and where it must never go, and a roadmap for making
+    the bar side more fun.
 
 ## The one-paragraph version
 brewdiary is a **drink diary**. You open it, tap tonight's date on a calendar, and jot down what you

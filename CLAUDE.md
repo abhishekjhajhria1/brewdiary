@@ -55,7 +55,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 
 | Path | What's there |
 | --- | --- |
-| `src/app/` | Routes (`/`, `/you`, `/together`, `/split`, `/discover`, `/bartender`, `/party/[id]`, `/p/[code]`, `/u/[handle]` public profile, `/kiosk/[code]` venue wall board, `/venue` the bar dashboard) + `layout.tsx` + `globals.css` + `middleware.ts` + `api/`. The middleware also rewrites any `bar.*` host (bar.bwdy.site) onto `/venue/*` — the venue dashboard is the same app, not a second deploy. |
+| `src/app/` | Routes (`/`, `/you`, `/together`, `/split`, `/discover`, `/bartender`, `/party/[id]`, `/p/[code]`, `/u/[handle]` public profile, `/m/[slug]` a venue's table menu (opened by an NFC tag / QR), `/kiosk/[code]` venue wall board, `/venue` the bar dashboard) + `layout.tsx` + `globals.css` + `middleware.ts` + `api/`. The middleware also rewrites any `bar.*` host (bar.bwdy.site) onto `/venue/*` — the venue dashboard is the same app, not a second deploy. |
 | `src/components/` | Feature-grouped UI: `calendar/`, `log/`, `you/`, `together/`, `discover/`, `bartender/`, `share/`, `onboarding/`, `venue/`, `kiosk/`, `profile/`, `ui/`. |
 | `src/lib/` | Framework-free logic — the "brains". See the table below. |
 | `public/` | Static assets: PWA `manifest.webmanifest`, `sw.js`, app icons. |
@@ -63,6 +63,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `ai-db/` | The **separate** AI database schema (pseudonymous Ninkasi corpus; deny-all RLS). |
 | `scripts/` | Dev/ops tooling: `db.mjs` (migration runner), `gen-icons.mjs`, `verify-venue.mjs` (the only path that approves a venue), `ninkasi/` (dataset export, trend sync, AI-DB verify). |
 | `tests/` | Vitest unit tests for `src/lib` (excluded from `next build`). |
+| `test_m_app/` | The **Flutter mobile user app** (Android + iOS) on the same Supabase backend. Pure logic in `lib/core` is a 1:1 port of `src/lib` with parity tests — change one, change both. See `test_m_app/README.md`; connecting it to the server, Ninkasi, email-code sign-in and the bar side: `docs/12-mobile-server-and-venues.md`. |
 | `docs/` | The beginner-proof handbook (committed — for every developer you hire). |
 | `.claude/skills/taste-engine/` | The design/product spec + anti-slop engine. Loaded as a Claude Code skill; **keep it here** (moving it breaks the skill). |
 | `internal/` | **Git-ignored** local planning/handoff. Not in a fresh clone. |
@@ -85,6 +86,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `jurisdiction.ts` | **Where you are decides what the app may lawfully do.** Deny-by-default: an unresearched country gets the STRICTEST setting, never the most permissive. Mirrors `public.jurisdiction_policy` — **the DATABASE is the authority**; this copy only lets the UI *explain* the rule instead of just failing. |
 | `kudos.ts` | Thanking staff. A manager sees ONE total for the team — a per-person league table is impossible, and not just hidden: the RLS policy makes it unreadable even via direct SQL. |
 | `guestbook.ts` | The venue **guest book** — a **first-party** CRM (migration 040). A venue keeps notes/tags on guests it has actually served, and sees history IT generated (visits, tabs, perks). Hard rule enforced in the DB: **no join to `entries`** (a guest's diary never reaches a venue) and **no cross-venue read**. Notes are staff-written only; the guest can see every note kept on them and delete it (`my_venue_books`, You → Settings). This is the deliberate first-party revision of the older "never a per-guest list" line — we still refuse a churn list of strangers or anyone's activity elsewhere. |
+| `menus.ts` | Table **menus** (migration 042), opened by an NFC tag / QR holding `bwdy.site/m/<slug>`. A menu is NOT an offer (no discount column), is reached from the table and **never from Discover**, only verified venues are served, and "you'd probably like" (`menuPicks`) is computed on the guest's device — the venue never learns who looked. |
 | `money.ts` | Currency is a property of the PLACE, not the app (Intl-based; ₹1,23,456 vs €1.234,56). Also `spendBand()` — a flexed tab is shown as a **band** ("₹2,500+"), never the figure. |
 | `host.ts` | Which app is this? On `bar.*` the middleware rewrites to `/venue` but `usePathname()` still returns `/` — so anything hiding "on the venue app" must ask the HOST, not the path. |
 | `dataRights.ts` | Export everything / delete the account (GDPR Arts. 15 & 17, India's DPDP Act). |

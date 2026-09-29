@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Behind the system splash and until Flutter's first frame: the house's night colour. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><color android:color="@color/brewdiary_night"/></item>
+</layer-list>

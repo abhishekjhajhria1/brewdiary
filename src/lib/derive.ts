@@ -327,3 +327,97 @@ export function yearReview(allEntries: Entry[]): YearReview {
     busiestMonth: topMonthIdx !== undefined ? MONTH_NAMES[topMonthIdx] : undefined,
   };
 }
+
+// ── the taste card ───────────────────────────────────────────────────────────
+// What you're into, in a few words — for showing a bartender ON YOUR SCREEN. It's
+// derived on the device from the diary and never sent anywhere: the venue sees it
+// only because you hold the phone up (see docs: no diary ever reaches a venue).
+export interface TasteProfile {
+  /** Drink families you come back to, most first (max 4). */
+  favourites: string[];
+  /** The kinds you usually drink, most first (max 3). */
+  kinds: DrinkType[];
+  /** Your most-used mood words (max 3). */
+  moods: string[];
+  /** Share of your drinks with no alcohol, 0..1 (coffee, tea, soft drinks count). */
+  noAlcoholShare: number;
+  /** How many drinks the card is drawn from. Too few and it says so. */
+  basedOn: number;
+}
+
+/** The taste card from the last `days` of the diary (default ~6 months). */
+export function tasteProfile(allEntries: Entry[], days = 180): TasteProfile {
+  const cutoff = toKey(addDays(parseKey(todayKey()), -days));
+  const entries = drinkEntries(allEntries).filter((e) => e.date >= cutoff);
+  const fam = new Map<string, number>();
+  const kind = new Map<DrinkType, number>();
+  let soft = 0;
+  for (const e of entries) {
+    const c = canonicalize(e.drink);
+    const f = c.matched ? c.family : e.drink.trim();
+    if (f) fam.set(f, (fam.get(f) ?? 0) + 1);
+    const t = e.type ?? c.type;
+    if (t && t !== "none") kind.set(t, (kind.get(t) ?? 0) + 1);
+    if (!isAlcoholic(e)) soft++;
+  }
+  const top = <K>(m: Map<K, number>, n: number, label: (k: K) => string) =>
+    [...m.entries()].sort((a, b) => b[1] - a[1] || label(a[0]).localeCompare(label(b[0]))).slice(0, n).map(([k]) => k);
+  return {
+    // A favourite is something you've had at least twice — once is a visit, not a taste.
+    favourites: top(new Map([...fam].filter(([, n]) => n >= 2)), 4, (k) => k),
+    kinds: top(kind, 3, (k) => k),
+    moods: lexicon(entries).slice(0, 3).map((m) => m.word),
+    noAlcoholShare: entries.length ? soft / entries.length : 0,
+    basedOn: entries.length,
+  };
+}
+
+// ── the taste passport ───────────────────────────────────────────────────────
+// Stamps for VARIETY, never volume: places been, kinds tried, families met, dry
+// nights kept. Ten nights at one bar is one stamp; a dry night is a stamp too.
+export interface PassportStamp {
+  place: string;
+  /** The first night you logged there. */
+  date: string;
+}
+export interface Passport {
+  /** Most recent first-visits first (max `n`). */
+  stamps: PassportStamp[];
+  places: number;
+  /** Kinds tried, out of the eight drink kinds. */
+  kinds: number;
+  families: number;
+  dryNights: number;
+  /** The first day in the diary, or null for an empty one. */
+  since: string | null;
+}
+
+export function passport(entries: Entry[], n = 6): Passport {
+  const first = new Map<string, { place: string; date: string }>();
+  const kinds = new Set<DrinkType>();
+  const families = new Set<string>();
+  let since: string | null = null;
+  for (const e of entries) {
+    if (!since || e.date < since) since = e.date;
+    const place = e.venue?.trim();
+    if (place) {
+      const k = place.toLowerCase();
+      const prev = first.get(k);
+      if (!prev || e.date < prev.date) first.set(k, { place: prev?.place ?? place, date: e.date });
+    }
+    if (isDryDay(e)) continue;
+    const c = canonicalize(e.drink);
+    const t = e.type ?? c.type;
+    if (t) kinds.add(t);
+    families.add(c.matched ? c.family : e.drink.trim().toLowerCase());
+  }
+  const stamps = [...first.values()].sort((a, b) => b.date.localeCompare(a.date) || a.place.localeCompare(b.place));
+  return {
+    stamps: stamps.slice(0, n),
+    places: stamps.length,
+    kinds: kinds.size,
+    families: families.size,
+    dryNights: dryDates(entries).size,
+    since,
+  };
+}

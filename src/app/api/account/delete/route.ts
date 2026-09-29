@@ -10,7 +10,8 @@
 // DELETEs quietly rots and leaves orphaned personal data behind — which is exactly
 // the kind of thing that turns a deletion request into a breach.
 //
-// WHO is decided by the session cookie (getServerUser), never by the request body:
+// WHO is decided by the session cookie or the mobile app's bearer token
+// (getServerUser verifies either), never by the request body:
 // a client cannot ask us to delete somebody else.
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const user = await getServerUser();
+  const user = await getServerUser(req);
   if (!user) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
