@@ -11,7 +11,8 @@
 --      email — the first factor: the emailed sign-in code proves the address is theirs —
 --      sees "The Amber Room added you as a server", and types the manager's code — the
 --      second factor: the owner vouching, in person. Only then are they on the team, with
---      the role the manager chose.
+--      the role the manager chose. This is now the ONLY way on to a team besides an invite a
+--      manager approves: nobody can be inserted straight onto a roster by @handle any more.
 --        • The code is stored HASHED (salted with the enrolment's id) and can never be
 --          read back: the table has no read policy at all. 48 hours to live, 5 tries, one use.
 --        • It only works for the email it was made for, so a leaked code is useless.
@@ -82,6 +83,19 @@ $$;
 drop policy if exists venue_staff_read on public.venue_staff;
 create policy venue_staff_read on public.venue_staff for select to authenticated
   using (user_id = auth.uid() or public.is_venue_staff(venue_id, auth.uid()));
+
+-- Nobody is put on a team from outside any more. 045 let an owner or manager insert any
+-- account straight in, found by @handle: pick the wrong handle and a stranger was on the
+-- floor with a bartender's powers, having agreed to nothing. Now the only rows a client
+-- may insert are the creator's own owner row (createVenue); everyone else comes in through
+-- the owner's code (claim_staff_enrolment) or an invite a manager then approves
+-- (accept_staff_invite → approve_staff) — both functions, both logged.
+drop policy if exists venue_staff_insert on public.venue_staff;
+create policy venue_staff_insert on public.venue_staff for insert to authenticated
+  with check (
+    user_id = auth.uid() and role = 'owner' and status = 'active'
+    and exists (select 1 from public.venues v where v.id = venue_id and v.created_by = auth.uid())
+  );
 
 -- ── 3. the venue's own details for a team member ────────────────────────────
 create table if not exists public.staff_details (

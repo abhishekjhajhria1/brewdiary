@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build a THROWAWAY Postgres, apply supabase/schema.sql + every numbered migration in
-# order, then run db:audit and db:verify against it. Nothing here touches a real project.
+# order, then run db:audit, db:verify and db:contract against it. Nothing here touches a
+# real project.
 #
 # Why: `npm run db:audit` / `db:verify` need the live database's URL, so they only run
 # where that secret exists. This runs the same checks on a fresh local copy of the schema,
@@ -85,6 +86,8 @@ if [[ "${DB_LOCAL_ONLY_APPLY:-}" != "1" ]]; then
   SUPABASE_DB_URL="$URL" node scripts/db-audit.mjs
   echo "── db:verify"
   SUPABASE_DB_URL="$URL" node scripts/verify-flow.mjs
+  echo "── db:contract (every database call in the three apps, against this schema)"
+  SUPABASE_DB_URL="$URL" node scripts/check-app-contract.mjs
 fi
 
 if [[ "${DB_LOCAL_KEEP:-}" == "1" ]]; then

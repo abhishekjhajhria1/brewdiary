@@ -469,7 +469,13 @@ try {
                                from pg_policies where schemaname='public' and tablename='venue_staff'`);
     ok("venue_staff: still NO update policy (roles change via set_staff_role only)", !vsPol.some((p) => p.cmd === "UPDATE" || p.cmd === "ALL"));
     const ins = vsPol.find((p) => p.cmd === "INSERT");
-    ok("venue_staff insert: a role is granted only by someone senior enough (can_grant_role)", ins && /can_grant_role/.test(ins.w));
+    if (fns.includes("enrol_staff")) {
+      // 053: nobody is inserted onto a roster from a client — the owner's code or an approved invite.
+      ok("venue_staff insert: only the creator's own owner row (everyone else: the owner's code or an approved invite)",
+        ins && /created_by/.test(ins.w) && /'owner'/.test(ins.w) && !/can_grant_role/.test(ins.w));
+    } else {
+      ok("venue_staff insert: a role is granted only by someone senior enough (can_grant_role)", ins && /can_grant_role/.test(ins.w));
+    }
     const del = vsPol.find((p) => p.cmd === "DELETE");
     ok("venue_staff delete: the owner's row can't be removed from a client", del && /owner/.test(del.q) && /can_grant_role/.test(del.q));
     const cg = await one(`select pg_get_functiondef('public.can_grant_role(uuid,uuid,text)'::regprocedure) d`);

@@ -92,8 +92,16 @@ const mkUser = async (name, handle) => {
   return id;
 };
 
+/** Put someone on a team for a scene that's testing something else. From 053 no client can
+ *  insert a roster row (the owner's code or an approved invite are the ways on, tested in 16
+ *  and 23), so the scenery goes in as the database, like the rest of the fixtures. */
+const seat = (venueId, uid, role) =>
+  db.query(`insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,$3) on conflict do nothing`, [venueId, uid, role]);
+
 await db.connect();
 await db.query("begin");
+// 053 (staff access) closes the direct roster insert; the scenes adapt to either schema.
+const has053 = !!(await db.query(`select to_regprocedure('public.claim_staff_enrolment(uuid,text)') f`)).rows[0].f;
 try {
   console.log("\n── cast ─────────────────────────────────────────────");
   const owner = await mkUser("Bar Owner", `vf-owner-${Date.now()}`);
@@ -119,8 +127,15 @@ try {
   const v1 = await db.query(`select verified from public.venues where id = $1`, [vid]);
   ok("a venue CANNOT verify itself", selfVerify || v1.rows[0].verified === false);
 
-  await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'bartender')`, [vid, barman]);
-  ok("owner can add a bartender", true);
+  const addBarman = () => as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'bartender')`, [vid, barman]);
+  if (has053) {
+    ok("nobody is inserted onto a team from an app, not even by the owner (053: the owner's code is the way on)",
+      await refused(addBarman));
+    await seat(vid, barman, "bartender");
+  } else {
+    await addBarman();
+    ok("owner can add a bartender", true);
+  }
 
   await as(owner, `insert into public.venue_verifications (venue_id, requested_by, contact, note) values ($1,$2,'owner@verify.local','please')`, [
     vid,
@@ -1059,8 +1074,15 @@ try {
     const srv = await mkUser("Server", `vf-srv-${Date.now()}`);
     const cook = await mkUser("Cook", `vf-cook-${Date.now()}`);
     const hostP = await mkUser("Host", `vf-host-${Date.now()}`);
-    const addAs = (who, uid, role) =>
-      as(who, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,$3)`, [vid, uid, role]);
+    // Adding someone: before 053 a senior member inserted the row; from 053 they enrol the
+    // person (the seniority rules live in enrol_staff) and the person types the code.
+    const addAs = async (who, uid, role) => {
+      if (!has053) return as(who, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,$3)`, [vid, uid, role]);
+      const email = (await db.query(`select email from auth.users where id=$1`, [uid])).rows[0].email;
+      const e = (await as(who, `select * from public.enrol_staff($1,'New starter',$2,null,$3)`, [vid, email, role])).rows[0];
+      const r = (await as(uid, `select public.claim_staff_enrolment($1,$2) r`, [e.enrolment_id, e.code])).rows[0].r;
+      if (!r.ok) throw new Error(`claim refused: ${r.error}`);
+    };
     const roleOf = async (uid) =>
       (await db.query(`select role from public.venue_staff where venue_id=$1 and user_id=$2`, [vid, uid])).rows[0]?.role;
 
@@ -1265,7 +1287,7 @@ try {
     ok("the windows are fixed (8 days reads as 30), so two answers can't be subtracted",
       JSON.stringify(await map(owner, A.id, 8)) === JSON.stringify(await map(owner, A.id, 30)));
 
-    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'bartender')`, [A.id, barman]);
+    await seat(A.id, barman, "bartender");
     ok("a bartender can't open the area map (it's a manager's view)", await refused(() => map(barman)));
     ok("a stranger can't open it", await refused(() => map(stranger)));
     ok("a venue with no location set is told to set one", await refused(() => map(owner, vid)));
@@ -1327,7 +1349,7 @@ try {
       await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [vA, owner]);
       await db.query(`update public.venues set verified = true where id = $1`, [vA]);
     }
-    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'server') on conflict do nothing`, [vA, rohan]);
+    await seat(vA, rohan, "server");
     const seen = (await as(rohan, `select * from public.venue_area_signals($1, 14)`, [vA])).rows;
     ok("any staff member reads their own area's signals (a server too)", seen.some((r) => r.title === "Dussehra fair at the grounds"));
     ok("a venue fact carries numbers, not people", seen.some((r) => r.kind === "venue" && r.facts.rating === 4.4));
@@ -1345,7 +1367,7 @@ try {
     await as(owner, `insert into public.venues (id, name, slug, created_by, kind, country, region) values ($1,'Verify Bottle Shop',$2,$3,'store','IN','KA')`,
       [shop, `vf-bottles-${t}`, owner]);
     await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [shop, owner]);
-    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'bartender')`, [shop, barman]);
+    await seat(shop, barman, "bartender");
     await db.query(`update public.venues set verified = true where id = $1`, [shop]);
 
     const whisky = randomUUID();
@@ -1433,7 +1455,7 @@ try {
     await as(owner, `insert into public.venues (id, name, slug, created_by, kind, serves_alcohol, country) values ($1,'Verify Bistro',$2,$3,'restaurant',true,'IN')`, [bistro, `vf-bistro-${t}`, owner]);
     await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [bistro, owner]);
     for (const [uid, role] of [[waiter, "server"], [chef, "kitchen"], [hostess, "host"], [barman, "bartender"]]) {
-      await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,$3)`, [bistro, uid, role]);
+      await seat(bistro, uid, role);
     }
     await db.query(`update public.venues set verified = true where id = $1`, [bistro]);
 
@@ -1563,7 +1585,7 @@ try {
     const doorman = await mkUser("Door", `vf-door-${t}`);
     await as(owner, `insert into public.venues (id, name, slug, created_by, kind, country) values ($1,'Verify Club',$2,$3,'club','IN')`, [club, `vf-club-${t}`, owner]);
     await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [club, owner]);
-    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'host')`, [club, doorman]);
+    await seat(club, doorman, "host");
     await as(owner, `update public.venues set capacity = 3 where id = $1`, [club]);
     await as(doorman, `select public.door_tick($1, 2)`, [club]);
     await as(doorman, `select public.door_tick($1, 1)`, [club]);
@@ -1594,9 +1616,13 @@ try {
     const mail = (h) => `${h}@verify.local`;
     await as(boss, `insert into public.venues (id, name, slug, created_by, kind, country) values ($1,'Verify Staff Bar',$2,$3,'bar','IN')`, [bar, `vf-staff-${t}`, boss]);
     await as(boss, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [bar, boss]);
-    await as(boss, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'manager')`, [bar, priya]);
-    await as(boss, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'manager')`, [bar, mgr2]);
-    await as(priya, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'bartender')`, [bar, sam]);
+    await seat(bar, priya, "manager");
+    await seat(bar, mgr2, "manager");
+    await seat(bar, sam, "bartender");
+    ok("a manager can't put someone on the team directly — the code is the way on",
+      await refused(() => as(priya, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'server')`, [bar, other])));
+    ok("…nor slip someone in already paused or waiting",
+      await refused(() => as(priya, `insert into public.venue_staff (venue_id, user_id, role, status) values ($1,$2,'server','pending')`, [bar, other])));
     const can = async (who, cap) => (await as(who, `select public.venue_can($1, auth.uid(), $2) c`, [bar, cap])).rows[0].c === true;
     const claim = async (who, eid, code) => (await as(who, `select public.claim_staff_enrolment($1,$2) r`, [eid, code])).rows[0].r;
     const notIt = (code) => (code === "000000" ? "111111" : "000000");
