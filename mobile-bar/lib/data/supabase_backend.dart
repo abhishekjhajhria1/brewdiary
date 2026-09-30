@@ -81,7 +81,7 @@ class SupabaseBackend implements Backend {
   /// app asks for isn't there yet.
   static bool _behind(PostgrestException e) => const {'PGRST202', 'PGRST204', '42883', '42703', '42P01'}.contains(e.code);
   static const _needsUpdate = BackendError(
-    'This needs the latest brewdiary database update — ask whoever runs your brewdiary server to apply migration 053.',
+    'This needs the latest brewdiary database update — ask whoever runs your brewdiary server to apply the newest migrations (npm run db:migrate).',
     code: 'needs_update',
   );
 
@@ -486,6 +486,180 @@ class SupabaseBackend implements Backend {
   Future<List<ShiftRow>> shiftHours(String venueId, DateTime since) => _run(() async {
         final rows = await _c.rpc('shift_hours', params: {'vid': venueId, 'since': since.toUtc().toIso8601String()});
         return [for (final r in (rows as List? ?? const [])) ShiftRow.fromRow(Map<String, dynamic>.from(r as Map))];
+      });
+
+  // ── the rota (054) ────────────────────────────────────────────────────────
+  static String _ts(DateTime t) => t.toUtc().toIso8601String();
+
+  static String _date(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  @override
+  Future<RotaWeek> rotaWeek(String venueId, DateTime from, DateTime to) => _run(() async {
+        final j = await _c.rpc('rota_week', params: {'vid': venueId, 'from_ts': _ts(from), 'to_ts': _ts(to)});
+        return RotaWeek.fromJson(Map<String, dynamic>.from(j as Map));
+      });
+
+  @override
+  Future<String> saveRotaShift(String venueId, {String? id, String? userId, required StaffRole role, String? areaId, required DateTime starts, required DateTime ends, int breakMinutes = 0, String? note}) => _run(() async {
+        final sid = await _c.rpc('rota_save_shift', params: {
+          'vid': venueId,
+          'sid': id ?? newId(),
+          'uid': userId,
+          'shift_role': role.db,
+          'area': areaId,
+          'starts': _ts(starts),
+          'ends': _ts(ends),
+          'break_min': breakMinutes,
+          'shift_note': _blank(note),
+        });
+        rotaRev.bump();
+        return '$sid';
+      });
+
+  @override
+  Future<void> deleteRotaShift(String shiftId) => _run(() async {
+        await _c.rpc('rota_delete_shift', params: {'sid': shiftId});
+        rotaRev.bump();
+      });
+
+  @override
+  Future<int> publishRota(String venueId, DateTime from, DateTime to) => _run(() async {
+        final n = await _c.rpc('rota_publish', params: {'vid': venueId, 'from_ts': _ts(from), 'to_ts': _ts(to)});
+        rotaRev.bump();
+        staffRev.bump();
+        return (n as num?)?.toInt() ?? 0;
+      });
+
+  @override
+  Future<int> copyRota(String venueId, DateTime from, DateTime to, int byDays, {required String tz}) => _run(() async {
+        final n = await _c.rpc('rota_copy', params: {'vid': venueId, 'from_ts': _ts(from), 'to_ts': _ts(to), 'by_days': byDays, 'tz': tz});
+        rotaRev.bump();
+        return (n as num?)?.toInt() ?? 0;
+      });
+
+  @override
+  Future<void> offerShift(String shiftId) => _run(() async {
+        await _c.rpc('rota_offer_shift', params: {'sid': shiftId});
+        rotaRev.bump();
+      });
+
+  @override
+  Future<void> takeShift(String shiftId) => _run(() async {
+        await _c.rpc('rota_take_shift', params: {'sid': shiftId});
+        rotaRev.bump();
+      });
+
+  @override
+  Future<void> decideSwap(String swapId, bool approve) => _run(() async {
+        await _c.rpc('rota_decide_swap', params: {'wid': swapId, 'approve': approve});
+        rotaRev.bump();
+        staffRev.bump();
+      });
+
+  @override
+  Future<void> withdrawSwap(String swapId) => _run(() async {
+        await _c.rpc('rota_withdraw_swap', params: {'wid': swapId});
+        rotaRev.bump();
+      });
+
+  @override
+  Future<List<TimeOff>> timeOffList(String venueId) => _run(() async {
+        final rows = await _c.rpc('time_off_list', params: {'vid': venueId});
+        return [for (final r in (rows as List? ?? const [])) TimeOff.fromJson(Map<String, dynamic>.from(r as Map))];
+      });
+
+  @override
+  Future<void> requestTimeOff(String venueId, DateTime from, DateTime to, {String? note}) => _run(() async {
+        await _c.rpc('request_time_off', params: {'vid': venueId, 'from_ts': _ts(from), 'to_ts': _ts(to), 'why': _blank(note)});
+        rotaRev.bump();
+      });
+
+  @override
+  Future<void> decideTimeOff(String id, bool approve) => _run(() async {
+        await _c.rpc('decide_time_off', params: {'tid': id, 'approve': approve});
+        rotaRev.bump();
+        staffRev.bump();
+      });
+
+  @override
+  Future<void> cancelTimeOff(String id) => _run(() async {
+        await _c.rpc('cancel_time_off', params: {'tid': id});
+        rotaRev.bump();
+      });
+
+  @override
+  Future<void> setCannotWork(String venueId, List<int> days) => _run(() async {
+        await _c.rpc('set_cannot_work', params: {'vid': venueId, 'days': (days.toSet().where((d) => d >= 0 && d <= 6).toList()..sort())});
+        rotaRev.bump();
+      });
+
+  // ── breaks, timesheets, corrections (054) ─────────────────────────────────
+  @override
+  Future<ShiftState?> shiftState(String venueId) => _run(() async {
+        final rows = await _c.rpc('my_shift_state', params: {'vid': venueId});
+        final list = rows as List? ?? const [];
+        return list.isEmpty ? null : ShiftState.fromRow(Map<String, dynamic>.from(list.first as Map));
+      });
+
+  @override
+  Future<void> startBreak(String venueId) => _run(() async {
+        await _c.rpc('start_break', params: {'vid': venueId});
+        shiftRev.bump();
+      });
+
+  @override
+  Future<void> endBreak(String venueId) => _run(() async {
+        await _c.rpc('end_break', params: {'vid': venueId});
+        shiftRev.bump();
+      });
+
+  @override
+  Future<void> setBreakPaid(String breakId, bool paid) => _run(() async {
+        await _c.rpc('set_break_paid', params: {'bid': breakId, 'pay': paid});
+        shiftRev.bump();
+        staffRev.bump();
+      });
+
+  @override
+  Future<List<TimesheetShift>> timesheet(String venueId, String userId, DateTime from, DateTime to) => _run(() async {
+        final rows = await _c.rpc('staff_timesheet', params: {'vid': venueId, 'uid': userId, 'from_ts': _ts(from), 'to_ts': _ts(to)});
+        return [for (final r in (rows as List? ?? const [])) TimesheetShift.fromRow(Map<String, dynamic>.from(r as Map))];
+      });
+
+  @override
+  Future<void> correctShift(String shiftId, DateTime start, DateTime end, String reason) => _run(() async {
+        await _c.rpc('correct_shift', params: {'sid': shiftId, 'new_start': _ts(start), 'new_end': _ts(end), 'reason': reason.trim()});
+        shiftRev.bump();
+        staffRev.bump();
+      });
+
+  @override
+  Future<void> addMissedShift(String venueId, String userId, DateTime start, DateTime end, {int breakMinutes = 0, required String reason}) => _run(() async {
+        await _c.rpc('add_missed_shift', params: {'vid': venueId, 'uid': userId, 'starts': _ts(start), 'ends': _ts(end), 'break_min': breakMinutes, 'reason': reason.trim()});
+        shiftRev.bump();
+        staffRev.bump();
+      });
+
+  // ── pay and payroll (054) ─────────────────────────────────────────────────
+  @override
+  Future<Map<String, double?>> payRates(String venueId) => _run(() async {
+        final rows = await _c.rpc('pay_rates', params: {'vid': venueId});
+        return {
+          for (final r in (rows as List? ?? const []))
+            (r as Map)['user_id'] as String: (r['hourly_rate'] as num?)?.toDouble() ?? double.tryParse('${r['hourly_rate']}'),
+        };
+      });
+
+  @override
+  Future<void> setPayRate(String venueId, String userId, double? rate) => _run(() async {
+        await _c.rpc('set_staff_pay', params: {'vid': venueId, 'uid': userId, 'rate': rate});
+        staffRev.bump();
+      });
+
+  @override
+  Future<List<PayrollDay>> payroll(String venueId, DateTime from, DateTime to, {required String tz}) => _run(() async {
+        final rows = await _c.rpc('payroll_days', params: {'vid': venueId, 'from_day': _date(from), 'to_day': _date(to), 'tz': tz});
+        return [for (final r in (rows as List? ?? const [])) PayrollDay.fromJson(Map<String, dynamic>.from(r as Map))];
       });
 
   // ── tonight ───────────────────────────────────────────────────────────────

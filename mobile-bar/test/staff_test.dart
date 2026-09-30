@@ -99,7 +99,17 @@ void main() {
 
     test('every kind of history line the database writes reads as a sentence', () {
       String word(String db) => db[0].toUpperCase() + db.substring(1);
-      final kinds = RegExp(r'kind in \(([^)]+)\)').firstMatch(sql)![1]!.split(',').map((k) => k.trim().replaceAll("'", '')).where((k) => k.isNotEmpty);
+      // The kinds the database accepts: 053's list, as widened by any later migration that
+      // redefines the check (054 added the rota's, breaks' and pay's).
+      var list = RegExp(r'kind in \(([^)]+)\)').firstMatch(sql)![1]!;
+      final later = Directory('../supabase').listSync().whereType<File>().where((f) => RegExp(r'/\d{3}_\w+\.sql$').hasMatch(f.path)).toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+      for (final f in later) {
+        final m = RegExp(r'staff_events_kind_check check \(kind in \(([^)]+)\)').firstMatch(f.readAsStringSync());
+        if (m != null) list = m[1]!;
+      }
+      final kinds = list.split(',').map((k) => k.trim().replaceAll("'", '')).where((k) => k.isNotEmpty).toList();
+      expect(kinds, containsAll(['shift_ended_by_manager', 'rota_published', 'break_changed', 'pay_changed']));
       for (final k in kinds) {
         final line = describeStaffEvent(kind: k, actor: 'Ira', subject: 'Sam', detail: const {'role': 'server', 'from': 'server', 'to': 'bartender'}, roleWord: word);
         expect(line, isNot(startsWith('Ira changed something')), reason: k);
@@ -110,6 +120,15 @@ void main() {
       expect(d('locked', {'reason': 'See me first'}), 'Ira paused Sam\'s access: \u201cSee me first\u201d');
       expect(d('role_changed', {'from': 'server', 'to': 'kitchen'}), 'Ira made Sam kitchen staff (was server)');
       expect(d('left'), 'Sam left the team');
+      final fri = DateTime(2026, 10, 2, 18).toUtc().toIso8601String();
+      expect(d('rota_published', {'from': DateTime(2026, 9, 28).toUtc().toIso8601String(), 'shifts': 12}), 'Ira published 12 shifts from Mon 28 Sep');
+      expect(d('swap_decided', {'approved': true, 'open': true, 'shift_start': fri}), 'Ira gave Sam an open shift on Fri 2 Oct');
+      expect(d('swap_decided', {'approved': false, 'shift_start': fri}), 'Ira said no to Sam taking a shift on Fri 2 Oct');
+      expect(d('time_off_decided', {'approved': true, 'from': fri}), 'Ira approved Sam\'s time off from Fri 2 Oct');
+      expect(d('shift_corrected', {'reason': 'Forgot to clock out', 'shift_start': fri}), 'Ira corrected Sam\'s times on Fri 2 Oct: \u201cForgot to clock out\u201d');
+      expect(d('shift_added', {'reason': 'Clock was down'}), 'Ira added a missed shift for Sam: \u201cClock was down\u201d');
+      expect(d('break_changed', {'paid': true, 'minutes': 30}), 'Ira marked Sam\'s 30-minute break as paid');
+      expect(d('pay_changed'), 'Ira changed Sam\'s pay', reason: 'the history never says how much');
     });
   });
 
@@ -233,11 +252,9 @@ void main() {
       await bootApp(t);
       await tapText(t, 'The Amber Room');
       await tapText(t, 'MORE');
-      await t.ensureVisible(find.text('Clock in'));
-      await tapText(t, 'Clock in');
+      await tapInView(t, 'Clock in');
       expect(find.textContaining('On since'), findsOneWidget);
-      await t.ensureVisible(find.text('Clock out'));
-      await tapText(t, 'Clock out');
+      await tapInView(t, 'Clock out');
       expect(find.text('Off the clock'), findsOneWidget);
 
       await t.drag(find.byType(Scrollable).first, const Offset(0, 800));

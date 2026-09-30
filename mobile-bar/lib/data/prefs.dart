@@ -45,6 +45,7 @@ final stockRev = Rev();
 final floorRev = Rev();
 final doorRev = Rev();
 final shiftRev = Rev();
+final rotaRev = Rev();
 
 /// Bumped when the database refuses something for lack of permission: the session then
 /// re-checks where this person stands, so a lock-out shows at once, not a minute later.

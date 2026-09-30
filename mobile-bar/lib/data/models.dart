@@ -402,13 +402,18 @@ class StaffEvent {
 }
 
 /// Hours on the clock for one person since a date (shift_hours) — for pay, listed by name.
+/// [minutes] are worked minutes, after unpaid breaks (054).
 class ShiftRow {
   final String userId;
   final String name;
   final StaffRole role;
   final DateTime? onSince;
   final int minutes;
-  const ShiftRow({required this.userId, required this.name, required this.role, this.onSince, required this.minutes});
+  final int breakMinutes;
+
+  /// On a break right now, since when (054) — the floor needs to know who's off it.
+  final DateTime? onBreakSince;
+  const ShiftRow({required this.userId, required this.name, required this.role, this.onSince, required this.minutes, this.breakMinutes = 0, this.onBreakSince});
 
   factory ShiftRow.fromRow(Map<String, dynamic> r) => ShiftRow(
         userId: r['user_id'] as String,
@@ -416,7 +421,323 @@ class ShiftRow {
         role: StaffRole.parse(r['role'] as String?),
         onSince: _time(r['on_since']),
         minutes: _int(r['minutes']),
+        breakMinutes: _int(r['break_minutes']),
+        onBreakSince: _time(r['on_break_since']),
       );
+}
+
+// ── the rota, breaks and payroll (054) ───────────────────────────────────────
+/// Someone asked to give a shift away, or to take one (rota_swaps). [status] is 'offered'
+/// (waiting for a taker) or 'taken' (waiting for a manager's yes).
+class RotaSwap {
+  final String id;
+  final String status;
+  final String? fromUser;
+  final String? toUser;
+  final String? toName;
+  const RotaSwap({required this.id, required this.status, this.fromUser, this.toUser, this.toName});
+
+  factory RotaSwap.fromJson(Map<String, dynamic> j) => RotaSwap(
+        id: j['id'] as String,
+        status: (j['status'] as String?) ?? 'offered',
+        fromUser: j['from_user'] as String?,
+        toUser: j['to_user'] as String?,
+        toName: j['to_name'] as String?,
+      );
+
+  bool get taken => status == 'taken';
+}
+
+/// A planned shift. [userId] null = an OPEN shift anyone who can work the role may ask for.
+class RotaShift {
+  final String id;
+  final String? userId;
+  final String? name;
+
+  /// False when the person is paused or has left: someone should cover it.
+  final bool active;
+  final StaffRole role;
+  final String? areaId;
+  final String? area;
+  final DateTime startsAt;
+  final DateTime endsAt;
+  final int breakMinutes;
+  final String? note;
+  final bool published;
+  final RotaSwap? swap;
+  const RotaShift({
+    required this.id,
+    this.userId,
+    this.name,
+    this.active = true,
+    required this.role,
+    this.areaId,
+    this.area,
+    required this.startsAt,
+    required this.endsAt,
+    this.breakMinutes = 0,
+    this.note,
+    this.published = false,
+    this.swap,
+  });
+
+  factory RotaShift.fromJson(Map<String, dynamic> j) => RotaShift(
+        id: j['id'] as String,
+        userId: j['user_id'] as String?,
+        name: j['name'] as String?,
+        active: j['active'] != false,
+        role: StaffRole.parse(j['role'] as String?),
+        areaId: j['area_id'] as String?,
+        area: j['area'] as String?,
+        startsAt: _time(j['starts_at']) ?? DateTime.now(),
+        endsAt: _time(j['ends_at']) ?? DateTime.now(),
+        breakMinutes: _int(j['break_minutes']),
+        note: j['note'] as String?,
+        published: j['published'] == true,
+        swap: j['swap'] is Map ? RotaSwap.fromJson(Map<String, dynamic>.from(j['swap'] as Map)) : null,
+      );
+
+  bool get open => userId == null;
+
+  /// Planned minutes: the shift less its planned break.
+  int get minutes => endsAt.difference(startsAt).inMinutes - breakMinutes;
+
+  RotaShift copyWith({String? userId, bool clearUser = false, String? name, bool? published, RotaSwap? swap, bool clearSwap = false, bool? active}) => RotaShift(
+        id: id,
+        userId: clearUser ? null : (userId ?? this.userId),
+        name: clearUser ? null : (name ?? this.name),
+        active: active ?? this.active,
+        role: role,
+        areaId: areaId,
+        area: area,
+        startsAt: startsAt,
+        endsAt: endsAt,
+        breakMinutes: breakMinutes,
+        note: note,
+        published: published ?? this.published,
+        swap: clearSwap ? null : (swap ?? this.swap),
+      );
+}
+
+/// Asked-for or given time off (time_off). [endsAt] is the start of the day after the last.
+class TimeOff {
+  final String id;
+  final String userId;
+  final String? name;
+  final DateTime startsAt;
+  final DateTime endsAt;
+  final String status; // requested | approved | declined | cancelled
+  final String? note;
+  final String? decidedBy;
+  const TimeOff({required this.id, required this.userId, this.name, required this.startsAt, required this.endsAt, required this.status, this.note, this.decidedBy});
+
+  factory TimeOff.fromJson(Map<String, dynamic> j) => TimeOff(
+        id: j['id'] as String,
+        userId: j['user_id'] as String,
+        name: j['name'] as String?,
+        startsAt: _time(j['starts_at']) ?? DateTime.now(),
+        endsAt: _time(j['ends_at']) ?? DateTime.now(),
+        status: (j['status'] as String?) ?? 'requested',
+        note: j['note'] as String?,
+        decidedBy: j['decided_by'] as String?,
+      );
+
+  /// The last day off (the day before [endsAt]).
+  DateTime get lastDay => DateTime(endsAt.year, endsAt.month, endsAt.day).subtract(const Duration(days: 1));
+}
+
+/// Someone on the team as the rota sees them. [cannotWork] (0 = Sunday … 6 = Saturday) is
+/// there for whoever plans, and for the person themself.
+class RotaMember {
+  final String userId;
+  final String name;
+  final StaffRole role;
+  final List<int>? cannotWork;
+  const RotaMember({required this.userId, required this.name, required this.role, this.cannotWork});
+
+  factory RotaMember.fromJson(Map<String, dynamic> j) => RotaMember(
+        userId: j['user_id'] as String,
+        name: (j['name'] as String?) ?? 'someone',
+        role: StaffRole.parse(j['role'] as String?),
+        cannotWork: j['cannot_work'] is List ? [for (final d in j['cannot_work'] as List) _int(d)] : null,
+      );
+}
+
+/// A week (or up to five) of the rota, as the caller may see it (rota_week).
+class RotaWeek {
+  final bool canPlan;
+  final List<RotaShift> shifts;
+  final List<TimeOff> timeOff;
+  final List<RotaMember> team;
+  const RotaWeek({required this.canPlan, required this.shifts, required this.timeOff, required this.team});
+
+  factory RotaWeek.fromJson(Map<String, dynamic> j) => RotaWeek(
+        canPlan: j['can_plan'] == true,
+        shifts: [for (final x in (j['shifts'] as List? ?? const [])) RotaShift.fromJson(Map<String, dynamic>.from(x as Map))],
+        timeOff: [for (final x in (j['time_off'] as List? ?? const [])) TimeOff.fromJson(Map<String, dynamic>.from(x as Map))],
+        team: [for (final x in (j['team'] as List? ?? const [])) RotaMember.fromJson(Map<String, dynamic>.from(x as Map))],
+      );
+}
+
+/// Where I stand on the clock (my_shift_state): on since, on a break since, and unpaid
+/// break minutes so far this shift.
+class ShiftState {
+  final DateTime onSince;
+  final DateTime? breakSince;
+  final bool breakPaid;
+  final int breakMinutes;
+  const ShiftState({required this.onSince, this.breakSince, this.breakPaid = false, this.breakMinutes = 0});
+
+  factory ShiftState.fromRow(Map<String, dynamic> r) => ShiftState(
+        onSince: _time(r['on_since']) ?? DateTime.now(),
+        breakSince: _time(r['break_since']),
+        breakPaid: r['break_paid'] == true,
+        breakMinutes: _int(r['break_minutes']),
+      );
+
+  bool get onBreak => breakSince != null;
+}
+
+/// One change to a worked shift's times, kept for good (shift_corrections).
+class ShiftCorrection {
+  final String kind; // corrected | added
+  final String reason;
+  final DateTime at;
+  final String? by;
+  final DateTime? oldStarted;
+  final DateTime? oldEnded;
+  final DateTime newStarted;
+  final DateTime newEnded;
+  const ShiftCorrection({required this.kind, required this.reason, required this.at, this.by, this.oldStarted, this.oldEnded, required this.newStarted, required this.newEnded});
+
+  factory ShiftCorrection.fromJson(Map<String, dynamic> j) => ShiftCorrection(
+        kind: (j['kind'] as String?) ?? 'corrected',
+        reason: (j['reason'] as String?) ?? '',
+        at: _time(j['at']) ?? DateTime.now(),
+        by: j['by'] as String?,
+        oldStarted: _time(j['old_started']),
+        oldEnded: _time(j['old_ended']),
+        newStarted: _time(j['new_started']) ?? DateTime.now(),
+        newEnded: _time(j['new_ended']) ?? DateTime.now(),
+      );
+}
+
+/// A break on a worked shift (shift_breaks). Unpaid unless an owner or manager marked it
+/// paid — nobody decides that for themself.
+class ShiftBreak {
+  final String id;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+  final bool paid;
+  const ShiftBreak({required this.id, required this.startedAt, this.endedAt, this.paid = false});
+
+  factory ShiftBreak.fromJson(Map<String, dynamic> j) => ShiftBreak(
+        id: j['id'] as String,
+        startedAt: _time(j['started_at']) ?? DateTime.now(),
+        endedAt: _time(j['ended_at']),
+        paid: j['paid'] == true,
+      );
+
+  /// Whole minutes, rounded (still going: so far).
+  int get minutes => ((endedAt ?? DateTime.now()).difference(startedAt).inSeconds / 60).round();
+}
+
+/// A worked shift on someone's timesheet (staff_timesheet).
+class TimesheetShift {
+  final String shiftId;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+  final int workedMinutes;
+  final int unpaidBreakMinutes;
+  final int paidBreakMinutes;
+  final List<ShiftCorrection> corrections;
+  final List<ShiftBreak> breaks;
+  const TimesheetShift({
+    required this.shiftId,
+    required this.startedAt,
+    this.endedAt,
+    required this.workedMinutes,
+    this.unpaidBreakMinutes = 0,
+    this.paidBreakMinutes = 0,
+    this.corrections = const [],
+    this.breaks = const [],
+  });
+
+  factory TimesheetShift.fromRow(Map<String, dynamic> r) => TimesheetShift(
+        shiftId: r['shift_id'] as String,
+        startedAt: _time(r['started_at']) ?? DateTime.now(),
+        endedAt: _time(r['ended_at']),
+        workedMinutes: _int(r['worked_minutes']),
+        unpaidBreakMinutes: _int(r['unpaid_break_minutes']),
+        paidBreakMinutes: _int(r['paid_break_minutes']),
+        corrections: [
+          for (final c in (r['corrections'] is List ? r['corrections'] as List : const []))
+            ShiftCorrection.fromJson(Map<String, dynamic>.from(c as Map)),
+        ],
+        breaks: [
+          for (final b in (r['breaks'] is List ? r['breaks'] as List : const [])) ShiftBreak.fromJson(Map<String, dynamic>.from(b as Map)),
+        ],
+      );
+
+  bool get corrected => corrections.isNotEmpty;
+}
+
+/// One person's day for payroll (payroll_days), in the venue's time zone. [role] is 'left'
+/// for someone no longer on the team; [pay] is null when no rate was set.
+class PayrollDay {
+  final String userId;
+  final String name;
+  final String role;
+  final DateTime day;
+  final int shifts;
+  final String? firstIn;
+  final String? lastOut;
+  final int workedMinutes;
+  final int unpaidBreakMinutes;
+  final int paidBreakMinutes;
+  final int plannedMinutes;
+  final bool stillOn;
+  final bool corrected;
+  final double? hourlyRate;
+  final double? pay;
+  const PayrollDay({
+    required this.userId,
+    required this.name,
+    required this.role,
+    required this.day,
+    this.shifts = 0,
+    this.firstIn,
+    this.lastOut,
+    this.workedMinutes = 0,
+    this.unpaidBreakMinutes = 0,
+    this.paidBreakMinutes = 0,
+    this.plannedMinutes = 0,
+    this.stillOn = false,
+    this.corrected = false,
+    this.hourlyRate,
+    this.pay,
+  });
+
+  factory PayrollDay.fromJson(Map<String, dynamic> r) {
+    final d = DateTime.tryParse('${r['day']}') ?? DateTime.now();
+    return PayrollDay(
+      userId: r['user_id'] as String,
+      name: (r['name'] as String?) ?? 'someone',
+      role: (r['role'] as String?) ?? '',
+      day: DateTime(d.year, d.month, d.day),
+      shifts: _int(r['shifts']),
+      firstIn: r['first_in'] as String?,
+      lastOut: r['last_out'] as String?,
+      workedMinutes: _int(r['worked_minutes']),
+      unpaidBreakMinutes: _int(r['unpaid_break_minutes']),
+      paidBreakMinutes: _int(r['paid_break_minutes']),
+      plannedMinutes: _int(r['planned_minutes']),
+      stillOn: r['still_on'] == true,
+      corrected: r['corrected'] == true,
+      hourlyRate: _numOrNull(r['hourly_rate']),
+      pay: _numOrNull(r['pay']),
+    );
+  }
 }
 
 /// A room: tonight's party with the venue's name on it.

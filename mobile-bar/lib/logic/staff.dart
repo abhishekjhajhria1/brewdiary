@@ -122,6 +122,16 @@ String describeStaffEvent({
   String role(String key) => (detail[key] is String) ? roleWord(detail[key] as String).toLowerCase() : 'staff';
   String asRole(String key) => roleWithArticle(role(key));
   final reason = (detail['reason'] as String?)?.trim();
+  final why = reason == null || reason.isEmpty ? '' : ': \u201c$reason\u201d';
+  String on(String key) {
+    final t = DateTime.tryParse('${detail[key] ?? ''}')?.toLocal();
+    return t == null ? '' : ' on ${_evDay(t)}';
+  }
+
+  final yes = detail['approved'] == true;
+  final n = detail['shifts'] is num ? (detail['shifts'] as num).toInt() : null;
+  final mins = detail['minutes'] is num ? (detail['minutes'] as num).toInt() : null;
+  final brk = mins == null ? 'break' : '$mins-minute break';
   return switch (kind) {
     'enrolled' => '$a added $who as ${asRole('role')}',
     'code_reissued' => '$a made a new code for $who',
@@ -141,6 +151,23 @@ String describeStaffEvent({
     'left' => '$s left the team',
     'details_changed' => '$a updated $s\'s details',
     'shift_ended_by_manager' => '$a clocked $s out',
+    'rota_published' => '$a published ${n == null ? 'the rota' : n == 1 ? '1 shift' : '$n shifts'}${on('from').replaceFirst(' on ', ' from ')}',
+    'swap_decided' => !yes
+        ? '$a said no to $s taking a shift${on('shift_start')}'
+        : detail['open'] == true
+            ? '$a gave $s an open shift${on('shift_start')}'
+            : '$a said yes to $s taking a shift${on('shift_start')}',
+    'time_off_decided' => yes ? '$a approved $s\'s time off${on('from').replaceFirst(' on ', ' from ')}' : '$a said no to $s\'s time off${on('from').replaceFirst(' on ', ' from ')}',
+    'shift_corrected' => '$a corrected $s\'s times${on('shift_start')}$why',
+    'shift_added' => '$a added a missed shift for $s${on('shift_start')}$why',
+    'break_changed' => detail['paid'] == true ? '$a marked $s\'s $brk as paid' : '$a marked $s\'s $brk as unpaid',
+    'pay_changed' => '$a changed $s\'s pay',
     _ => '$a changed something for $s',
   };
 }
+
+const _evDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const _evMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/// "Fri 3 Oct" — a day in a history line.
+String _evDay(DateTime t) => '${_evDays[t.weekday - 1]} ${t.day} ${_evMonths[t.month - 1]}';

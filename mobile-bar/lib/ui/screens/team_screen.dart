@@ -25,8 +25,10 @@ import '../widgets/bits.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
 import 'locked_screen.dart' show staffWhen;
+import 'payroll_screen.dart' show payRateSheet;
 import 'staff_history_screen.dart';
 import 'staff_hours_screen.dart';
+import 'timesheet_screen.dart';
 
 class TeamScreen extends StatelessWidget {
   final Venue venue;
@@ -223,6 +225,8 @@ class TeamScreen extends StatelessWidget {
 
   Future<void> _self(BuildContext context, StaffMember m) => showActions(context, title: m.name, message: roleBlurb(m.role), actions: [
         SheetAction('My details here', icon: Ph.identificationBadge, onTap: () => _details(context, m)),
+        if (Session.instance.can(Cap.ownShift))
+          SheetAction('My timesheet', icon: Ph.listChecks, onTap: () async => Navigator.of(context).push(MaterialPageRoute(builder: (_) => TimesheetScreen(venue: venue, userId: m.id, name: m.name)))),
         if (Session.instance.can(Cap.ownShift) || Session.instance.can(Cap.auditLog))
           SheetAction('My history here', icon: Ph.clockCounterClockwise, onTap: () async => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StaffHistoryScreen(venue: venue, userId: m.id, name: m.name)))),
       ]);
@@ -244,6 +248,10 @@ class TeamScreen extends StatelessWidget {
       ],
       if (m.phone != null && m.phone!.isNotEmpty) SheetAction('Call ${m.phone}', icon: Ph.phone, onTap: () => _call(context, m.phone!)),
       SheetAction('Their details', icon: Ph.identificationBadge, onTap: () => _details(context, m)),
+      if (s.can(Cap.editRota))
+        SheetAction('Their timesheet', icon: Ph.listChecks, onTap: () async => Navigator.of(context).push(MaterialPageRoute(builder: (_) => TimesheetScreen(venue: venue, userId: m.id, name: m.name)))),
+      if (s.can(Cap.manageTeam) && m.role != StaffRole.owner && canGrant(mine, m.role))
+        SheetAction('Their pay', icon: Ph.wallet, onTap: () => payRateSheet(context, venue, userId: m.id, name: m.name)),
       if (s.can(Cap.auditLog))
         SheetAction('Their history', icon: Ph.clockCounterClockwise, onTap: () async => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StaffHistoryScreen(venue: venue, userId: m.id, name: m.name)))),
       SheetAction('Remove from the team', icon: Ph.userMinus, destructive: true, onTap: () async {

@@ -1844,7 +1844,10 @@ try {
     await as(sam, `select public.clock_out($1)`, [vid]);
     ok("clocking out ends the break", (await db.query(`select count(*)::int n from public.shift_breaks where user_id=$1 and ended_at is null`, [sam])).rows[0].n === 0);
     await as(noor, `select public.clock_in($1)`, [vid]);
-    await as(noor, `select public.start_break($1, true)`, [vid]);
+    ok("a break someone takes is unpaid — nobody marks their own paid", await refused(() => as(noor, `select public.start_break($1, true)`, [vid])));
+    await as(noor, `select public.start_break($1)`, [vid]);
+    ok("…and whoever runs the floor sees who's on a break",
+      !!(await as(mgr, `select * from public.shift_hours($1, now() - interval '1 day')`, [vid])).rows.find((r) => r.user_id === noor)?.on_break_since);
     await as(mgr, `select public.lock_staff($1,$2,'Come and see me',null)`, [vid, noor]);
     ok("a pause ends the shift and the break",
       (await db.query(`select count(*)::int n from public.shift_breaks where user_id=$1 and ended_at is null`, [noor])).rows[0].n === 0);
@@ -1860,6 +1863,22 @@ try {
                       ($1,$2,$3, now() - interval '26 hours', now() - interval '25 hours 45 minutes', true)`, [past, vid, cook]);
     const hrs = (await as(mgr, `select * from public.shift_hours($1, now() - interval '2 days')`, [vid])).rows.find((r) => r.user_id === cook);
     ok("unpaid breaks come off the hours; paid ones don't", hrs?.minutes === 330 && hrs?.break_minutes === 30, `— ${JSON.stringify(hrs)}`);
+
+    // whether a break is paid is a manager's call about someone else — never your own
+    const cookBreaks = (await as(mgr, `select * from public.staff_timesheet($1,$2, now() - interval '3 days', now())`, [vid, cook])).rows
+      .find((r) => r.shift_id === past)?.breaks ?? [];
+    const lunch = cookBreaks.find((b) => !b.paid);
+    ok("the timesheet lists each break", cookBreaks.length === 2 && !!lunch, `— ${JSON.stringify(cookBreaks)}`);
+    ok("nobody marks their own break paid", await refused(() => as(cook, `select public.set_break_paid($1, true)`, [lunch.id])));
+    ok("a bartender can't mark anyone's", await refused(() => as(sam, `select public.set_break_paid($1, true)`, [lunch.id])));
+    await as(mgr, `select public.set_break_paid($1, true)`, [lunch.id]);
+    const hrsPaid = (await as(mgr, `select * from public.shift_hours($1, now() - interval '2 days')`, [vid])).rows.find((r) => r.user_id === cook);
+    ok("a manager marks a break paid — it's back in the hours", hrsPaid?.minutes === 360 && hrsPaid?.break_minutes === 0, `— ${JSON.stringify(hrsPaid)}`);
+    ok("…the history says which way, never an amount of money",
+      (await db.query(`select detail from public.staff_events where venue_id=$1 and kind='break_changed'`, [vid])).rows
+        .some((r) => r.detail.paid === true && r.detail.minutes === 30 && !("pay" in r.detail) && !("rate" in r.detail)));
+    await as(mgr, `select public.set_break_paid($1, false)`, [lunch.id]);
+    ok("…and can make it unpaid again", (await db.query(`select paid from public.shift_breaks where id=$1`, [lunch.id])).rows[0].paid === false);
 
     // corrections
     const own = randomUUID();
@@ -1918,8 +1937,8 @@ try {
       (await as(mgr, `select * from public.payroll_days($1, (now() at time zone 'UTC')::date - 3, (now() at time zone 'UTC')::date, 'Mars/Olympus')`, [vid])).rows.length === pay.length);
 
     const kinds = (await as(mgr, `select distinct kind from public.staff_history($1)`, [vid])).rows.map((r) => r.kind);
-    ok("the team's history has the rota, swaps, time off, corrections and pay",
-      ["rota_published", "swap_decided", "time_off_decided", "shift_corrected", "shift_added", "pay_changed"].every((k) => kinds.includes(k)), `— ${kinds.join(", ")}`);
+    ok("the team's history has the rota, swaps, time off, corrections, breaks and pay",
+      ["rota_published", "swap_decided", "time_off_decided", "shift_corrected", "shift_added", "pay_changed", "break_changed"].every((k) => kinds.includes(k)), `— ${kinds.join(", ")}`);
     for (const tb of ["rota_swaps", "time_off", "shift_corrections"]) {
       ok(`nobody writes ${tb} directly`,
         await refused(() => as(mgr, `insert into public.${tb} (venue_id) values ($1)`, [vid])));

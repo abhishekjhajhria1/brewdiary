@@ -1,5 +1,6 @@
-// More — the rest of the venue: the team, the loyalty card, setup, your shift (clock in
-// and out), your own thanks, switching venue, and the theme.
+// More — the rest of the venue: the team, the rota and time off, payroll, the loyalty card,
+// setup, your shift (clock in and out, breaks), your own thanks, switching venue, and the
+// theme.
 import 'package:flutter/material.dart';
 
 import '../../data/backend.dart';
@@ -15,11 +16,14 @@ import '../widgets/common.dart';
 import '../widgets/page.dart';
 import 'excise_screen.dart';
 import 'floor_setup_screen.dart';
+import 'payroll_screen.dart';
 import 'perks_screen.dart';
+import 'rota_screen.dart';
 import 'setup_screen.dart';
 import 'staff_hours_screen.dart';
 import 'stock_screen.dart';
 import 'team_screen.dart';
+import 'time_off_screen.dart';
 
 class MoreScreen extends StatelessWidget {
   final Venue venue;
@@ -43,6 +47,24 @@ class MoreScreen extends StatelessWidget {
             chevron: true,
             onTap: () => push(TeamScreen(venue: venue)),
           ),
+          if (s.can(Cap.ownShift) || s.can(Cap.editRota))
+            GroupTile(
+              icon: Ph.calendarCheck,
+              title: 'Rota',
+              subtitle: s.can(Cap.editRota) ? 'Plan the week, publish it, cover and swaps' : 'Your shifts, open shifts, swaps',
+              chevron: true,
+              onTap: () => push(RotaScreen(venue: venue)),
+            ),
+          if (s.can(Cap.ownShift))
+            GroupTile(
+              icon: Ph.calendarBlank,
+              title: 'Time off',
+              subtitle: s.can(Cap.editRota) ? 'Ask for days off, answer the team\'s' : 'Ask for days off, the days you can\'t work',
+              chevron: true,
+              onTap: () => push(TimeOffScreen(venue: venue)),
+            ),
+          if (s.can(Cap.manageTeam))
+            GroupTile(icon: Ph.wallet, title: 'Payroll', subtitle: 'Hours and pay by person — share as CSV', chevron: true, onTap: () => push(PayrollScreen(venue: venue))),
           if (!venue.kind.isCounter && (s.can(Cap.editSettings) || s.can(Cap.floorView)))
             GroupTile(icon: Ph.squaresFour, title: 'Floor setup', subtitle: 'Areas, tables, table QRs, ordering from the table', chevron: true, onTap: () => push(FloorSetupScreen(venue: venue))),
           if (venue.kind.isCounter && (s.can(Cap.countStock) || s.can(Cap.receiveStock) || s.can(Cap.editMenu)))

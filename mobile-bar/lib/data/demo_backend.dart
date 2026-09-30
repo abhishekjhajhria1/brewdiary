@@ -15,6 +15,7 @@ import '../logic/area.dart' show HeatRow;
 import '../logic/host_brief.dart';
 import '../logic/roles.dart';
 import '../logic/service.dart' show nightStart;
+import '../logic/rota.dart' show canTakeRole;
 import '../logic/staff.dart';
 import '../logic/venue_kinds.dart';
 
@@ -63,8 +64,15 @@ class DemoBackend implements Backend {
   final List<_Code> _codes = []; // every venue's codes; [_Code.forMe] = one that added "you"
   final List<StaffAccess> _myAccess = [];
   final Map<String, List<({String? subjectId, StaffEvent e})>> _history = {}; // venueId → newest first
-  final Map<String, DateTime> _onShift = {}; // venueId|userId → since
-  final Map<String, int> _weekMinutes = {}; // venueId|userId → minutes this week, finished shifts
+  // The time clock's record (053/054): every worked shift with its breaks, the rate it was
+  // worked at, and its corrections. Hours, timesheets and payroll are all read from it.
+  final List<_Shift> _clock = [];
+  final Map<String, double> _rates = {}; // venueId|userId → hourly rate
+  // The rota (054).
+  final List<_Plan> _rota = [];
+  final List<_Swap> _swaps = [];
+  final List<_Off> _offs = [];
+  final Map<String, List<int>> _cannotWork = {}; // venueId|userId → weekdays (0 = Sunday)
   final Map<String, StaffRole> _invites = {}; // invite code → role (for this venue list)
   int _eventId = 100;
 
@@ -186,11 +194,11 @@ class DemoBackend implements Backend {
         reportTo: 'You (demo)',
       ),
     ];
-    _onShift['${bar.id}|s-ira'] = t0.subtract(const Duration(hours: 3));
-    _onShift['${bar.id}|s-sam'] = t0.subtract(const Duration(hours: 2, minutes: 10));
-    for (final (id, m) in [('demo-me', 610), ('s-ira', 1265), ('s-sam', 985), ('s-noor', 1500)]) {
-      _weekMinutes['${bar.id}|$id'] = m;
+    for (final (id, r) in [('s-ira', 450.0), ('s-sam', 250.0), ('s-noor', 230.0), ('s-leo', 240.0)]) {
+      _rates['${bar.id}|$id'] = r;
     }
+    _seedClock(bar.id, t0);
+    _seedRota(bar.id, t0);
     _codes.add(_Code(
       id: 'enrol-rahul',
       venueId: bar.id,
@@ -308,6 +316,85 @@ class DemoBackend implements Backend {
     for (final g in _people.where((p) => p.id.startsWith('g-') && p.id != 'g-anita')) {
       _cards['${bar.id}|${g.id}'] = GuestCard(visits: 1 + g.name.length % 4, firstSeen: now.subtract(Duration(days: 3 + g.name.length * 4)), lastSeen: now, tabs: 1, totalSpend: 1200.0 + g.name.length * 150, beenHere: true);
     }
+  }
+
+  /// Two weeks of worked shifts at the Amber Room, two people on right now, and one night
+  /// someone forgot to clock out (corrected, with the reason kept).
+  void _seedClock(String venueId, DateTime now) {
+    final today = DateTime(now.year, now.month, now.day);
+    _clock.add(_Shift(id: newId(), venueId: venueId, userId: 's-ira', start: now.subtract(const Duration(hours: 3)), rate: _rates['$venueId|s-ira']));
+    _clock.add(_Shift(id: newId(), venueId: venueId, userId: 's-sam', start: now.subtract(const Duration(hours: 2, minutes: 10)), rate: _rates['$venueId|s-sam']));
+    void worked(String uid, DateTime day, int hour, int length, {int unpaid = 0, int paid = 0}) {
+      final start = DateTime(day.year, day.month, day.day, hour);
+      final end = start.add(Duration(minutes: length));
+      if (end.isAfter(now)) return;
+      if (_clock.any((x) => x.venueId == venueId && x.userId == uid && x.start.isBefore(end) && (x.end ?? now).isAfter(start))) return;
+      final sh = _Shift(id: newId(), venueId: venueId, userId: uid, start: start, end: end, rate: _rates['$venueId|$uid']);
+      if (unpaid > 0) {
+        final bs = start.add(Duration(minutes: length ~/ 2 - unpaid ~/ 2));
+        sh.breaks.add(_Break(bs, end: bs.add(Duration(minutes: unpaid))));
+      }
+      if (paid > 0) {
+        final bs = start.add(const Duration(minutes: 90));
+        sh.breaks.add(_Break(bs, end: bs.add(Duration(minutes: paid)), paid: true));
+      }
+      _clock.add(sh);
+    }
+
+    for (var d = 1; d <= 13; d++) {
+      final day = DateTime(today.year, today.month, today.day - d);
+      final w = day.weekday; // 1 Monday … 7 Sunday
+      if (const {1, 2, 4, 5, 6}.contains(w)) worked('s-ira', day, 16, 480, unpaid: 30);
+      if (const {3, 4, 5, 6, 7}.contains(w)) worked('s-sam', day, 18, 480, unpaid: 30);
+      if (const {2, 5, 6, 7}.contains(w)) worked('s-noor', day, 19, 360, paid: 15);
+      if (const {5, 6}.contains(w)) worked('demo-me', day, 17, 360);
+      if (d >= 3 && const {3, 4, 5}.contains(w)) worked('s-leo', day, 18, 420, unpaid: 30);
+    }
+    final noorNights = _clock.where((x) => x.userId == 's-noor' && x.end != null && now.difference(x.start).inDays >= 2).toList()
+      ..sort((a, b) => b.start.compareTo(a.start));
+    if (noorNights.isNotEmpty) {
+      final n = noorNights.first;
+      n.corrections.add(ShiftCorrection(
+        kind: 'corrected',
+        reason: 'Forgot to clock out — we closed at 01:00',
+        at: n.end!.add(const Duration(hours: 10)),
+        by: 'You (demo)',
+        oldStarted: n.start,
+        oldEnded: n.end!.add(const Duration(hours: 3)),
+        newStarted: n.start,
+        newEnded: n.end!,
+      ));
+    }
+  }
+
+  /// This week's published rota at the Amber Room, an open Saturday shift, Sam offering his
+  /// Sunday, two drafts for next week, and Noor asking for next Saturday off.
+  void _seedRota(String venueId, DateTime now) {
+    final monday = weekStart(now);
+    _Plan plan(String? uid, StaffRole role, int day, int hour, int length, {int brk = 0, bool published = true, String? note}) {
+      final start = DateTime(monday.year, monday.month, monday.day + day, hour);
+      final p = _Plan(id: newId(), venueId: venueId, userId: uid, role: role, start: start, end: start.add(Duration(minutes: length)), breakMinutes: brk, published: published, note: note);
+      _rota.add(p);
+      return p;
+    }
+
+    for (var d = 0; d < 7; d++) {
+      final w = d + 1;
+      if (const {1, 2, 4, 5, 6}.contains(w)) plan('s-ira', StaffRole.manager, d, 16, 480, brk: 30);
+      if (const {3, 4, 5, 6, 7}.contains(w)) plan('s-sam', StaffRole.bartender, d, 18, 480, brk: 30);
+      if (const {2, 5, 6, 7}.contains(w)) plan('s-noor', StaffRole.server, d, 19, 360);
+    }
+    plan(null, StaffRole.server, 5, 20, 360, note: 'A party of 12 at 21:00');
+    final sunday = _rota.firstWhere((p) => p.userId == 's-sam' && p.start.weekday == DateTime.sunday);
+    _swaps.add(_Swap(id: 'swap-sam-sunday', venueId: venueId, shiftId: sunday.id, fromUser: 's-sam', status: 'offered'));
+    plan('s-ira', StaffRole.manager, 7, 16, 480, brk: 30, published: false);
+    plan('s-noor', StaffRole.server, 11, 19, 360, published: false);
+    // Next Thursday's lunch, open and published — Noor has asked for it.
+    final lunch = plan(null, StaffRole.server, 10, 12, 240, note: 'Lunch for a wedding party');
+    _swaps.add(_Swap(id: 'swap-noor-lunch', venueId: venueId, shiftId: lunch.id, toUser: 's-noor', status: 'taken'));
+    final sat = DateTime(monday.year, monday.month, monday.day + 12);
+    _offs.add(_Off(id: 'off-noor', venueId: venueId, userId: 's-noor', start: sat, end: DateTime(sat.year, sat.month, sat.day + 1), note: 'My cousin\'s wedding', status: 'requested'));
+    _cannotWork['$venueId|s-sam'] = [1];
   }
 
   void _needUser() {
@@ -448,8 +535,8 @@ class DemoBackend implements Backend {
       for (final m in [...?_staff[venueId]])
         if (manage || m.status == StaffStatus.active || m.id == me.id)
           m.copyWith(
-            onShiftSince: _onShift['$venueId|${m.id}'],
-            clearShift: _onShift['$venueId|${m.id}'] == null,
+            onShiftSince: _open(venueId, m.id)?.start,
+            clearShift: _open(venueId, m.id) == null,
             // phones and lock details are for owners, managers and the person themself
             clearPhone: !manage && m.id != me.id,
             clearLock: !manage && m.id != me.id,
@@ -505,7 +592,15 @@ class DemoBackend implements Backend {
     if (target == null) return;
     if (userId != me.id && !canGrant(_myRole(venueId), target.role)) throw const BackendError('You can\'t remove them.');
     list.removeWhere((s) => s.id == userId);
-    _onShift.remove('$venueId|$userId');
+    _endShift(venueId, userId);
+    // like the database's trigger: their future shifts open up, their offers and asks go
+    final now = DateTime.now();
+    for (final p in _rota.where((p) => p.venueId == venueId && p.userId == userId && p.start.isAfter(now))) {
+      p.userId = null;
+    }
+    for (final w in _swaps.where((w) => w.venueId == venueId && w.live && (w.fromUser == userId || w.toUser == userId))) {
+      w.status = 'withdrawn';
+    }
     _log(venueId, userId == me.id ? 'left' : 'removed', subjectId: userId, subject: target.name, detail: {'role': target.role.db, 'status': target.status.db});
     staffRev.bump();
   }
@@ -651,12 +746,32 @@ class DemoBackend implements Backend {
       const StaffMember(id: 's-meenakshi', handle: 'meenakshi', name: 'Meenakshi', role: StaffRole.owner),
       StaffMember(id: me.id, handle: me.handle, name: me.name, role: c.role, joinedAt: DateTime.now(), approvedBy: c.addedBy),
     ];
+    _staff[v.id]!.add(StaffMember(id: 's-arun', handle: 'arun', name: 'Arun', role: StaffRole.server, joinedAt: DateTime.now().subtract(const Duration(days: 60))));
     _rooms[v.id] = [];
     _menu[v.id] = [];
     _perks[v.id] = [];
+    _seedCafeRota(v.id, c.role);
     _log(v.id, 'joined', subjectId: me.id, subject: me.name, detail: {'role': c.role.db, 'via': 'code'});
     venueRev.bump();
     return ClaimResult(ok: true, venueId: v.id, venueName: v.name, role: c.role);
+  }
+
+  /// Café Nilgiri, where "you" were added: next week's published rota — your Thursday, an
+  /// open Saturday brunch, and Arun offering his Friday.
+  void _seedCafeRota(String venueId, StaffRole role) {
+    final now = DateTime.now();
+    final monday = weekStart(now);
+    _Plan plan(String? uid, int day, int hour, int length, {String? note}) {
+      final start = DateTime(monday.year, monday.month, monday.day + 7 + day, hour);
+      final p = _Plan(id: newId(), venueId: venueId, userId: uid, role: role, start: start, end: start.add(Duration(minutes: length)), published: true, note: note);
+      _rota.add(p);
+      return p;
+    }
+
+    plan(me.id, 3, 8, 480);
+    plan(null, 5, 9, 360, note: 'Brunch rush');
+    final fri = plan('s-arun', 4, 8, 480);
+    _swaps.add(_Swap(id: 'swap-arun-friday', venueId: venueId, shiftId: fri.id, fromUser: 's-arun', status: 'offered'));
   }
 
   /// For the walk-throughs: an owner somewhere else pauses "you" at [venueId] (what a
@@ -666,7 +781,7 @@ class DemoBackend implements Backend {
     _venues.removeWhere((x) => x.id == venueId);
     _paused[venueId] = v;
     _myAccess.add(StaffAccess(venueId: v.id, venueName: v.name, venueKind: v.kind, role: v.myRole, status: StaffStatus.locked, lockReason: reason, lockedAt: DateTime.now(), reportTo: reportTo, reportToRole: reportToRole));
-    _onShift.remove('$venueId|${me.id}');
+    _endShift(venueId, me.id);
     venueRev.bump(); // the real app hears of it within a minute, or on the next refused call
   }
 
@@ -773,29 +888,64 @@ class DemoBackend implements Backend {
   }
 
   // ── the time clock (053) ──────────────────────────────────────────────────
+  _Shift? _open(String venueId, String userId) =>
+      _clock.where((x) => x.venueId == venueId && x.userId == userId && x.end == null).firstOrNull;
+
+  /// Whatever ends a shift ends its break (the database's trigger).
   void _endShift(String venueId, String userId) {
-    final since = _onShift.remove('$venueId|$userId');
-    if (since == null) return;
-    final k = '$venueId|$userId';
-    final start = since.isBefore(weekStart(DateTime.now())) ? weekStart(DateTime.now()) : since;
-    _weekMinutes[k] = (_weekMinutes[k] ?? 0) + DateTime.now().difference(start).inMinutes;
+    final sh = _open(venueId, userId);
+    if (sh == null) return;
+    final now = DateTime.now();
+    sh.end = now;
+    for (final b in sh.breaks.where((b) => b.end == null)) {
+      b.end = now;
+    }
+  }
+
+  /// A shift's minutes inside [lo, hi): worked (less unpaid breaks), unpaid and paid breaks —
+  /// the same sums as shift_minutes() in 054.
+  ({int worked, int unpaid, int paid}) _minutes(_Shift sh, DateTime lo, DateTime hi) {
+    final now = DateTime.now();
+    final a = sh.start.isAfter(lo) ? sh.start : lo;
+    final e = sh.end ?? now;
+    final b = e.isBefore(hi) ? e : hi;
+    if (!b.isAfter(a)) return (worked: 0, unpaid: 0, paid: 0);
+    var unpaid = 0.0;
+    var paid = 0.0;
+    for (final br in sh.breaks) {
+      final bs = br.start.isAfter(a) ? br.start : a;
+      final be0 = br.end ?? now;
+      final be = be0.isBefore(b) ? be0 : b;
+      final m = be.difference(bs).inSeconds / 60;
+      if (m <= 0) continue;
+      if (br.paid) {
+        paid += m;
+      } else {
+        unpaid += m;
+      }
+    }
+    final total = b.difference(a).inSeconds / 60;
+    return (worked: math.max(0, (total - unpaid).round()), unpaid: unpaid.round(), paid: paid.round());
   }
 
   @override
-  Future<DateTime?> myShift(String venueId) async => _onShift['$venueId|${me.id}'];
+  Future<DateTime?> myShift(String venueId) async => _open(venueId, me.id)?.start;
 
   @override
   Future<DateTime> clockIn(String venueId) async {
     if (!roleCan(_myRole(venueId), Cap.ownShift)) throw const BackendError('You can\'t clock in here right now.');
-    final since = _onShift.putIfAbsent('$venueId|${me.id}', DateTime.now);
+    final open = _open(venueId, me.id);
+    if (open != null) return open.start;
+    final sh = _Shift(id: newId(), venueId: venueId, userId: me.id, start: DateTime.now(), rate: _rates['$venueId|${me.id}']);
+    _clock.add(sh);
     shiftRev.bump();
     staffRev.bump();
-    return since;
+    return sh.start;
   }
 
   @override
   Future<void> clockOut(String venueId) async {
-    if (_onShift['$venueId|${me.id}'] == null) throw const BackendError('You\'re not clocked in.');
+    if (_open(venueId, me.id) == null) throw const BackendError('You\'re not clocked in.');
     _endShift(venueId, me.id);
     shiftRev.bump();
     staffRev.bump();
@@ -804,7 +954,7 @@ class DemoBackend implements Backend {
   @override
   Future<void> endShift(String venueId, String userId) async {
     if (!roleCan(_myRole(venueId), Cap.editRota)) throw const BackendError('Your role doesn\'t manage shifts here.');
-    if (_onShift['$venueId|$userId'] == null) throw const BackendError('They\'re not clocked in.');
+    if (_open(venueId, userId) == null) throw const BackendError('They\'re not clocked in.');
     _endShift(venueId, userId);
     final m = _member(venueId, userId);
     _log(venueId, 'shift_ended_by_manager', subjectId: userId, subject: m.name);
@@ -816,21 +966,552 @@ class DemoBackend implements Backend {
   Future<List<ShiftRow>> shiftHours(String venueId, DateTime since) async {
     final everyone = roleCan(_myRole(venueId), Cap.editRota);
     final now = DateTime.now();
-    final monday = weekStart(now);
-    // The demo keeps this week's finished shifts; earlier weeks run at the same pace.
-    final daysBefore = since.isBefore(monday) ? monday.difference(since).inDays : 0;
-    final daysThisWeek = math.max(1, now.difference(monday).inDays + 1);
+    final floor = now.subtract(const Duration(days: 93));
+    final lo = since.isBefore(floor) ? floor : since;
     final rows = <ShiftRow>[];
     for (final m in _staff[venueId] ?? const <StaffMember>[]) {
-      if (!everyone && m.id != me.id) continue;
-      final k = '$venueId|${m.id}';
-      final week = _weekMinutes[k] ?? 0;
-      final open = _onShift[k];
-      final openMins = open == null ? 0 : now.difference(open.isBefore(since) ? since : open).inMinutes;
-      rows.add(ShiftRow(userId: m.id, name: m.name, role: m.role, onSince: open, minutes: week + (week * daysBefore / daysThisWeek).round() + openMins));
+      if ((!everyone && m.id != me.id) || m.status == StaffStatus.pending) continue;
+      var worked = 0;
+      var unpaid = 0;
+      for (final sh in _clock.where((x) => x.venueId == venueId && x.userId == m.id && (x.end ?? now).isAfter(lo))) {
+        final t = _minutes(sh, lo, now);
+        worked += t.worked;
+        unpaid += t.unpaid;
+      }
+      final open = _open(venueId, m.id);
+      rows.add(ShiftRow(
+        userId: m.id,
+        name: m.name,
+        role: m.role,
+        onSince: open?.start,
+        minutes: worked,
+        breakMinutes: unpaid,
+        onBreakSince: open?.breaks.where((b) => b.end == null).firstOrNull?.start,
+      ));
     }
     rows.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return rows;
+  }
+
+  // ── the rota (054) ────────────────────────────────────────────────────────
+  bool _plans(String venueId) => roleCan(_myRole(venueId), Cap.editRota);
+
+  StaffMember? _rosterOf(String venueId, String? userId) =>
+      userId == null ? null : (_staff[venueId] ?? const <StaffMember>[]).where((m) => m.id == userId).firstOrNull;
+
+  bool _activeHere(String venueId, String userId) => _rosterOf(venueId, userId)?.status == StaffStatus.active;
+
+  String _nameOf(String venueId, String userId) =>
+      _rosterOf(venueId, userId)?.name ?? _people.where((p) => p.id == userId).firstOrNull?.name ?? (userId == me.id ? me.name : 'someone');
+
+  bool _offThen(String venueId, String userId, DateTime a, DateTime b) =>
+      _offs.any((o) => o.venueId == venueId && o.userId == userId && o.status == 'approved' && o.start.isBefore(b) && o.end.isAfter(a));
+
+  bool _bookedThen(String venueId, String userId, DateTime a, DateTime b, {String? except}) =>
+      _rota.any((p) => p.venueId == venueId && p.userId == userId && p.id != except && p.start.isBefore(b) && p.end.isAfter(a));
+
+  RotaShift _shiftOut(_Plan p) {
+    final w = _swaps.where((w) => w.shiftId == p.id && w.live).firstOrNull;
+    return RotaShift(
+      id: p.id,
+      userId: p.userId,
+      name: p.userId == null ? null : _nameOf(p.venueId, p.userId!),
+      active: p.userId == null || _activeHere(p.venueId, p.userId!),
+      role: p.role,
+      areaId: p.areaId,
+      area: p.areaId == null ? null : (_areas[p.venueId] ?? const <VenueArea>[]).where((a) => a.id == p.areaId).firstOrNull?.name,
+      startsAt: p.start,
+      endsAt: p.end,
+      breakMinutes: p.breakMinutes,
+      note: p.note,
+      published: p.published,
+      swap: w == null ? null : RotaSwap(id: w.id, status: w.status, fromUser: w.fromUser, toUser: w.toUser, toName: w.toUser == null ? null : _nameOf(p.venueId, w.toUser!)),
+    );
+  }
+
+  TimeOff _offOut(_Off o, {required bool showNote}) => TimeOff(
+        id: o.id,
+        userId: o.userId,
+        name: _nameOf(o.venueId, o.userId),
+        startsAt: o.start,
+        endsAt: o.end,
+        status: o.status,
+        note: showNote ? o.note : null,
+        decidedBy: o.decidedBy,
+      );
+
+  void _checkRange(DateTime from, DateTime to) {
+    if (!to.isAfter(from) || to.difference(from) > const Duration(days: 35)) throw const BackendError('Pick up to five weeks.');
+  }
+
+  @override
+  Future<RotaWeek> rotaWeek(String venueId, DateTime from, DateTime to) async {
+    if (!_activeHere(venueId, me.id)) throw const BackendError('You\'re not on this team.');
+    _checkRange(from, to);
+    final plan = _plans(venueId);
+    final shifts = [
+      for (final p in _rota)
+        if (p.venueId == venueId && !p.start.isBefore(from) && p.start.isBefore(to) && (plan || p.published)) _shiftOut(p),
+    ]..sort((a, b) => a.startsAt.compareTo(b.startsAt));
+    final offs = [
+      for (final o in _offs)
+        if (o.venueId == venueId && o.start.isBefore(to) && o.end.isAfter(from) && (o.status == 'approved' || (o.status == 'requested' && (plan || o.userId == me.id))))
+          _offOut(o, showNote: plan || o.userId == me.id),
+    ];
+    final team = [
+      for (final m in _staff[venueId] ?? const <StaffMember>[])
+        if (m.status == StaffStatus.active)
+          RotaMember(userId: m.id, name: m.name, role: m.role, cannotWork: plan || m.id == me.id ? [...?_cannotWork['$venueId|${m.id}']] : null),
+    ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return RotaWeek(canPlan: plan, shifts: shifts, timeOff: offs, team: team);
+  }
+
+  @override
+  Future<String> saveRotaShift(String venueId, {String? id, String? userId, required StaffRole role, String? areaId, required DateTime starts, required DateTime ends, int breakMinutes = 0, String? note}) async {
+    if (!_plans(venueId)) throw const BackendError('Your role doesn\'t plan the rota here.');
+    if (!ends.isAfter(starts)) throw const BackendError('The shift has to end after it starts.');
+    final len = ends.difference(starts);
+    if (len < const Duration(minutes: 15)) throw const BackendError('A shift is at least 15 minutes.');
+    if (len > const Duration(hours: 16)) throw const BackendError('A shift is at most 16 hours.');
+    if (breakMinutes < 0 || breakMinutes > 240 || Duration(minutes: breakMinutes) >= len) {
+      throw const BackendError('The break has to fit inside the shift (up to 4 hours).');
+    }
+    final nt = note?.trim() ?? '';
+    if (nt.length > 200) throw const BackendError('Keep the note under 200 letters.');
+    final sid = id ?? newId();
+    if (userId != null) {
+      if (!_activeHere(venueId, userId)) throw const BackendError('They\'re not working here right now.');
+      if (_bookedThen(venueId, userId, starts, ends, except: sid)) throw const BackendError('They\'re already on the rota then.');
+      if (_offThen(venueId, userId, starts, ends)) throw const BackendError('They have time off then.');
+    }
+    final cur = _rota.where((p) => p.id == sid).firstOrNull;
+    if (cur != null) {
+      if (cur.userId != userId || cur.start != starts || cur.end != ends) {
+        for (final w in _swaps.where((w) => w.shiftId == sid && w.live)) {
+          w.status = 'withdrawn';
+        }
+      }
+      cur
+        ..userId = userId
+        ..role = role
+        ..areaId = areaId
+        ..start = starts
+        ..end = ends
+        ..breakMinutes = breakMinutes
+        ..note = nt.isEmpty ? null : nt;
+    } else {
+      _rota.add(_Plan(id: sid, venueId: venueId, userId: userId, role: role, areaId: areaId, start: starts, end: ends, breakMinutes: breakMinutes, note: nt.isEmpty ? null : nt));
+    }
+    rotaRev.bump();
+    return sid;
+  }
+
+  @override
+  Future<void> deleteRotaShift(String shiftId) async {
+    final p = _rota.where((x) => x.id == shiftId).firstOrNull;
+    if (p == null) return;
+    if (!_plans(p.venueId)) throw const BackendError('Your role doesn\'t plan the rota here.');
+    _rota.remove(p);
+    _swaps.removeWhere((w) => w.shiftId == shiftId);
+    rotaRev.bump();
+  }
+
+  @override
+  Future<int> publishRota(String venueId, DateTime from, DateTime to) async {
+    if (!_plans(venueId)) throw const BackendError('Your role doesn\'t plan the rota here.');
+    _checkRange(from, to);
+    var n = 0;
+    for (final p in _rota.where((p) => p.venueId == venueId && !p.published && !p.start.isBefore(from) && p.start.isBefore(to))) {
+      p.published = true;
+      n++;
+    }
+    if (n > 0) _log(venueId, 'rota_published', detail: {'from': from.toIso8601String(), 'to': to.toIso8601String(), 'shifts': n});
+    rotaRev.bump();
+    staffRev.bump();
+    return n;
+  }
+
+  @override
+  Future<int> copyRota(String venueId, DateTime from, DateTime to, int byDays, {required String tz}) async {
+    if (!_plans(venueId)) throw const BackendError('Your role doesn\'t plan the rota here.');
+    if (byDays == 0 || byDays.abs() > 35) throw const BackendError('Copy by up to five weeks.');
+    _checkRange(from, to);
+    var n = 0;
+    final source = _rota.where((p) => p.venueId == venueId && !p.start.isBefore(from) && p.start.isBefore(to)).toList()
+      ..sort((a, b) => a.start.compareTo(b.start));
+    for (final p in source) {
+      final ns = DateTime(p.start.year, p.start.month, p.start.day + byDays, p.start.hour, p.start.minute);
+      final ne = ns.add(p.end.difference(p.start));
+      var who = p.userId;
+      if (who != null && (!_activeHere(venueId, who) || _bookedThen(venueId, who, ns, ne) || _offThen(venueId, who, ns, ne))) who = null;
+      if (_rota.any((x) => x.venueId == venueId && x.start == ns && x.end == ne && x.role == p.role && (x.userId == who || x.userId == p.userId))) continue;
+      _rota.add(_Plan(id: newId(), venueId: venueId, userId: who, role: p.role, areaId: p.areaId, start: ns, end: ne, breakMinutes: p.breakMinutes, note: p.note));
+      n++;
+    }
+    rotaRev.bump();
+    return n;
+  }
+
+  _Plan _planOf(String shiftId) => _rota.firstWhere((p) => p.id == shiftId, orElse: () => throw const BackendError('That shift isn\'t on the rota.'));
+
+  @override
+  Future<void> offerShift(String shiftId) async {
+    final p = _planOf(shiftId);
+    if (p.userId != me.id) throw const BackendError('That isn\'t your shift.');
+    if (!roleCan(_myRole(p.venueId), Cap.ownShift)) throw const BackendError('You can\'t change shifts here right now.');
+    if (!p.published) throw const BackendError('That shift isn\'t on the published rota yet.');
+    if (!p.start.isAfter(DateTime.now())) throw const BackendError('That shift has already started.');
+    if (_swaps.any((w) => w.shiftId == shiftId && w.live)) throw const BackendError('It\'s already on offer.');
+    _swaps.add(_Swap(id: newId(), venueId: p.venueId, shiftId: shiftId, fromUser: me.id, status: 'offered'));
+    rotaRev.bump();
+  }
+
+  @override
+  Future<void> takeShift(String shiftId) async {
+    final p = _planOf(shiftId);
+    if (!p.published) throw const BackendError('That shift isn\'t on the published rota.');
+    if (!roleCan(_myRole(p.venueId), Cap.ownShift)) throw const BackendError('You can\'t pick up shifts here right now.');
+    if (!p.start.isAfter(DateTime.now())) throw const BackendError('That shift has already started.');
+    if (p.userId == me.id) throw const BackendError('It\'s already yours.');
+    if (!canTakeRole(_myRole(p.venueId), p.role)) throw BackendError('That\'s a ${p.role.db} shift.');
+    if (_bookedThen(p.venueId, me.id, p.start, p.end, except: p.id)) throw const BackendError('You\'re already on the rota then.');
+    if (_offThen(p.venueId, me.id, p.start, p.end)) throw const BackendError('You have time off then.');
+    final live = _swaps.where((w) => w.shiftId == shiftId && w.live).firstOrNull;
+    if (p.userId == null) {
+      if (live != null) throw const BackendError('Someone has already asked for it.');
+      _swaps.add(_Swap(id: newId(), venueId: p.venueId, shiftId: shiftId, toUser: me.id, status: 'taken'));
+    } else {
+      if (live == null || live.status != 'offered') throw const BackendError('That shift isn\'t on offer.');
+      live
+        ..toUser = me.id
+        ..status = 'taken';
+    }
+    rotaRev.bump();
+  }
+
+  @override
+  Future<void> decideSwap(String swapId, bool approve) async {
+    final w = _swaps.firstWhere((x) => x.id == swapId, orElse: () => throw const BackendError('No such request.'));
+    if (!_plans(w.venueId)) throw const BackendError('Your role doesn\'t plan the rota here.');
+    if (w.status != 'taken') throw const BackendError('Nobody has asked to take it yet.');
+    final p = _planOf(w.shiftId);
+    if (approve) {
+      if (!_activeHere(w.venueId, w.toUser!)) throw const BackendError('They\'re not working here right now.');
+      if (_bookedThen(w.venueId, w.toUser!, p.start, p.end, except: p.id)) throw const BackendError('They\'re already on the rota then.');
+      if (_offThen(w.venueId, w.toUser!, p.start, p.end)) throw const BackendError('They have time off then.');
+      p.userId = w.toUser;
+      w.status = 'approved';
+    } else {
+      w.status = 'declined';
+    }
+    _log(w.venueId, 'swap_decided', subjectId: w.toUser, subject: _nameOf(w.venueId, w.toUser!), detail: {'approved': approve, 'role': p.role.db, 'open': w.fromUser == null});
+    rotaRev.bump();
+    staffRev.bump();
+  }
+
+  @override
+  Future<void> withdrawSwap(String swapId) async {
+    final w = _swaps.firstWhere((x) => x.id == swapId, orElse: () => throw const BackendError('No such request.'));
+    if (!w.live) return;
+    if (w.fromUser == me.id) {
+      w.status = 'withdrawn';
+    } else if (w.toUser == me.id) {
+      if (w.fromUser == null) {
+        w.status = 'withdrawn';
+      } else {
+        w
+          ..toUser = null
+          ..status = 'offered';
+      }
+    } else {
+      throw const BackendError('That isn\'t yours to take back.');
+    }
+    rotaRev.bump();
+  }
+
+  @override
+  Future<List<TimeOff>> timeOffList(String venueId) async {
+    if (!_activeHere(venueId, me.id)) throw const BackendError('You\'re not on this team.');
+    final plan = _plans(venueId);
+    final cutoff = DateTime.now().subtract(const Duration(days: 30));
+    final list = [
+      for (final o in _offs)
+        if (o.venueId == venueId && (o.userId == me.id || plan) && (o.status == 'requested' || o.end.isAfter(cutoff))) _offOut(o, showNote: true),
+    ];
+    list.sort((a, b) {
+      final r = (a.status == 'requested' ? 0 : 1).compareTo(b.status == 'requested' ? 0 : 1);
+      return r != 0 ? r : a.startsAt.compareTo(b.startsAt);
+    });
+    return list;
+  }
+
+  @override
+  Future<void> requestTimeOff(String venueId, DateTime from, DateTime to, {String? note}) async {
+    if (!roleCan(_myRole(venueId), Cap.ownShift)) throw const BackendError('You can\'t ask for time off here right now.');
+    if (!to.isAfter(from)) throw const BackendError('Pick the first and last day.');
+    if (to.difference(from) > const Duration(days: 62)) throw const BackendError('Ask for up to 62 days at a time.');
+    if (!to.isAfter(DateTime.now())) throw const BackendError('Those days have gone.');
+    final nt = note?.trim() ?? '';
+    if (nt.length > 200) throw const BackendError('Keep the note under 200 letters.');
+    if (_offs.any((o) => o.venueId == venueId && o.userId == me.id && (o.status == 'requested' || o.status == 'approved') && o.start.isBefore(to) && o.end.isAfter(from))) {
+      throw const BackendError('You\'ve already asked for some of those days.');
+    }
+    _offs.add(_Off(id: newId(), venueId: venueId, userId: me.id, start: from, end: to, note: nt.isEmpty ? null : nt, status: 'requested'));
+    rotaRev.bump();
+  }
+
+  @override
+  Future<void> decideTimeOff(String id, bool approve) async {
+    final o = _offs.firstWhere((x) => x.id == id, orElse: () => throw const BackendError('No such request.'));
+    if (o.userId == me.id) throw const BackendError('Nobody approves their own time off.');
+    final their = _rosterOf(o.venueId, o.userId)?.role;
+    if (!_plans(o.venueId) || (their != null && !canGrant(_myRole(o.venueId), their))) throw const BackendError('Your role can\'t answer that request.');
+    if (o.status != 'requested') throw const BackendError('That request has already been answered.');
+    o
+      ..status = approve ? 'approved' : 'declined'
+      ..decidedBy = me.name;
+    _log(o.venueId, 'time_off_decided', subjectId: o.userId, subject: _nameOf(o.venueId, o.userId), detail: {'approved': approve});
+    rotaRev.bump();
+    staffRev.bump();
+  }
+
+  @override
+  Future<void> cancelTimeOff(String id) async {
+    final o = _offs.firstWhere((x) => x.id == id, orElse: () => throw const BackendError('That isn\'t your request.'));
+    if (o.userId != me.id) throw const BackendError('That isn\'t your request.');
+    if (o.status != 'requested' && o.status != 'approved') return;
+    if (!o.end.isAfter(DateTime.now())) throw const BackendError('Those days have gone.');
+    o.status = 'cancelled';
+    rotaRev.bump();
+  }
+
+  @override
+  Future<void> setCannotWork(String venueId, List<int> days) async {
+    if (!_activeHere(venueId, me.id)) throw const BackendError('You\'re not on this team.');
+    _cannotWork['$venueId|${me.id}'] = (days.toSet().where((d) => d >= 0 && d <= 6).toList()..sort());
+    rotaRev.bump();
+  }
+
+  // ── breaks, timesheets, corrections (054) ─────────────────────────────────
+  @override
+  Future<ShiftState?> shiftState(String venueId) async {
+    final sh = _open(venueId, me.id);
+    if (sh == null) return null;
+    final now = DateTime.now();
+    final open = sh.breaks.where((b) => b.end == null).firstOrNull;
+    final unpaid = sh.breaks.where((b) => !b.paid).fold<int>(0, (n, b) => n + (b.end ?? now).difference(b.start).inMinutes);
+    return ShiftState(onSince: sh.start, breakSince: open?.start, breakPaid: open?.paid ?? false, breakMinutes: unpaid);
+  }
+
+  @override
+  Future<void> startBreak(String venueId) async {
+    if (!roleCan(_myRole(venueId), Cap.ownShift)) throw const BackendError('You can\'t do that here right now.');
+    final sh = _open(venueId, me.id);
+    if (sh == null) throw const BackendError('You\'re not clocked in.');
+    if (sh.breaks.any((b) => b.end == null)) throw const BackendError('You\'re already on a break.');
+    sh.breaks.add(_Break(DateTime.now()));
+    shiftRev.bump();
+  }
+
+  @override
+  Future<void> setBreakPaid(String breakId, bool paid) async {
+    final sh = _clock.where((x) => x.breaks.any((b) => b.id == breakId)).firstOrNull;
+    if (sh == null) throw const BackendError('No such break.');
+    if (sh.userId == me.id) throw const BackendError('Nobody decides their own pay — ask an owner or manager.');
+    final their = _rosterOf(sh.venueId, sh.userId)?.role;
+    if (!_plans(sh.venueId) || (their != null && !canGrant(_myRole(sh.venueId), their))) throw const BackendError('Your role can\'t change their breaks.');
+    final b = sh.breaks.firstWhere((b) => b.id == breakId);
+    if (b.paid == paid) return;
+    b.paid = paid;
+    final mins = ((b.end ?? DateTime.now()).difference(b.start).inSeconds / 60).round();
+    _log(sh.venueId, 'break_changed', subjectId: sh.userId, subject: _nameOf(sh.venueId, sh.userId), detail: {'paid': paid, 'break_start': b.start.toIso8601String(), 'minutes': mins});
+    shiftRev.bump();
+    staffRev.bump();
+  }
+
+  @override
+  Future<void> endBreak(String venueId) async {
+    final b = _open(venueId, me.id)?.breaks.where((b) => b.end == null).firstOrNull;
+    if (b == null) throw const BackendError('You\'re not on a break.');
+    b.end = DateTime.now();
+    shiftRev.bump();
+  }
+
+  @override
+  Future<List<TimesheetShift>> timesheet(String venueId, String userId, DateTime from, DateTime to) async {
+    if (userId != me.id && !_plans(venueId)) throw const BackendError('Your role doesn\'t see other people\'s timesheets.');
+    final now = DateTime.now();
+    final list = [
+      for (final sh in _clock)
+        if (sh.venueId == venueId && sh.userId == userId && !sh.start.isBefore(from) && sh.start.isBefore(to))
+          () {
+            final t = _minutes(sh, sh.start, sh.end ?? now);
+            return TimesheetShift(
+              shiftId: sh.id,
+              startedAt: sh.start,
+              endedAt: sh.end,
+              workedMinutes: t.worked,
+              unpaidBreakMinutes: t.unpaid,
+              paidBreakMinutes: t.paid,
+              corrections: [...sh.corrections],
+              breaks: [
+                for (final b in [...sh.breaks]..sort((x, y) => x.start.compareTo(y.start)))
+                  ShiftBreak(id: b.id, startedAt: b.start, endedAt: b.end, paid: b.paid),
+              ],
+            );
+          }(),
+    ]..sort((a, b) => a.startedAt.compareTo(b.startedAt));
+    return list;
+  }
+
+  void _checkTimes(String venueId, String userId, DateTime start, DateTime end, {String? except}) {
+    if (!end.isAfter(start)) throw const BackendError('The shift has to end after it starts.');
+    if (end.difference(start) > const Duration(hours: 24)) throw const BackendError('A shift is at most 24 hours.');
+    if (end.isAfter(DateTime.now().add(const Duration(minutes: 5)))) throw const BackendError('A shift can\'t end in the future.');
+    final now = DateTime.now();
+    if (_clock.any((x) => x.venueId == venueId && x.userId == userId && x.id != except && x.start.isBefore(end) && (x.end ?? now).isAfter(start))) {
+      throw const BackendError('That overlaps another of their shifts.');
+    }
+  }
+
+  void _mayCorrect(String venueId, String userId) {
+    if (userId == me.id) throw const BackendError('Nobody corrects their own times — ask an owner or manager.');
+    final their = _rosterOf(venueId, userId)?.role;
+    if (!_plans(venueId) || (their != null && !canGrant(_myRole(venueId), their))) throw const BackendError('Your role can\'t correct their times.');
+  }
+
+  @override
+  Future<void> correctShift(String shiftId, DateTime start, DateTime end, String reason) async {
+    final sh = _clock.firstWhere((x) => x.id == shiftId, orElse: () => throw const BackendError('No such shift.'));
+    _mayCorrect(sh.venueId, sh.userId);
+    final why = reason.trim();
+    if (why.length < 3 || why.length > 200) throw const BackendError('Say why (3 to 200 letters).');
+    _checkTimes(sh.venueId, sh.userId, start, end, except: sh.id);
+    sh.corrections.add(ShiftCorrection(kind: 'corrected', reason: why, at: DateTime.now(), by: me.name, oldStarted: sh.start, oldEnded: sh.end, newStarted: start, newEnded: end));
+    sh
+      ..start = start
+      ..end = end;
+    sh.breaks.removeWhere((b) => !b.start.isBefore(end) || !(b.end ?? end).isAfter(start));
+    for (final b in sh.breaks) {
+      if (b.start.isBefore(start)) b.start = start;
+      if (b.end == null || b.end!.isAfter(end)) b.end = end;
+    }
+    _log(sh.venueId, 'shift_corrected', subjectId: sh.userId, subject: _nameOf(sh.venueId, sh.userId), detail: {'reason': why});
+    shiftRev.bump();
+    staffRev.bump();
+  }
+
+  @override
+  Future<void> addMissedShift(String venueId, String userId, DateTime start, DateTime end, {int breakMinutes = 0, required String reason}) async {
+    _mayCorrect(venueId, userId);
+    if (_rosterOf(venueId, userId) == null) throw const BackendError('They\'re not on this team.');
+    final why = reason.trim();
+    if (why.length < 3 || why.length > 200) throw const BackendError('Say why (3 to 200 letters).');
+    _checkTimes(venueId, userId, start, end);
+    if (breakMinutes < 0 || Duration(minutes: breakMinutes) >= end.difference(start)) throw const BackendError('The break has to fit inside the shift.');
+    final sh = _Shift(id: newId(), venueId: venueId, userId: userId, start: start, end: end, rate: _rates['$venueId|$userId']);
+    if (breakMinutes > 0) {
+      final bs = start.add((end.difference(start) - Duration(minutes: breakMinutes)) ~/ 2);
+      sh.breaks.add(_Break(bs, end: bs.add(Duration(minutes: breakMinutes))));
+    }
+    sh.corrections.add(ShiftCorrection(kind: 'added', reason: why, at: DateTime.now(), by: me.name, newStarted: start, newEnded: end));
+    _clock.add(sh);
+    _log(venueId, 'shift_added', subjectId: userId, subject: _nameOf(venueId, userId), detail: {'reason': why});
+    shiftRev.bump();
+    staffRev.bump();
+  }
+
+  // ── pay and payroll (054) ─────────────────────────────────────────────────
+  @override
+  Future<Map<String, double?>> payRates(String venueId) async {
+    if (!_activeHere(venueId, me.id)) throw const BackendError('You\'re not on this team.');
+    final all = roleCan(_myRole(venueId), Cap.manageTeam);
+    return {
+      for (final m in _staff[venueId] ?? const <StaffMember>[])
+        if (all || m.id == me.id) m.id: _rates['$venueId|${m.id}'],
+    };
+  }
+
+  @override
+  Future<void> setPayRate(String venueId, String userId, double? rate) async {
+    if (userId == me.id) throw const BackendError('Nobody sets their own pay.');
+    final their = _rosterOf(venueId, userId)?.role;
+    if (their == null) throw const BackendError('They\'re not on this team.');
+    if (!roleCan(_myRole(venueId), Cap.manageTeam) || !canGrant(_myRole(venueId), their)) throw BackendError('Your role can\'t set a ${their.db}\'s pay.');
+    if (rate != null && (rate < 0 || rate > 100000)) throw const BackendError('The rate is 0 to 1,00,000 an hour.');
+    if (rate == null) {
+      _rates.remove('$venueId|$userId');
+    } else {
+      _rates['$venueId|$userId'] = (rate * 100).round() / 100;
+    }
+    _log(venueId, 'pay_changed', subjectId: userId, subject: _nameOf(venueId, userId));
+    staffRev.bump();
+  }
+
+  static String _hhmm(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  @override
+  Future<List<PayrollDay>> payroll(String venueId, DateTime from, DateTime to, {required String tz}) async {
+    if (!roleCan(_myRole(venueId), Cap.manageTeam)) throw const BackendError('Your role doesn\'t run payroll here.');
+    final lo = DateTime(from.year, from.month, from.day);
+    final hi = DateTime(to.year, to.month, to.day + 1);
+    if (!hi.isAfter(lo) || hi.difference(lo).inDays > 63) throw const BackendError('Pick up to 62 days.');
+    final now = DateTime.now();
+    final keyed = <String, List<_Shift>>{};
+    for (final sh in _clock.where((x) => x.venueId == venueId && !x.start.isBefore(lo) && x.start.isBefore(hi))) {
+      (keyed['${sh.userId}|${DateTime(sh.start.year, sh.start.month, sh.start.day).toIso8601String()}'] ??= []).add(sh);
+    }
+    final planned = <String, int>{};
+    for (final p in _rota.where((p) => p.venueId == venueId && p.published && p.userId != null && !p.start.isBefore(lo) && p.start.isBefore(hi))) {
+      final k = '${p.userId}|${DateTime(p.start.year, p.start.month, p.start.day).toIso8601String()}';
+      planned[k] = (planned[k] ?? 0) + p.end.difference(p.start).inMinutes - p.breakMinutes;
+    }
+    final out = <PayrollDay>[];
+    for (final k in {...keyed.keys, ...planned.keys}) {
+      final bar = k.indexOf('|');
+      final uid = k.substring(0, bar);
+      final day = DateTime.parse(k.substring(bar + 1));
+      final shifts = keyed[k] ?? const <_Shift>[];
+      var worked = 0, unpaid = 0, paid = 0;
+      double? payRaw;
+      double? rate;
+      for (final sh in shifts) {
+        final t = _minutes(sh, sh.start, sh.end ?? now);
+        worked += t.worked;
+        unpaid += t.unpaid;
+        paid += t.paid;
+        final r = sh.rate ?? _rates['$venueId|$uid'];
+        if (r != null) {
+          payRaw = (payRaw ?? 0) + t.worked * r;
+          rate = rate == null || r > rate ? r : rate;
+        }
+      }
+      final ends = [for (final sh in shifts) if (sh.end != null) sh.end!]..sort();
+      final starts = [for (final sh in shifts) sh.start]..sort();
+      final member = _rosterOf(venueId, uid);
+      out.add(PayrollDay(
+        userId: uid,
+        name: _nameOf(venueId, uid),
+        role: _venue(venueId).createdBy == uid ? 'owner' : (member?.role.db ?? 'left'),
+        day: day,
+        shifts: shifts.length,
+        firstIn: starts.isEmpty ? null : _hhmm(starts.first),
+        lastOut: ends.isEmpty ? null : _hhmm(ends.last),
+        workedMinutes: worked,
+        unpaidBreakMinutes: unpaid,
+        paidBreakMinutes: paid,
+        plannedMinutes: planned[k] ?? 0,
+        stillOn: shifts.any((x) => x.end == null),
+        corrected: shifts.any((x) => x.corrections.isNotEmpty),
+        hourlyRate: rate ?? _rates['$venueId|$uid'],
+        pay: payRaw == null ? null : (payRaw / 60 * 100).round() / 100,
+      ));
+    }
+    out.sort((a, b) {
+      final c = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      return c != 0 ? c : a.day.compareTo(b.day);
+    });
+    return out;
   }
 
   // ── tonight ───────────────────────────────────────────────────────────────
@@ -1614,4 +2295,68 @@ class _Code {
   });
 
   bool get open => !closed;
+}
+
+/// A worked shift on the demo's time clock.
+class _Shift {
+  final String id;
+  final String venueId;
+  final String userId;
+  DateTime start;
+  DateTime? end;
+
+  /// The rate it was worked at (a later raise doesn't change it).
+  final double? rate;
+  final List<_Break> breaks = [];
+  final List<ShiftCorrection> corrections = [];
+  _Shift({required this.id, required this.venueId, required this.userId, required this.start, this.end, this.rate});
+}
+
+class _Break {
+  final String id = newId();
+  DateTime start;
+  DateTime? end;
+
+  /// Only an owner or manager changes this, for someone else (setBreakPaid).
+  bool paid;
+  _Break(this.start, {this.end, this.paid = false});
+}
+
+/// A planned shift on the demo's rota. [userId] null = open.
+class _Plan {
+  final String id;
+  final String venueId;
+  String? userId;
+  StaffRole role;
+  String? areaId;
+  DateTime start;
+  DateTime end;
+  int breakMinutes;
+  String? note;
+  bool published;
+  _Plan({required this.id, required this.venueId, this.userId, required this.role, this.areaId, required this.start, required this.end, this.breakMinutes = 0, this.note, this.published = false});
+}
+
+class _Swap {
+  final String id;
+  final String venueId;
+  final String shiftId;
+  String? fromUser;
+  String? toUser;
+  String status; // offered | taken | approved | declined | withdrawn
+  _Swap({required this.id, required this.venueId, required this.shiftId, this.fromUser, this.toUser, required this.status});
+
+  bool get live => status == 'offered' || status == 'taken';
+}
+
+class _Off {
+  final String id;
+  final String venueId;
+  final String userId;
+  final DateTime start;
+  final DateTime end;
+  final String? note;
+  String status; // requested | approved | declined | cancelled
+  String? decidedBy;
+  _Off({required this.id, required this.venueId, required this.userId, required this.start, required this.end, this.note, required this.status});
 }

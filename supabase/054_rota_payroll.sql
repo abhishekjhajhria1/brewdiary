@@ -15,8 +15,9 @@
 --   3. TIME OFF, AND DAYS SOMEONE CAN'T WORK. Ask for days off; an owner or manager approves
 --      or declines. Everyone keeps the weekdays they can't work, which the rota shows to
 --      whoever plans it.
---   4. BREAKS. On the clock: start and end a break — unpaid unless marked paid. Unpaid
---      breaks come off the hours. Clocking out (or being clocked out) ends a break.
+--   4. BREAKS. On the clock: start and end a break. A break is unpaid and comes off the
+--      hours; only an owner or manager can mark one paid (nobody decides their own pay).
+--      Clocking out (or being clocked out) ends a break.
 --   5. CORRECTIONS. Someone forgot to clock out, or never clocked in: an owner or manager
 --      corrects the times or adds the missed shift, always with a reason. The old times
 --      are kept in an append-only record, so every payroll figure can be traced. Nobody
@@ -71,7 +72,8 @@ alter table public.staff_events add constraint staff_events_kind_check check (ki
   'enrolled', 'code_reissued', 'enrolment_revoked', 'requested', 'joined', 'approved',
   'declined', 'role_changed', 'locked', 'unlocked', 'removed', 'left', 'details_changed',
   'shift_ended_by_manager',
-  'rota_published', 'swap_decided', 'time_off_decided', 'shift_corrected', 'shift_added', 'pay_changed'));
+  'rota_published', 'swap_decided', 'time_off_decided', 'shift_corrected', 'shift_added', 'pay_changed',
+  'break_changed'));
 
 -- ── 2. the rota ──────────────────────────────────────────────────────────────
 create table if not exists public.rota_shifts (
@@ -648,7 +650,12 @@ begin
 end; $$;
 
 -- ── 10. breaks ───────────────────────────────────────────────────────────────
-create or replace function public.start_break(vid uuid, paid boolean default false)
+-- A break someone takes is unpaid: whether a break is paid is a decision about their pay,
+-- so it's never theirs to make. An owner or manager marks one paid afterwards
+-- (set_break_paid), the same way they correct times. (A venue that pays short rest breaks
+-- can simply leave people on the clock for them.)
+drop function if exists public.start_break(uuid, boolean);
+create or replace function public.start_break(vid uuid)
 returns timestamptz language plpgsql security definer set search_path = public as $$
 declare me uuid := auth.uid(); sid uuid; since timestamptz;
 begin
@@ -661,7 +668,7 @@ begin
   if exists (select 1 from public.shift_breaks b where b.shift_id = sid and b.ended_at is null) then
     raise exception 'you''re already on a break';
   end if;
-  insert into public.shift_breaks (shift_id, venue_id, user_id, paid) values (sid, vid, me, coalesce(paid, false))
+  insert into public.shift_breaks (shift_id, venue_id, user_id, paid) values (sid, vid, me, false)
   returning started_at into since;
   return since;
 end; $$;
@@ -680,8 +687,8 @@ begin
   return greatest(0, round(extract(epoch from (now() - b.started_at)) / 60))::int;
 end; $$;
 
--- Where I stand on the clock here: on since, on a break since (and whether it's paid), and
--- unpaid break minutes so far this shift.
+-- Where I stand on the clock here: on since, on a break since (and whether a manager has
+-- marked it paid), and unpaid break minutes so far this shift.
 create or replace function public.my_shift_state(vid uuid)
 returns table (on_since timestamptz, break_since timestamptz, break_paid boolean, break_minutes int)
 language sql stable security definer set search_path = public as $$
@@ -698,7 +705,8 @@ $$;
 -- NAME, never ranked (053's rule).
 drop function if exists public.shift_hours(uuid, timestamptz);
 create function public.shift_hours(vid uuid, since timestamptz)
-returns table (user_id uuid, name text, role text, on_since timestamptz, minutes int, break_minutes int)
+returns table (user_id uuid, name text, role text, on_since timestamptz, minutes int, break_minutes int,
+               on_break_since timestamptz)
 language plpgsql stable security definer set search_path = public as $$
 #variable_conflict use_column
 declare me uuid := auth.uid(); everyone boolean; lo timestamptz := greatest(coalesce(since, now() - interval '7 days'), now() - interval '93 days');
@@ -719,20 +727,25 @@ begin
                    where sh.venue_id = vid and sh.user_id = s.user_id and coalesce(sh.ended_at, now()) > lo), 0),
          coalesce((select sum(m.unpaid)::int from public.staff_shifts sh
                     cross join lateral public.shift_minutes(sh.id, lo, now()) m
-                   where sh.venue_id = vid and sh.user_id = s.user_id and coalesce(sh.ended_at, now()) > lo), 0)
+                   where sh.venue_id = vid and sh.user_id = s.user_id and coalesce(sh.ended_at, now()) > lo), 0),
+         (select b.started_at from public.shift_breaks b
+            join public.staff_shifts sh on sh.id = b.shift_id
+           where sh.venue_id = vid and sh.user_id = s.user_id and sh.ended_at is null and b.ended_at is null)
     from public.venue_staff s
     join public.profiles p on p.id = s.user_id
     left join public.staff_details d on d.venue_id = s.venue_id and d.user_id = s.user_id
    where s.venue_id = vid and (everyone or s.user_id = me)
+     and s.status <> 'pending'   -- someone waiting for a yes isn't on the team yet
    order by 2;
 end; $$;
 
 -- ── 11. the timesheet, and corrections ───────────────────────────────────────
 -- One person's shifts that started in [from_ts, to_ts), with breaks and every correction.
 -- Whoever plans the rota sees anyone's; everyone sees their own.
-create or replace function public.staff_timesheet(vid uuid, uid uuid, from_ts timestamptz, to_ts timestamptz)
+drop function if exists public.staff_timesheet(uuid, uuid, timestamptz, timestamptz);
+create function public.staff_timesheet(vid uuid, uid uuid, from_ts timestamptz, to_ts timestamptz)
 returns table (shift_id uuid, started_at timestamptz, ended_at timestamptz, worked_minutes int,
-               unpaid_break_minutes int, paid_break_minutes int, corrections jsonb)
+               unpaid_break_minutes int, paid_break_minutes int, corrections jsonb, breaks jsonb)
 language plpgsql stable security definer set search_path = public as $$
 #variable_conflict use_column
 declare me uuid := auth.uid();
@@ -755,7 +768,11 @@ begin
                      from public.shift_corrections c
                      left join public.profiles ap on ap.id = c.actor_id
                      left join public.staff_details ad on ad.venue_id = c.venue_id and ad.user_id = c.actor_id
-                    where c.shift_id = sh.id), '[]'::jsonb)
+                    where c.shift_id = sh.id), '[]'::jsonb),
+         coalesce((select jsonb_agg(jsonb_build_object('id', b.id, 'started_at', b.started_at,
+                                                       'ended_at', b.ended_at, 'paid', b.paid)
+                                    order by b.started_at)
+                     from public.shift_breaks b where b.shift_id = sh.id), '[]'::jsonb)
     from public.staff_shifts sh
     cross join lateral public.shift_minutes(sh.id, sh.started_at, coalesce(sh.ended_at, now())) m
    where sh.venue_id = vid and sh.user_id = uid and sh.started_at >= from_ts and sh.started_at < to_ts
@@ -841,6 +858,28 @@ begin
   insert into public.staff_events (venue_id, actor_id, subject_id, kind, detail)
   values (vid, me, uid, 'shift_added', jsonb_build_object('reason', why, 'shift_start', starts));
   return sid;
+end; $$;
+
+-- Mark a break paid (or unpaid again). Whoever may correct someone's times decides — never
+-- their own. The history says it changed and which way, never an amount.
+create or replace function public.set_break_paid(bid uuid, pay boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); b public.shift_breaks;
+begin
+  if me is null then raise exception 'not signed in'; end if;
+  select x.* into b from public.shift_breaks x where x.id = bid for update;
+  if not found then raise exception 'no such break'; end if;
+  if b.user_id = me then raise exception 'nobody decides their own pay — ask an owner or manager'; end if;
+  if not public.can_correct_times(b.venue_id, me, b.user_id) then
+    raise exception 'your role can''t change their breaks' using errcode = '42501';
+  end if;
+  if pay is null then raise exception 'say paid or unpaid'; end if;
+  if b.paid = pay then return; end if;
+  update public.shift_breaks x set paid = pay where x.id = bid;
+  insert into public.staff_events (venue_id, actor_id, subject_id, kind, detail)
+  values (b.venue_id, me, b.user_id, 'break_changed',
+          jsonb_build_object('paid', pay, 'break_start', b.started_at, 'minutes',
+                             greatest(0, round(extract(epoch from (coalesce(b.ended_at, now()) - b.started_at)) / 60))::int));
 end; $$;
 
 -- ── 12. pay ──────────────────────────────────────────────────────────────────
@@ -956,12 +995,12 @@ begin
     'public.rota_offer_shift(uuid)', 'public.rota_take_shift(uuid)', 'public.rota_decide_swap(uuid, boolean)',
     'public.rota_withdraw_swap(uuid)', 'public.request_time_off(uuid, timestamptz, timestamptz, text)',
     'public.decide_time_off(uuid, boolean)', 'public.cancel_time_off(uuid)', 'public.time_off_list(uuid)',
-    'public.set_cannot_work(uuid, smallint[])', 'public.start_break(uuid, boolean)', 'public.end_break(uuid)',
+    'public.set_cannot_work(uuid, smallint[])', 'public.start_break(uuid)', 'public.end_break(uuid)',
     'public.my_shift_state(uuid)', 'public.shift_hours(uuid, timestamptz)',
     'public.staff_timesheet(uuid, uuid, timestamptz, timestamptz)',
     'public.correct_shift(uuid, timestamptz, timestamptz, text)',
     'public.add_missed_shift(uuid, uuid, timestamptz, timestamptz, int, text)',
-    'public.set_staff_pay(uuid, uuid, numeric)', 'public.pay_rates(uuid)',
+    'public.set_break_paid(uuid, boolean)', 'public.set_staff_pay(uuid, uuid, numeric)', 'public.pay_rates(uuid)',
     'public.payroll_days(uuid, date, date, text)'
   ] loop
     execute format('revoke all on function %s from public', f);

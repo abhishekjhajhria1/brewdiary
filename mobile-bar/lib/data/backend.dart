@@ -122,6 +122,61 @@ abstract class Backend {
   /// Minutes on the clock per person since [since], listed by name.
   Future<List<ShiftRow>> shiftHours(String venueId, DateTime since);
 
+  // ── the rota (054): plan the week, publish it, swaps, time off ────────────
+  /// The rota for [from, to) as I may see it: drafts too if I plan it, what's on offer,
+  /// time off, and the team.
+  Future<RotaWeek> rotaWeek(String venueId, DateTime from, DateTime to);
+
+  /// Add ([id] null or new) or change a shift; [userId] null leaves it open. Returns its id.
+  Future<String> saveRotaShift(String venueId, {String? id, String? userId, required StaffRole role, String? areaId, required DateTime starts, required DateTime ends, int breakMinutes = 0, String? note});
+  Future<void> deleteRotaShift(String shiftId);
+
+  /// Publish the drafts in [from, to); returns how many.
+  Future<int> publishRota(String venueId, DateTime from, DateTime to);
+
+  /// Copy [from, to) by [byDays] days at the same local times ([tz]); returns how many.
+  Future<int> copyRota(String venueId, DateTime from, DateTime to, int byDays, {required String tz});
+  Future<void> offerShift(String shiftId);
+  Future<void> takeShift(String shiftId);
+  Future<void> decideSwap(String swapId, bool approve);
+  Future<void> withdrawSwap(String swapId);
+
+  /// My requests; the team's too for whoever plans the rota.
+  Future<List<TimeOff>> timeOffList(String venueId);
+
+  /// [from] is the first day's start, [to] the start of the day after the last.
+  Future<void> requestTimeOff(String venueId, DateTime from, DateTime to, {String? note});
+  Future<void> decideTimeOff(String id, bool approve);
+  Future<void> cancelTimeOff(String id);
+
+  /// The weekdays I can't work (0 = Sunday … 6 = Saturday).
+  Future<void> setCannotWork(String venueId, List<int> days);
+
+  // ── breaks, timesheets, corrections (054) ─────────────────────────────────
+  /// Where I stand on the clock here, or null when I'm off.
+  Future<ShiftState?> shiftState(String venueId);
+  /// Start a break (always unpaid — only an owner or manager marks one paid).
+  Future<void> startBreak(String venueId);
+  Future<void> endBreak(String venueId);
+
+  /// Mark someone's break paid, or unpaid again — never your own (set_break_paid).
+  Future<void> setBreakPaid(String breakId, bool paid);
+
+  /// One person's worked shifts in [from, to), with breaks and every correction.
+  Future<List<TimesheetShift>> timesheet(String venueId, String userId, DateTime from, DateTime to);
+
+  /// Fix someone's times, with a reason (the old times are kept).
+  Future<void> correctShift(String shiftId, DateTime start, DateTime end, String reason);
+  Future<void> addMissedShift(String venueId, String userId, DateTime start, DateTime end, {int breakMinutes = 0, required String reason});
+
+  // ── pay and payroll (054) ─────────────────────────────────────────────────
+  /// Hourly rates by user id: the team's for owners/managers, my own otherwise.
+  Future<Map<String, double?>> payRates(String venueId);
+  Future<void> setPayRate(String venueId, String userId, double? rate);
+
+  /// Per person per day, [from]..[to] inclusive, days in the venue's time zone [tz].
+  Future<List<PayrollDay>> payroll(String venueId, DateTime from, DateTime to, {required String tz});
+
   // ── tonight: rooms, guests, vibe, tabs, perks ────────────────────────────
   Future<List<Room>> rooms(String venueId);
   Future<Room> openRoom(Venue venue, {int boardHours = 6});

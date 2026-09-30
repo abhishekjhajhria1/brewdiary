@@ -499,7 +499,7 @@ export function useVenueInsights(venueId: string | null, days = 30): { data: Ven
 /** A plain sentence from a refused call (the database's own words are already plain). */
 function said(error: { message?: string; code?: string } | null): string | null {
   if (!error) return null;
-  if (behind(error)) return "This needs the latest database update (migration 053).";
+  if (behind(error)) return "This needs the latest database update — the newest migrations haven't been applied yet (npm run db:migrate).";
   const m = (error.message ?? "").trim();
   if (!m || /row-level security/i.test(m)) return "Your role here can't do that.";
   return m[0].toUpperCase() + m.slice(1) + (m.endsWith(".") ? "" : ".");

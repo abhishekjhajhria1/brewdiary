@@ -726,7 +726,7 @@ try {
     for (const f of ["rota_save_shift", "rota_delete_shift", "rota_publish", "rota_copy", "rota_week", "rota_offer_shift",
                      "rota_take_shift", "rota_decide_swap", "rota_withdraw_swap", "request_time_off", "decide_time_off",
                      "cancel_time_off", "time_off_list", "set_cannot_work", "start_break", "end_break", "my_shift_state",
-                     "staff_timesheet", "correct_shift", "add_missed_shift", "set_staff_pay", "pay_rates", "payroll_days"]) {
+                     "staff_timesheet", "correct_shift", "add_missed_shift", "set_break_paid", "set_staff_pay", "pay_rates", "payroll_days"]) {
       ok(`fn ${f}()`, fns.includes(f), "— MISSING");
     }
     for (const tb of ["rota_shifts", "rota_swaps", "time_off", "shift_breaks", "shift_corrections"]) {
@@ -751,6 +751,11 @@ try {
     const sp = await one(`select pg_get_functiondef('public.set_staff_pay(uuid,uuid,numeric)'::regprocedure) d`);
     ok("set_staff_pay(): nobody sets their own pay; the history never records the amount",
       sp && /own pay/.test(sp.d) && /'pay_changed', '\{\}'/.test(sp.d));
+    ok("start_break(): nobody marks their own break paid (no 'paid' argument)",
+      !(await one(`select to_regprocedure('public.start_break(uuid,boolean)') f`))?.f && !!(await one(`select to_regprocedure('public.start_break(uuid)') f`))?.f);
+    const bp = await one(`select pg_get_functiondef('public.set_break_paid(uuid,boolean)'::regprocedure) d`);
+    ok("set_break_paid(): never your own; the same people who correct times",
+      bp && /own pay/.test(bp.d) && /can_correct_times/.test(bp.d) && /'break_changed'/.test(bp.d));
     const inv = await one(`select prosecdef d from pg_proc where oid = 'public.shift_minutes(uuid,timestamptz,timestamptz)'::regprocedure`);
     ok("shift_minutes(): runs as the caller (SECURITY INVOKER)", inv && inv.d === false);
     for (const f of ["public.shift_minutes(uuid,timestamptz,timestamptz)", "public.can_correct_times(uuid,uuid,uuid)"]) {
@@ -764,8 +769,8 @@ try {
     const rp = await one(`select qual from pg_policies where schemaname='public' and tablename='rota_shifts' and policyname='rota_shifts_read'`);
     ok("rota_shifts: the team reads the PUBLISHED rota; drafts are the planners'", rp && /published_at IS NOT NULL/i.test(rp.qual) && /rota\.edit/.test(rp.qual));
     const kc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'staff_events_kind_check'`);
-    ok("the team's history knows rota, swap, time-off, correction and pay changes",
-      kc && ["rota_published", "swap_decided", "time_off_decided", "shift_corrected", "shift_added", "pay_changed"].every((k) => kc.d.includes(k)));
+    ok("the team's history knows rota, swap, time-off, correction, break and pay changes",
+      kc && ["rota_published", "swap_decided", "time_off_decided", "shift_corrected", "shift_added", "pay_changed", "break_changed"].every((k) => kc.d.includes(k)));
   }
 
   // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
