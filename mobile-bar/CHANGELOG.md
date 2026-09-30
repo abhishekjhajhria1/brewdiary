@@ -47,7 +47,8 @@ can pause anyone's access at any moment and ask them to report to them.
   with why. Signing in with a new email offers to create the account.
 - **Paused mid-shift**: the app re-checks every minute, on resume and right after any refused call,
   then shows *"Your access is paused · Please report to Arjun (manager)"* with the reason. Given access
-  again, the person goes straight back in.
+  again, the person goes straight back in. A failed check (no signal) keeps the pause on screen; it
+  never lifts it (`02cdf3e`).
 - **Team** (owners and managers): add an employee and show the code once, with a message to share; codes not
   typed yet (new code, cancel); a deliberate *Approve* for invite joiners; per person: role, pause
   (reason + report to), change the message, give access again, details, call, history, clock out,
