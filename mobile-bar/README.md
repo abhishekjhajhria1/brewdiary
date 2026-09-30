@@ -32,6 +32,13 @@ flutter run --dart-define-from-file=env.json  # the real backend (copy env.examp
 `env.json` holds the Supabase URL, the **anon** key and `SITE_URL` (the website, for Ninkasi). Never a
 service-role key; it's git-ignored. Phones stay portrait; tablets rotate.
 
+**An APK to test without a laptop:** every pull request that touches the apps builds both of them on
+GitHub ([`.github/workflows/android.yml`](../.github/workflows/android.yml)). Open the run's summary
+page and download `brewdiary-venue-apk` or `brewdiary-guest-apk` under **Artifacts** (kept 14 days).
+They run in demo / local mode unless the repository variables `SUPABASE_URL` and `SUPABASE_ANON_KEY`
+are set, need Android 12 or newer, and are signed with the debug key, so allow installs from unknown
+sources.
+
 ## The database it needs
 
 Migrations `044`–`047` in [`supabase/`](../supabase/) (guest-card fix, staff roles, capability gates,

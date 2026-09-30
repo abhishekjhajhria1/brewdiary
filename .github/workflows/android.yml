@@ -1,0 +1,81 @@
+# Installable Android builds of both apps, for testing on a phone or tablet.
+#
+# GitHub's runners carry the Android SDK, so the APKs are built here. Neither app needs
+# a secret: with no Supabase settings the venue app runs as the demo venue (The Amber
+# Room) and the guest app keeps its diary on the phone. Set the repository variables
+# SUPABASE_URL, SUPABASE_ANON_KEY and SITE_URL (the anon key is public by design) and the
+# same builds talk to the real backend instead.
+#
+# Release mode, signed with the debug key: for installing by hand, not for the stores.
+# Each run keeps the APKs for 14 days under "Artifacts" on its summary page.
+name: android
+
+on:
+  pull_request:
+    paths:
+      - "mobile-bar/**"
+      - "test_m_app/**"
+      - "packages/brewdiary_core/**"
+      - ".github/workflows/android.yml"
+  push:
+    branches: [main]
+    paths:
+      - "mobile-bar/**"
+      - "test_m_app/**"
+      - "packages/brewdiary_core/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: apk (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dir: mobile-bar   # the venue staff app
+            name: brewdiary-venue
+          - dir: test_m_app   # the guest app
+            name: brewdiary-guest
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.5
+          cache: true
+      - run: flutter pub get
+      - name: flutter build apk
+        run: >-
+          flutter build apk --release
+          "--dart-define=SUPABASE_URL=${{ vars.SUPABASE_URL }}"
+          "--dart-define=SUPABASE_ANON_KEY=${{ vars.SUPABASE_ANON_KEY }}"
+          "--dart-define=SITE_URL=${{ vars.SITE_URL || 'https://bwdy.site' }}"
+      - name: Name the APK and note its size and checksum
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk "${{ matrix.name }}.apk"
+          {
+            echo "### ${{ matrix.name }}.apk"
+            echo ""
+            echo "- size: $(du -h "${{ matrix.name }}.apk" | cut -f1)"
+            echo "- sha256: \`$(sha256sum "${{ matrix.name }}.apk" | cut -d' ' -f1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-apk
+          path: ${{ matrix.dir }}/${{ matrix.name }}.apk
+          retention-days: 14
+          if-no-files-found: error
