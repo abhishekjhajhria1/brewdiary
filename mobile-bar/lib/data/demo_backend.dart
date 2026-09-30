@@ -15,6 +15,7 @@ import '../logic/area.dart' show HeatRow;
 import '../logic/host_brief.dart';
 import '../logic/roles.dart';
 import '../logic/service.dart' show nightStart;
+import '../logic/staff.dart';
 import '../logic/venue_kinds.dart';
 
 class DemoBackend implements Backend {
@@ -55,6 +56,17 @@ class DemoBackend implements Backend {
   final List<({String venueId, String productId, int qty, String reason, DateTime at})> _moves = [];
   final Map<String, List<ShopSupplier>> _suppliers = {};
   final Map<String, double> _sales = {}; // saleId → total (a retry returns it)
+
+  // Staff access (053): codes not typed yet, where "you" wait or are paused, the history,
+  // the clock. The same rules the database keeps, so the demo never shows a power the real
+  // app wouldn't have.
+  final List<_Code> _codes = []; // every venue's codes; [_Code.forMe] = one that added "you"
+  final List<StaffAccess> _myAccess = [];
+  final Map<String, List<({String? subjectId, StaffEvent e})>> _history = {}; // venueId → newest first
+  final Map<String, DateTime> _onShift = {}; // venueId|userId → since
+  final Map<String, int> _weekMinutes = {}; // venueId|userId → minutes this week, finished shifts
+  final Map<String, StaffRole> _invites = {}; // invite code → role (for this venue list)
+  int _eventId = 100;
 
   static final _people = [
     const ProfileHit(id: 'g-anita', handle: 'anita', name: 'Anita'),
@@ -154,12 +166,92 @@ class DemoBackend implements Backend {
       _moves.add((venueId: sweets.id, productId: id, qty: qty, reason: 'receive', at: seedAt));
     }
 
+    final t0 = DateTime.now();
     _staff[bar.id] = [
-      const StaffMember(id: 'demo-me', handle: 'demo-owner', name: 'You (demo)', role: StaffRole.owner),
-      const StaffMember(id: 's-ira', handle: 'ira', name: 'Ira', role: StaffRole.manager),
-      const StaffMember(id: 's-sam', handle: 'sam', name: 'Sam', role: StaffRole.bartender),
-      const StaffMember(id: 's-noor', handle: 'noor', name: 'Noor', role: StaffRole.server),
+      StaffMember(id: 'demo-me', handle: 'demo-owner', name: 'You (demo)', role: StaffRole.owner, joinedAt: t0.subtract(const Duration(days: 40))),
+      StaffMember(id: 's-ira', handle: 'ira', name: 'Ira', role: StaffRole.manager, phone: '+91 98450 11223', joinedAt: t0.subtract(const Duration(days: 38))),
+      StaffMember(id: 's-sam', handle: 'sam', name: 'Sam', role: StaffRole.bartender, phone: '+91 99000 44556', joinedAt: t0.subtract(const Duration(days: 30))),
+      StaffMember(id: 's-noor', handle: 'noor', name: 'Noor', role: StaffRole.server, joinedAt: t0.subtract(const Duration(days: 6)), approvedBy: 'You (demo)'),
+      StaffMember(id: 's-kabir', handle: 'kabir.k', name: 'Kabir', role: StaffRole.server, status: StaffStatus.pending, joinedAt: t0.subtract(const Duration(hours: 5))),
+      StaffMember(
+        id: 's-leo',
+        handle: 'leo',
+        name: 'Leo',
+        role: StaffRole.bartender,
+        status: StaffStatus.locked,
+        phone: '+91 90080 77889',
+        joinedAt: t0.subtract(const Duration(days: 21)),
+        lockedAt: t0.subtract(const Duration(days: 1)),
+        lockReason: 'Missed two shifts — come and see me before the next one.',
+        reportTo: 'You (demo)',
+      ),
     ];
+    _onShift['${bar.id}|s-ira'] = t0.subtract(const Duration(hours: 3));
+    _onShift['${bar.id}|s-sam'] = t0.subtract(const Duration(hours: 2, minutes: 10));
+    for (final (id, m) in [('demo-me', 610), ('s-ira', 1265), ('s-sam', 985), ('s-noor', 1500)]) {
+      _weekMinutes['${bar.id}|$id'] = m;
+    }
+    _codes.add(_Code(
+      id: 'enrol-rahul',
+      venueId: bar.id,
+      name: 'Rahul S.',
+      email: 'rahul@example.com',
+      phone: '+91 98765 43210',
+      role: StaffRole.server,
+      code: '305117',
+      createdAt: t0.subtract(const Duration(hours: 3)),
+      expiresAt: t0.add(const Duration(hours: 45)),
+      addedBy: 'You (demo)',
+    ));
+    void was(String venueId, String kind, {String? actor, String? subject, String? subjectId, Map<String, dynamic> detail = const {}, required Duration ago}) =>
+        (_history[venueId] ??= []).add((subjectId: subjectId, e: StaffEvent(id: _eventId++, kind: kind, actor: actor, subject: subject, detail: detail, at: t0.subtract(ago))));
+    was(bar.id, 'enrolled', actor: 'You (demo)', detail: {'role': 'server', 'name': 'Rahul S.'}, ago: const Duration(hours: 3));
+    was(bar.id, 'requested', subject: 'Kabir', subjectId: 's-kabir', actor: 'Kabir', detail: {'role': 'server', 'via': 'invite'}, ago: const Duration(hours: 5));
+    was(bar.id, 'locked', actor: 'You (demo)', subject: 'Leo', subjectId: 's-leo', detail: {'role': 'bartender', 'reason': 'Missed two shifts — come and see me before the next one.'}, ago: const Duration(days: 1));
+    was(bar.id, 'joined', actor: 'Noor', subject: 'Noor', subjectId: 's-noor', detail: {'role': 'server', 'via': 'code'}, ago: const Duration(days: 6));
+    was(bar.id, 'role_changed', actor: 'You (demo)', subject: 'Sam', subjectId: 's-sam', detail: {'from': 'server', 'to': 'bartender'}, ago: const Duration(days: 12));
+    was(bar.id, 'joined', actor: 'You (demo)', subject: 'You (demo)', subjectId: 'demo-me', detail: {'role': 'owner', 'via': 'created'}, ago: const Duration(days: 40));
+    for (final list in _history.values) {
+      list.sort((a, b) => b.e.at.compareTo(a.e.at));
+    }
+
+    // Where "you" stand elsewhere: a café that added your email (type 482913), and a bar
+    // that paused your access and asked you to see its manager.
+    _codes.add(_Code(
+      id: 'enrol-nilgiri',
+      venueId: 'demo-cafe',
+      name: 'You (demo)',
+      email: me.email!,
+      role: StaffRole.server,
+      code: '482913',
+      createdAt: t0.subtract(const Duration(hours: 2)),
+      expiresAt: t0.add(const Duration(hours: 46)),
+      addedBy: 'Meenakshi',
+      forMe: const Venue(
+        id: 'demo-cafe',
+        name: 'Café Nilgiri',
+        slug: 'cafe-nilgiri',
+        createdBy: 's-meenakshi',
+        city: 'Bengaluru',
+        kind: VenueKind.cafe,
+        servesAlcohol: false,
+        country: 'IN',
+        currency: 'INR',
+        verified: true,
+        myRole: StaffRole.server,
+      ),
+    ));
+    _myAccess.add(StaffAccess(
+      venueId: 'demo-taphouse',
+      venueName: 'The Tap House',
+      venueKind: VenueKind.bar,
+      role: StaffRole.bartender,
+      status: StaffStatus.locked,
+      lockReason: 'Please see me before your next shift — about Saturday\'s cash-up.',
+      lockedAt: t0.subtract(const Duration(hours: 2)),
+      reportTo: 'Arjun',
+      reportToRole: 'manager',
+    ));
     _staff[sweets.id] = [
       const StaffMember(id: 's-ira', handle: 'ira', name: 'Ira', role: StaffRole.owner),
       const StaffMember(id: 'demo-me', handle: 'demo-owner', name: 'You (demo)', role: StaffRole.manager),
@@ -340,10 +432,33 @@ class DemoBackend implements Backend {
   }
 
   // ── team ──────────────────────────────────────────────────────────────────
+  bool _manages(String venueId) => roleCan(_myRole(venueId), Cap.manageTeam);
+
+  static int _statusRank(StaffStatus s) => switch (s) {
+        StaffStatus.pending => 0,
+        StaffStatus.active => 1,
+        StaffStatus.locked => 2,
+      };
+
   @override
   Future<List<StaffMember>> staff(String venueId) async {
-    final list = [...?_staff[venueId]];
-    list.sort((a, b) => a.role.rank != b.role.rank ? a.role.rank.compareTo(b.role.rank) : a.name.compareTo(b.name));
+    final manage = _manages(venueId);
+    final list = [
+      for (final m in [...?_staff[venueId]])
+        if (manage || m.status == StaffStatus.active || m.id == me.id)
+          m.copyWith(
+            onShiftSince: _onShift['$venueId|${m.id}'],
+            clearShift: _onShift['$venueId|${m.id}'] == null,
+            // phones and lock details are for owners, managers and the person themself
+            clearPhone: !manage && m.id != me.id,
+            clearLock: !manage && m.id != me.id,
+          ),
+    ];
+    list.sort((a, b) {
+      final s = _statusRank(a.status).compareTo(_statusRank(b.status));
+      if (s != 0) return s;
+      return a.role.rank != b.role.rank ? a.role.rank.compareTo(b.role.rank) : a.name.compareTo(b.name);
+    });
     return list;
   }
 
@@ -356,25 +471,29 @@ class DemoBackend implements Backend {
 
   StaffRole _myRole(String venueId) => _venue(venueId).myRole;
 
-  @override
-  Future<void> addStaff(String venueId, String userId, StaffRole role) async {
-    if (!canGrant(_myRole(venueId), role)) throw const BackendError('You can\'t give that role.');
-    final list = _staff[venueId] ??= [];
-    if (list.any((s) => s.id == userId)) return;
-    final p = _people.firstWhere((p) => p.id == userId, orElse: () => ProfileHit(id: userId, handle: userId, name: userId));
-    list.add(StaffMember(id: p.id, handle: p.handle, name: p.name, role: role));
-    staffRev.bump();
+  StaffMember _member(String venueId, String userId) =>
+      (_staff[venueId] ?? const <StaffMember>[]).firstWhere((m) => m.id == userId, orElse: () => throw const BackendError('They\'re not on this team.'));
+
+  void _replace(String venueId, StaffMember m) {
+    final list = _staff[venueId]!;
+    list[list.indexWhere((x) => x.id == m.id)] = m;
+  }
+
+  void _log(String venueId, String kind, {String? subjectId, String? subject, Map<String, dynamic> detail = const {}}) {
+    (_history[venueId] ??= []).insert(
+      0,
+      (subjectId: subjectId, e: StaffEvent(id: _eventId++, kind: kind, actor: me.name, subject: subject, detail: detail, at: DateTime.now())),
+    );
   }
 
   @override
   Future<void> setStaffRole(String venueId, String userId, StaffRole role) async {
-    final list = _staff[venueId] ?? [];
-    final i = list.indexWhere((s) => s.id == userId);
-    if (i < 0) throw const BackendError('They\'re not on the team.');
+    final s = _member(venueId, userId);
+    if (userId == me.id) throw const BackendError('Nobody changes their own role.');
     final mine = _myRole(venueId);
-    if (!canGrant(mine, role) || !canGrant(mine, list[i].role)) throw const BackendError('You can\'t change that role.');
-    final s = list[i];
-    list[i] = StaffMember(id: s.id, handle: s.handle, name: s.name, role: role, thankable: s.thankable);
+    if (!canGrant(mine, role) || !canGrant(mine, s.role)) throw const BackendError('You can\'t change that role.');
+    _replace(venueId, s.copyWith(role: role));
+    _log(venueId, 'role_changed', subjectId: s.id, subject: s.name, detail: {'from': s.role.db, 'to': role.db});
     staffRev.bump();
   }
 
@@ -385,6 +504,8 @@ class DemoBackend implements Backend {
     if (target == null) return;
     if (userId != me.id && !canGrant(_myRole(venueId), target.role)) throw const BackendError('You can\'t remove them.');
     list.removeWhere((s) => s.id == userId);
+    _onShift.remove('$venueId|$userId');
+    _log(venueId, userId == me.id ? 'left' : 'removed', subjectId: userId, subject: target.name, detail: {'role': target.role.db, 'status': target.status.db});
     staffRev.bump();
   }
 
@@ -393,8 +514,7 @@ class DemoBackend implements Backend {
     final list = _staff[venueId] ?? [];
     final i = list.indexWhere((s) => s.id == me.id);
     if (i < 0) return;
-    final s = list[i];
-    list[i] = StaffMember(id: s.id, handle: s.handle, name: s.name, role: s.role, thankable: thankable);
+    list[i] = list[i].copyWith(thankable: thankable);
     staffRev.bump();
   }
 
@@ -403,14 +523,307 @@ class DemoBackend implements Backend {
     if (!canGrant(_myRole(venueId), role)) throw const BackendError('You can\'t invite someone as that.');
     final r = math.Random();
     const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
-    final code = List.generate(8, (_) => alphabet[r.nextInt(alphabet.length)]).join();
+    final code = List.generate(10, (_) => alphabet[r.nextInt(alphabet.length)]).join();
+    _invites[code] = role;
     return StaffInvite(code: code, role: role, expiresAt: DateTime.now().add(const Duration(days: 7)));
   }
 
+  /// In the demo, a code "you" made yourself is for someone else; any other 10-letter code
+  /// asks to join a bakery down the road, and you wait for its manager's yes.
   @override
   Future<String> acceptInvite(String code) async {
-    if (code.trim().length < 6) throw const BackendError('That invite code didn\'t work.');
-    return _venues.first.name;
+    final c = code.trim().toLowerCase();
+    if (!RegExp(r'^[a-z0-9]{10}$').hasMatch(c)) throw const BackendError('That invite code didn\'t work — ask for a new one.');
+    if (_invites.containsKey(c)) throw const BackendError('That code is for someone joining your team — share it with them.');
+    if (!_myAccess.any((a) => a.venueId == 'demo-bakery')) {
+      _myAccess.add(const StaffAccess(venueId: 'demo-bakery', venueName: 'Blue Door Bakery', venueKind: VenueKind.bakery, role: StaffRole.server, status: StaffStatus.pending));
+    }
+    venueRev.bump();
+    return 'Blue Door Bakery';
+  }
+
+  // ── staff access (053) ────────────────────────────────────────────────────
+  static String _newCode() => (100000 + math.Random().nextInt(900000)).toString();
+
+  _Code _code(String id) => _codes.firstWhere((c) => c.id == id, orElse: () => throw const BackendError('No such code.'));
+
+  @override
+  Future<StaffCode> enrolStaff(String venueId, {required String name, required String email, String? phone, required StaffRole role}) async {
+    final mine = _myRole(venueId);
+    if (!roleCan(mine, Cap.manageTeam) || !canGrant(mine, role)) {
+      throw BackendError('Your role can\'t add someone as ${role.db}.');
+    }
+    final nm = name.trim();
+    final em = email.trim().toLowerCase();
+    final ph = phone?.trim() ?? '';
+    if (nm.isEmpty || nm.length > 60) throw const BackendError('Add their name (up to 60 letters).');
+    if (!validStaffEmail(em)) throw const BackendError('That email doesn\'t look right.');
+    if (ph.isNotEmpty && !validStaffPhone(ph)) throw const BackendError('That phone number doesn\'t look right.');
+    if (em == me.email && (_staff[venueId] ?? const []).any((m) => m.id == me.id)) {
+      throw const BackendError('Someone with that email is already on this team.');
+    }
+    for (final c in _codes.where((c) => c.venueId == venueId && c.email == em && c.open)) {
+      c.closed = true; // one open code per person per venue
+    }
+    final now = DateTime.now();
+    final c = _Code(
+      id: newId(),
+      venueId: venueId,
+      name: nm,
+      email: em,
+      phone: ph.isEmpty ? null : ph,
+      role: role,
+      code: _newCode(),
+      createdAt: now,
+      expiresAt: now.add(const Duration(hours: 48)),
+      addedBy: me.name,
+    );
+    _codes.add(c);
+    _log(venueId, 'enrolled', detail: {'role': role.db, 'name': nm});
+    staffRev.bump();
+    return StaffCode(enrolmentId: c.id, code: c.code, expiresAt: c.expiresAt);
+  }
+
+  @override
+  Future<StaffCode> reissueCode(String enrolmentId) async {
+    final c = _code(enrolmentId);
+    if (!c.open) throw const BackendError('That code is closed — add them again.');
+    final mine = _myRole(c.venueId);
+    if (!roleCan(mine, Cap.manageTeam) || !canGrant(mine, c.role)) throw const BackendError('Your role can\'t do that.');
+    c
+      ..code = _newCode()
+      ..attempts = 0
+      ..expiresAt = DateTime.now().add(const Duration(hours: 48));
+    _log(c.venueId, 'code_reissued', detail: {'role': c.role.db, 'name': c.name});
+    staffRev.bump();
+    return StaffCode(enrolmentId: c.id, code: c.code, expiresAt: c.expiresAt);
+  }
+
+  @override
+  Future<void> revokeEnrolment(String enrolmentId) async {
+    final c = _code(enrolmentId);
+    final mine = _myRole(c.venueId);
+    if (!roleCan(mine, Cap.manageTeam) || !canGrant(mine, c.role)) throw const BackendError('Your role can\'t do that.');
+    if (!c.open) return;
+    c.closed = true;
+    _log(c.venueId, 'enrolment_revoked', detail: {'role': c.role.db, 'name': c.name});
+    staffRev.bump();
+  }
+
+  @override
+  Future<List<Enrolment>> openEnrolments(String venueId) async {
+    if (!_manages(venueId)) throw const BackendError('Your role doesn\'t manage the team here.');
+    return [
+      for (final c in _codes.where((c) => c.venueId == venueId && c.open && c.forMe == null).toList().reversed)
+        Enrolment(id: c.id, name: c.name, email: c.email, phone: c.phone, role: c.role, createdAt: c.createdAt, expiresAt: c.expiresAt, attempts: c.attempts, addedBy: c.addedBy),
+    ];
+  }
+
+  @override
+  Future<List<MyEnrolment>> myEnrolments() async {
+    _needUser();
+    final now = DateTime.now();
+    return [
+      for (final c in _codes)
+        if (c.forMe != null && c.open && c.expiresAt.isAfter(now) && c.attempts < 5 && !_venues.any((v) => v.id == c.venueId))
+          MyEnrolment(id: c.id, venueId: c.venueId, venueName: c.forMe!.name, venueKind: c.forMe!.kind, role: c.role, staffName: c.name, addedBy: c.addedBy, expiresAt: c.expiresAt, triesLeft: 5 - c.attempts),
+    ];
+  }
+
+  @override
+  Future<ClaimResult> claimEnrolment(String enrolmentId, String code) async {
+    _needUser();
+    final c = _codes.where((c) => c.id == enrolmentId && c.forMe != null).firstOrNull;
+    if (c == null) return const ClaimResult(ok: false, error: ClaimError.notFound);
+    if (!c.open) return const ClaimResult(ok: false, error: ClaimError.closed);
+    if (!c.expiresAt.isAfter(DateTime.now())) return const ClaimResult(ok: false, error: ClaimError.expired);
+    if (c.attempts >= 5) return const ClaimResult(ok: false, error: ClaimError.tooMany);
+    if (code.trim() != c.code) {
+      c.attempts++;
+      return ClaimResult(ok: false, error: c.attempts >= 5 ? ClaimError.tooMany : ClaimError.wrongCode, left: 5 - c.attempts);
+    }
+    final v = c.forMe!;
+    c.closed = true;
+    _venues.add(v);
+    _staff[v.id] = [
+      const StaffMember(id: 's-meenakshi', handle: 'meenakshi', name: 'Meenakshi', role: StaffRole.owner),
+      StaffMember(id: me.id, handle: me.handle, name: me.name, role: c.role, joinedAt: DateTime.now(), approvedBy: c.addedBy),
+    ];
+    _rooms[v.id] = [];
+    _menu[v.id] = [];
+    _perks[v.id] = [];
+    _log(v.id, 'joined', subjectId: me.id, subject: me.name, detail: {'role': c.role.db, 'via': 'code'});
+    venueRev.bump();
+    return ClaimResult(ok: true, venueId: v.id, venueName: v.name, role: c.role);
+  }
+
+  /// For the walk-throughs: an owner somewhere else pauses "you" at [venueId] (what a
+  /// manager's phone would do to yours), or gives you access again.
+  void pauseMe(String venueId, {String? reason, required String reportTo, String reportToRole = 'owner'}) {
+    final v = _venue(venueId);
+    _venues.removeWhere((x) => x.id == venueId);
+    _paused[venueId] = v;
+    _myAccess.add(StaffAccess(venueId: v.id, venueName: v.name, venueKind: v.kind, role: v.myRole, status: StaffStatus.locked, lockReason: reason, lockedAt: DateTime.now(), reportTo: reportTo, reportToRole: reportToRole));
+    _onShift.remove('$venueId|${me.id}');
+    venueRev.bump(); // the real app hears of it within a minute, or on the next refused call
+  }
+
+  void unpauseMe(String venueId) {
+    final v = _paused.remove(venueId);
+    if (v == null) return;
+    _myAccess.removeWhere((a) => a.venueId == venueId);
+    _venues.add(v);
+    venueRev.bump();
+  }
+
+  final Map<String, Venue> _paused = {};
+
+  @override
+  Future<List<StaffAccess>> myStaffStatus() async {
+    _needUser();
+    return List.unmodifiable(_myAccess);
+  }
+
+  void _needManage(String venueId, StaffRole target, String what) {
+    final mine = _myRole(venueId);
+    if (!roleCan(mine, Cap.manageTeam) || !canGrant(mine, target)) throw BackendError('Your role can\'t $what a ${target.db}.');
+  }
+
+  @override
+  Future<void> approveStaff(String venueId, String userId) async {
+    final m = _member(venueId, userId);
+    if (m.status != StaffStatus.pending) throw const BackendError('They\'re not waiting for a yes.');
+    _needManage(venueId, m.role, 'approve');
+    _replace(venueId, m.copyWith(status: StaffStatus.active, approvedBy: me.name));
+    _log(venueId, 'approved', subjectId: m.id, subject: m.name, detail: {'role': m.role.db, 'via': 'approved'});
+    staffRev.bump();
+  }
+
+  @override
+  Future<void> declineStaff(String venueId, String userId) async {
+    final m = _member(venueId, userId);
+    if (m.status != StaffStatus.pending) throw const BackendError('They\'re not waiting for a yes.');
+    _needManage(venueId, m.role, 'decline');
+    _staff[venueId]!.removeWhere((x) => x.id == userId);
+    _log(venueId, 'declined', subjectId: m.id, subject: m.name, detail: {'role': m.role.db, 'status': 'pending'});
+    staffRev.bump();
+  }
+
+  @override
+  Future<void> lockStaff(String venueId, String userId, {String? reason, String? reportTo}) async {
+    if (userId == me.id) throw const BackendError('You can\'t lock yourself out.');
+    if (_venue(venueId).createdBy == userId) throw const BackendError('The owner can\'t be locked out.');
+    final m = _member(venueId, userId);
+    _needManage(venueId, m.role, 'lock out');
+    if (m.status == StaffStatus.pending) throw const BackendError('They\'re still waiting — decline them instead.');
+    final why = reason?.trim() ?? '';
+    if (why.length > 200) throw const BackendError('Keep the reason under 200 letters.');
+    final to = reportTo == null ? null : (_staff[venueId] ?? const <StaffMember>[]).where((x) => x.id == reportTo).firstOrNull;
+    if (reportTo != null && (to == null || !to.role.isManagement || to.status != StaffStatus.active)) {
+      throw const BackendError('They can only be asked to report to an owner or a manager here.');
+    }
+    _replace(venueId, m.copyWith(status: StaffStatus.locked, lockedAt: DateTime.now(), lockReason: why.isEmpty ? null : why, reportTo: to?.name ?? me.name));
+    if (m.status != StaffStatus.locked) {
+      _log(venueId, 'locked', subjectId: m.id, subject: m.name, detail: {'role': m.role.db, if (why.isNotEmpty) 'reason': why});
+    }
+    _endShift(venueId, userId);
+    staffRev.bump();
+    shiftRev.bump();
+  }
+
+  @override
+  Future<void> unlockStaff(String venueId, String userId) async {
+    final m = _member(venueId, userId);
+    _needManage(venueId, m.role, 'unlock');
+    if (m.status != StaffStatus.locked) return;
+    _replace(venueId, m.copyWith(status: StaffStatus.active, clearLock: true));
+    _log(venueId, 'unlocked', subjectId: m.id, subject: m.name, detail: {'role': m.role.db});
+    staffRev.bump();
+  }
+
+  @override
+  Future<void> setStaffDetails(String venueId, String userId, {String? name, String? phone}) async {
+    final m = _member(venueId, userId);
+    if (userId != me.id) _needManage(venueId, m.role, 'change the details of');
+    final nm = name?.trim() ?? '';
+    final ph = phone?.trim() ?? '';
+    if (nm.length > 60) throw const BackendError('Keep the name under 60 letters.');
+    if (ph.isNotEmpty && !validStaffPhone(ph)) throw const BackendError('That phone number doesn\'t look right.');
+    _replace(venueId, m.copyWith(name: nm.isEmpty ? null : nm, phone: ph.isEmpty ? null : ph, clearPhone: ph.isEmpty));
+    _log(venueId, 'details_changed', subjectId: m.id, subject: nm.isEmpty ? m.name : nm);
+    staffRev.bump();
+  }
+
+  @override
+  Future<List<StaffEvent>> staffHistory(String venueId, {String? userId, int limit = 100}) async {
+    if (!roleCan(_myRole(venueId), Cap.auditLog) && userId != me.id) {
+      throw const BackendError('Your role doesn\'t see the team\'s history.');
+    }
+    return [
+      for (final h in _history[venueId] ?? const <({String? subjectId, StaffEvent e})>[])
+        if (userId == null || h.subjectId == userId) h.e,
+    ].take(limit.clamp(1, 500)).toList();
+  }
+
+  // ── the time clock (053) ──────────────────────────────────────────────────
+  void _endShift(String venueId, String userId) {
+    final since = _onShift.remove('$venueId|$userId');
+    if (since == null) return;
+    final k = '$venueId|$userId';
+    final start = since.isBefore(weekStart(DateTime.now())) ? weekStart(DateTime.now()) : since;
+    _weekMinutes[k] = (_weekMinutes[k] ?? 0) + DateTime.now().difference(start).inMinutes;
+  }
+
+  @override
+  Future<DateTime?> myShift(String venueId) async => _onShift['$venueId|${me.id}'];
+
+  @override
+  Future<DateTime> clockIn(String venueId) async {
+    if (!roleCan(_myRole(venueId), Cap.ownShift)) throw const BackendError('You can\'t clock in here right now.');
+    final since = _onShift.putIfAbsent('$venueId|${me.id}', DateTime.now);
+    shiftRev.bump();
+    staffRev.bump();
+    return since;
+  }
+
+  @override
+  Future<void> clockOut(String venueId) async {
+    if (_onShift['$venueId|${me.id}'] == null) throw const BackendError('You\'re not clocked in.');
+    _endShift(venueId, me.id);
+    shiftRev.bump();
+    staffRev.bump();
+  }
+
+  @override
+  Future<void> endShift(String venueId, String userId) async {
+    if (!roleCan(_myRole(venueId), Cap.editRota)) throw const BackendError('Your role doesn\'t manage shifts here.');
+    if (_onShift['$venueId|$userId'] == null) throw const BackendError('They\'re not clocked in.');
+    _endShift(venueId, userId);
+    final m = _member(venueId, userId);
+    _log(venueId, 'shift_ended_by_manager', subjectId: userId, subject: m.name);
+    shiftRev.bump();
+    staffRev.bump();
+  }
+
+  @override
+  Future<List<ShiftRow>> shiftHours(String venueId, DateTime since) async {
+    final everyone = roleCan(_myRole(venueId), Cap.editRota);
+    final now = DateTime.now();
+    final monday = weekStart(now);
+    // The demo keeps this week's finished shifts; earlier weeks run at the same pace.
+    final daysBefore = since.isBefore(monday) ? monday.difference(since).inDays : 0;
+    final daysThisWeek = math.max(1, now.difference(monday).inDays + 1);
+    final rows = <ShiftRow>[];
+    for (final m in _staff[venueId] ?? const <StaffMember>[]) {
+      if (!everyone && m.id != me.id) continue;
+      final k = '$venueId|${m.id}';
+      final week = _weekMinutes[k] ?? 0;
+      final open = _onShift[k];
+      final openMins = open == null ? 0 : now.difference(open.isBefore(since) ? since : open).inMinutes;
+      rows.add(ShiftRow(userId: m.id, name: m.name, role: m.role, onSince: open, minutes: week + (week * daysBefore / daysThisWeek).round() + openMins));
+    }
+    rows.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return rows;
   }
 
   // ── tonight ───────────────────────────────────────────────────────────────
@@ -1161,4 +1574,37 @@ class DemoBackend implements Backend {
       yield '$w ';
     }
   }
+}
+
+/// A code a manager made for someone (staff_enrolments, 053). [forMe] marks one made for
+/// the demo's own "you" at another venue: typing it joins that venue.
+class _Code {
+  final String id;
+  final String venueId;
+  final String name;
+  final String email;
+  final String? phone;
+  final StaffRole role;
+  String code;
+  final DateTime createdAt;
+  DateTime expiresAt;
+  int attempts = 0;
+  bool closed = false;
+  final String addedBy;
+  final Venue? forMe;
+  _Code({
+    required this.id,
+    required this.venueId,
+    required this.name,
+    required this.email,
+    this.phone,
+    required this.role,
+    required this.code,
+    required this.createdAt,
+    required this.expiresAt,
+    required this.addedBy,
+    this.forMe,
+  });
+
+  bool get open => !closed;
 }

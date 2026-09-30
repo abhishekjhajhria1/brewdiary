@@ -1,10 +1,12 @@
-// The root: themes, then a gate — signed out → sign in; no venue chosen → your venues;
-// otherwise the venue shell, whose tabs follow your role.
+// The root: themes, then a gate — signed out → sign in; paused where you were working →
+// who to report to; no venue chosen → your venues; otherwise the venue shell, whose tabs
+// follow your role.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data/session.dart';
 import 'data/settings.dart';
+import 'ui/screens/locked_screen.dart';
 import 'ui/screens/sign_in_screen.dart';
 import 'ui/screens/venues_screen.dart';
 import 'ui/shell.dart';
@@ -62,6 +64,8 @@ class RootGate extends StatelessWidget {
           page = const _Splash(key: ValueKey('splash'));
         } else if (!s.signedIn) {
           page = const SignInScreen(key: ValueKey('signin'));
+        } else if (s.lockedOut != null) {
+          page = LockedScreen(key: ValueKey('locked-${s.lockedOut!.venueId}'), access: s.lockedOut!);
         } else if (s.venue == null) {
           page = const VenuesScreen(key: ValueKey('venues'));
         } else {

@@ -62,8 +62,12 @@ class SupabaseBackend implements Backend {
       rethrow;
     } on PostgrestException catch (e) {
       if (e.code == '23505') throw const BackendError('That already exists.');
+      if (_behind(e)) throw _needsUpdate;
       if (e.code == '42501' || e.message.contains('row-level security')) {
-        throw const BackendError('Your role here can\'t do that.');
+        // Maybe a lock-out landed since the last check: look again, so it shows at once.
+        accessRev.bump();
+        final m = e.message.trim();
+        throw BackendError(m.isEmpty || m.contains('row-level security') ? 'Your role here can\'t do that.' : _sentence(m));
       }
       throw BackendError(_sentence(e.message));
     } on AuthException catch (e) {
@@ -72,6 +76,14 @@ class SupabaseBackend implements Backend {
       throw const BackendError('Couldn\'t reach brewdiary — check your connection and try again.');
     }
   }
+
+  /// The database hasn't had a migration this app relies on: a function or a column the
+  /// app asks for isn't there yet.
+  static bool _behind(PostgrestException e) => const {'PGRST202', 'PGRST204', '42883', '42703', '42P01'}.contains(e.code);
+  static const _needsUpdate = BackendError(
+    'This needs the latest brewdiary database update — ask whoever runs your brewdiary server to apply migration 053.',
+    code: 'needs_update',
+  );
 
   static String _sentence(String m) {
     final t = m.trim();
@@ -122,11 +134,21 @@ class SupabaseBackend implements Backend {
       });
 
   @override
-  Future<void> sendEmailCode(String email, {bool create = false, String? name}) => _run(() => _c.auth.signInWithOtp(
-        email: email.trim(),
-        shouldCreateUser: create,
-        data: create && (name?.trim().isNotEmpty ?? false) ? {'name': name!.trim()} : null,
-      ));
+  Future<void> sendEmailCode(String email, {bool create = false, String? name}) => _run(() async {
+        try {
+          await _c.auth.signInWithOtp(
+            email: email.trim(),
+            shouldCreateUser: create,
+            data: create && (name?.trim().isNotEmpty ?? false) ? {'name': name!.trim()} : null,
+          );
+        } on AuthException catch (e) {
+          // No account and not creating one: Supabase says "Signups not allowed for otp".
+          if (!create && RegExp(r'signups? not allowed|user not found|otp_disabled', caseSensitive: false).hasMatch('${e.message} ${e.code ?? ''}')) {
+            throw const BackendError('No brewdiary account with that email yet — add your name to create one.', code: 'no_account');
+          }
+          rethrow;
+        }
+      });
 
   @override
   Future<void> verifyEmailCode(String email, String code) => _run(() async {
@@ -147,13 +169,22 @@ class SupabaseBackend implements Backend {
   // ── venues ────────────────────────────────────────────────────────────────
   @override
   Future<List<Venue>> myVenues() => _run(() async {
-        final rows = await _c.from('venue_staff').select('role, venue:venues(*)').eq('user_id', _me);
+        final me = _me;
+        List<Map<String, dynamic>> rows;
+        try {
+          rows = await _c.from('venue_staff').select('role, status, venue:venues(*)').eq('user_id', me);
+        } on PostgrestException catch (e) {
+          if (!_behind(e)) rethrow;
+          rows = await _c.from('venue_staff').select('role, venue:venues(*)').eq('user_id', me); // before 053
+        }
         final out = <Venue>[];
         for (final r in rows) {
+          // Waiting for a yes, or paused: not a venue you can work (see myStaffStatus).
+          if (StaffStatus.parse(r['status'] as String?) != StaffStatus.active) continue;
           final v = r['venue'];
           if (v is Map<String, dynamic>) {
             // The creator is the owner whatever the staff row says (venue_role(), 045).
-            final role = v['created_by'] == _me ? StaffRole.owner : StaffRole.parse(r['role'] as String?);
+            final role = v['created_by'] == me ? StaffRole.owner : StaffRole.parse(r['role'] as String?);
             out.add(Venue.fromRow(v, role));
           }
         }
@@ -257,6 +288,13 @@ class SupabaseBackend implements Backend {
   // ── team ──────────────────────────────────────────────────────────────────
   @override
   Future<List<StaffMember>> staff(String venueId) => _run(() async {
+        try {
+          final rows = await _c.rpc('team_roster', params: {'vid': venueId});
+          return [for (final r in (rows as List? ?? const [])) StaffMember.fromRoster(Map<String, dynamic>.from(r as Map))];
+        } on PostgrestException catch (e) {
+          if (!_behind(e)) rethrow;
+        }
+        // Before 053: the plain roster read.
         final rows = await _c.from('venue_staff').select('role, thankable, member:profiles(id, handle, display_name)').eq('venue_id', venueId);
         final list = [
           for (final r in rows)
@@ -282,17 +320,6 @@ class SupabaseBackend implements Backend {
           for (final r in (rows as List? ?? const []))
             ProfileHit(id: r['id'] as String, handle: (r['handle'] as String?) ?? '', name: (r['display_name'] as String?) ?? (r['handle'] as String?) ?? 'someone'),
         ];
-      });
-
-  @override
-  Future<void> addStaff(String venueId, String userId, StaffRole role) => _run(() async {
-        try {
-          await _c.from('venue_staff').insert({'venue_id': venueId, 'user_id': userId, 'role': role.db});
-        } on PostgrestException catch (e) {
-          if (e.code == '23505') return; // already on the team
-          rethrow;
-        }
-        staffRev.bump();
       });
 
   @override
@@ -324,6 +351,141 @@ class SupabaseBackend implements Backend {
         final name = await _c.rpc('accept_staff_invite', params: {'invite_code': code.trim().toLowerCase()});
         venueRev.bump();
         return '$name';
+      });
+
+  // ── staff access (053) ────────────────────────────────────────────────────
+  static Map<String, dynamic> _firstRow(Object? rows) {
+    final list = rows is List ? rows : [rows];
+    if (list.isEmpty || list.first is! Map) throw const BackendError('Something went wrong — try again.');
+    return Map<String, dynamic>.from(list.first as Map);
+  }
+
+  static DateTime _when(Object? v) => DateTime.tryParse('$v')?.toLocal() ?? DateTime.now();
+
+  static String? _blank(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
+
+  @override
+  Future<StaffCode> enrolStaff(String venueId, {required String name, required String email, String? phone, required StaffRole role}) => _run(() async {
+        final r = _firstRow(await _c.rpc('enrol_staff', params: {
+          'vid': venueId,
+          'full_name': name.trim(),
+          'email_addr': email.trim().toLowerCase(),
+          'phone_no': _blank(phone),
+          'staff_role': role.db,
+        }));
+        staffRev.bump();
+        return StaffCode(enrolmentId: r['enrolment_id'] as String?, code: '${r['code']}', expiresAt: _when(r['expires_at']));
+      });
+
+  @override
+  Future<StaffCode> reissueCode(String enrolmentId) => _run(() async {
+        final r = _firstRow(await _c.rpc('reissue_staff_code', params: {'eid': enrolmentId}));
+        staffRev.bump();
+        return StaffCode(enrolmentId: enrolmentId, code: '${r['code']}', expiresAt: _when(r['expires_at']));
+      });
+
+  @override
+  Future<void> revokeEnrolment(String enrolmentId) => _run(() async {
+        await _c.rpc('revoke_staff_enrolment', params: {'eid': enrolmentId});
+        staffRev.bump();
+      });
+
+  @override
+  Future<List<Enrolment>> openEnrolments(String venueId) => _run(() async {
+        final rows = await _c.rpc('staff_enrolments_open', params: {'vid': venueId});
+        return [for (final r in (rows as List? ?? const [])) Enrolment.fromRow(Map<String, dynamic>.from(r as Map))];
+      });
+
+  @override
+  Future<List<MyEnrolment>> myEnrolments() => _run(() async {
+        final rows = await _c.rpc('my_staff_enrolments');
+        return [for (final r in (rows as List? ?? const [])) MyEnrolment.fromRow(Map<String, dynamic>.from(r as Map))];
+      });
+
+  @override
+  Future<ClaimResult> claimEnrolment(String enrolmentId, String code) => _run(() async {
+        final j = await _c.rpc('claim_staff_enrolment', params: {'eid': enrolmentId, 'code': code.trim()});
+        final r = ClaimResult.fromJson(Map<String, dynamic>.from(j as Map));
+        if (r.ok) venueRev.bump();
+        return r;
+      });
+
+  @override
+  Future<List<StaffAccess>> myStaffStatus() => _run(() async {
+        final rows = await _c.rpc('my_staff_status');
+        return [for (final r in (rows as List? ?? const [])) StaffAccess.fromRow(Map<String, dynamic>.from(r as Map))];
+      });
+
+  @override
+  Future<void> approveStaff(String venueId, String userId) => _run(() async {
+        await _c.rpc('approve_staff', params: {'vid': venueId, 'uid': userId});
+        staffRev.bump();
+      });
+
+  @override
+  Future<void> declineStaff(String venueId, String userId) => _run(() async {
+        await _c.rpc('decline_staff', params: {'vid': venueId, 'uid': userId});
+        staffRev.bump();
+      });
+
+  @override
+  Future<void> lockStaff(String venueId, String userId, {String? reason, String? reportTo}) => _run(() async {
+        await _c.rpc('lock_staff', params: {'vid': venueId, 'uid': userId, 'reason': _blank(reason), 'report_to_id': reportTo});
+        staffRev.bump();
+        shiftRev.bump();
+      });
+
+  @override
+  Future<void> unlockStaff(String venueId, String userId) => _run(() async {
+        await _c.rpc('unlock_staff', params: {'vid': venueId, 'uid': userId});
+        staffRev.bump();
+      });
+
+  @override
+  Future<void> setStaffDetails(String venueId, String userId, {String? name, String? phone}) => _run(() async {
+        await _c.rpc('set_staff_details', params: {'vid': venueId, 'uid': userId, 'full_name': _blank(name), 'phone_no': _blank(phone)});
+        staffRev.bump();
+      });
+
+  @override
+  Future<List<StaffEvent>> staffHistory(String venueId, {String? userId, int limit = 100}) => _run(() async {
+        final rows = await _c.rpc('staff_history', params: {'vid': venueId, 'uid': userId, 'lim': limit});
+        return [for (final r in (rows as List? ?? const [])) StaffEvent.fromRow(Map<String, dynamic>.from(r as Map))];
+      });
+
+  // ── the time clock (053) ──────────────────────────────────────────────────
+  @override
+  Future<DateTime?> myShift(String venueId) => _run(() async {
+        final t = await _c.rpc('my_shift', params: {'vid': venueId});
+        return t == null ? null : DateTime.tryParse('$t')?.toLocal();
+      });
+
+  @override
+  Future<DateTime> clockIn(String venueId) => _run(() async {
+        final t = await _c.rpc('clock_in', params: {'vid': venueId});
+        shiftRev.bump();
+        staffRev.bump();
+        return _when(t);
+      });
+
+  @override
+  Future<void> clockOut(String venueId) => _run(() async {
+        await _c.rpc('clock_out', params: {'vid': venueId});
+        shiftRev.bump();
+        staffRev.bump();
+      });
+
+  @override
+  Future<void> endShift(String venueId, String userId) => _run(() async {
+        await _c.rpc('end_staff_shift', params: {'vid': venueId, 'uid': userId});
+        shiftRev.bump();
+        staffRev.bump();
+      });
+
+  @override
+  Future<List<ShiftRow>> shiftHours(String venueId, DateTime since) => _run(() async {
+        final rows = await _c.rpc('shift_hours', params: {'vid': venueId, 'since': since.toUtc().toIso8601String()});
+        return [for (final r in (rows as List? ?? const [])) ShiftRow.fromRow(Map<String, dynamic>.from(r as Map))];
       });
 
   // ── tonight ───────────────────────────────────────────────────────────────

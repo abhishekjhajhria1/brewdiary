@@ -1,5 +1,5 @@
-// More — the rest of the venue: the team, the loyalty card, setup, your own thanks,
-// switching venue, and the theme.
+// More — the rest of the venue: the team, the loyalty card, setup, your shift (clock in
+// and out), your own thanks, switching venue, and the theme.
 import 'package:flutter/material.dart';
 
 import '../../data/backend.dart';
@@ -17,6 +17,7 @@ import 'excise_screen.dart';
 import 'floor_setup_screen.dart';
 import 'perks_screen.dart';
 import 'setup_screen.dart';
+import 'staff_hours_screen.dart';
 import 'stock_screen.dart';
 import 'team_screen.dart';
 
@@ -35,7 +36,13 @@ class MoreScreen extends StatelessWidget {
       children: [
         const DemoNote(),
         Group(children: [
-          GroupTile(icon: Ph.usersThree, title: 'Team', subtitle: s.can(Cap.manageTeam) ? 'Roles, invites, who\'s on' : 'Who you work with', chevron: true, onTap: () => push(TeamScreen(venue: venue))),
+          GroupTile(
+            icon: Ph.usersThree,
+            title: 'Team',
+            subtitle: s.can(Cap.manageTeam) ? 'Add employees, roles, pause access, hours, history' : 'Who you work with, your hours',
+            chevron: true,
+            onTap: () => push(TeamScreen(venue: venue)),
+          ),
           if (!venue.kind.isCounter && (s.can(Cap.editSettings) || s.can(Cap.floorView)))
             GroupTile(icon: Ph.squaresFour, title: 'Floor setup', subtitle: 'Areas, tables, table QRs, ordering from the table', chevron: true, onTap: () => push(FloorSetupScreen(venue: venue))),
           if (venue.kind.isCounter && (s.can(Cap.countStock) || s.can(Cap.receiveStock) || s.can(Cap.editMenu)))
@@ -46,6 +53,10 @@ class MoreScreen extends StatelessWidget {
           if (s.can(Cap.editSettings) || s.can(Cap.requestVerification))
             GroupTile(icon: Ph.slidersHorizontal, title: 'Setup', subtitle: venue.verified ? 'Details, location' : 'Details, location, verification', chevron: true, onTap: () => push(SetupScreen(venue: venue))),
         ]),
+        if (s.can(Cap.ownShift)) ...[
+          const SectionHeader('Your shift'),
+          ShiftCard(venue: venue),
+        ],
         const SectionHeader('Your thanks'),
         _MyThanks(venue: venue),
         const SectionHeader('This phone'),

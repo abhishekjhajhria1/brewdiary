@@ -363,7 +363,7 @@ begin
   insert into public.staff_enrolments (id, venue_id, role, staff_name, email, phone, code_hash, created_by, expires_at)
   values (eid, vid, staff_role, nm, em, ph, public.staff_code_hash(eid, c), me, ttl);
   insert into public.staff_events (venue_id, actor_id, subject_id, kind, detail)
-  values (vid, me, null, 'enrolled', jsonb_build_object('enrolment', eid, 'role', staff_role));
+  values (vid, me, null, 'enrolled', jsonb_build_object('enrolment', eid, 'role', staff_role, 'name', nm));
   return query select eid, c, ttl;
 end; $$;
 
@@ -385,7 +385,7 @@ begin
   update public.staff_enrolments x set code_hash = public.staff_code_hash(eid, c), attempts = 0, expires_at = ttl
    where x.id = eid;
   insert into public.staff_events (venue_id, actor_id, subject_id, kind, detail)
-  values (e.venue_id, me, null, 'code_reissued', jsonb_build_object('enrolment', eid, 'role', e.role));
+  values (e.venue_id, me, null, 'code_reissued', jsonb_build_object('enrolment', eid, 'role', e.role, 'name', e.staff_name));
   return query select c, ttl;
 end; $$;
 
@@ -402,7 +402,7 @@ begin
   if e.used_at is not null or e.revoked_at is not null then return; end if;
   update public.staff_enrolments x set revoked_at = now() where x.id = eid;
   insert into public.staff_events (venue_id, actor_id, subject_id, kind, detail)
-  values (e.venue_id, me, null, 'enrolment_revoked', jsonb_build_object('enrolment', eid, 'role', e.role));
+  values (e.venue_id, me, null, 'enrolment_revoked', jsonb_build_object('enrolment', eid, 'role', e.role, 'name', e.staff_name));
 end; $$;
 
 -- The manager's list of people added but not in yet (expired ones too, to re-issue).

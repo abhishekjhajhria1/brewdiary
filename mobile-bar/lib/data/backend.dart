@@ -14,7 +14,11 @@ import '../logic/venue_kinds.dart';
 /// refusals ("only a verified venue can record spend") are already plain English.
 class BackendError implements Exception {
   final String message;
-  const BackendError(this.message);
+
+  /// A machine-readable reason where a screen acts on it: 'no_account' (that email has no
+  /// brewdiary account yet), 'needs_update' (the database is a migration behind).
+  final String? code;
+  const BackendError(this.message, {this.code});
   @override
   String toString() => message;
 }
@@ -58,16 +62,65 @@ abstract class Backend {
   Future<void> withdrawVerification(String venueId);
 
   // ── team ──────────────────────────────────────────────────────────────────
+  /// The roster. Owners and managers also get who's waiting and who's paused (053).
   Future<List<StaffMember>> staff(String venueId);
+
+  /// Guests by name or @handle (the till, the guest book) — never how staff are added.
   Future<List<ProfileHit>> searchPeople(String query);
-  Future<void> addStaff(String venueId, String userId, StaffRole role);
   Future<void> setStaffRole(String venueId, String userId, StaffRole role);
   Future<void> removeStaff(String venueId, String userId);
   Future<void> setThankable(String venueId, bool thankable);
   Future<StaffInvite> createInvite(String venueId, StaffRole role);
 
-  /// Join a team with an invite code; returns the venue's name.
+  /// Ask to join a team with a shared invite code; returns the venue's name. Since 053 the
+  /// person waits for a manager's yes before they can do anything.
   Future<String> acceptInvite(String code);
+
+  // ── staff access (053): the owner's code, approvals, lock-out, history ───
+  /// Add an employee: their details and the role. Returns the code, shown ONCE — the
+  /// employee signs in with [email] and types it.
+  Future<StaffCode> enrolStaff(String venueId, {required String name, required String email, String? phone, required StaffRole role});
+
+  /// A new code for someone added but not in yet; the old one stops working.
+  Future<StaffCode> reissueCode(String enrolmentId);
+  Future<void> revokeEnrolment(String enrolmentId);
+
+  /// People added who haven't typed their code yet (expired ones too, to re-issue).
+  Future<List<Enrolment>> openEnrolments(String venueId);
+
+  /// Venues that added the email I'm signed in with, waiting for the owner's code.
+  Future<List<MyEnrolment>> myEnrolments();
+
+  /// Type the owner's code. A wrong code is an answer, not an error.
+  Future<ClaimResult> claimEnrolment(String enrolmentId, String code);
+
+  /// Where I'm waiting for a yes, or paused — with why and who to see.
+  Future<List<StaffAccess>> myStaffStatus();
+  Future<void> approveStaff(String venueId, String userId);
+  Future<void> declineStaff(String venueId, String userId);
+
+  /// Pause someone's access at once: every screen, table and function stops for them.
+  /// [reportTo] is an owner or manager here (the caller when null).
+  Future<void> lockStaff(String venueId, String userId, {String? reason, String? reportTo});
+  Future<void> unlockStaff(String venueId, String userId);
+
+  /// The venue's own details for someone: the name they go by, a phone number.
+  Future<void> setStaffDetails(String venueId, String userId, {String? name, String? phone});
+
+  /// The team's history (owners/managers), or one person's ([userId]).
+  Future<List<StaffEvent>> staffHistory(String venueId, {String? userId, int limit = 100});
+
+  // ── the time clock (053): for pay, never a ranking ────────────────────────
+  /// When I clocked in here, or null when I'm off.
+  Future<DateTime?> myShift(String venueId);
+  Future<DateTime> clockIn(String venueId);
+  Future<void> clockOut(String venueId);
+
+  /// A manager clocks out someone who forgot (written to the history).
+  Future<void> endShift(String venueId, String userId);
+
+  /// Minutes on the clock per person since [since], listed by name.
+  Future<List<ShiftRow>> shiftHours(String venueId, DateTime since);
 
   // ── tonight: rooms, guests, vibe, tabs, perks ────────────────────────────
   Future<List<Room>> rooms(String venueId);

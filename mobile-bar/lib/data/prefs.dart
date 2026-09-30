@@ -44,6 +44,11 @@ final guestsRev = Rev();
 final stockRev = Rev();
 final floorRev = Rev();
 final doorRev = Rev();
+final shiftRev = Rev();
+
+/// Bumped when the database refuses something for lack of permission: the session then
+/// re-checks where this person stands, so a lock-out shows at once, not a minute later.
+final accessRev = Rev();
 
 const _uuid = Uuid();
 

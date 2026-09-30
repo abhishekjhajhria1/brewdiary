@@ -52,3 +52,6 @@ env.json
 /android/build/
 test/tour/
 test/failures/
+
+# The screenshot tour (test/tour_test.dart --dart-define=TOUR=true) — for design review only.
+test/tour/

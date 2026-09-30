@@ -43,7 +43,12 @@ class _SignInScreenState extends State<SignInScreen> {
     try {
       await f();
     } on BackendError catch (e) {
-      setState(() => _error = e.message);
+      setState(() {
+        _error = e.message;
+        // A new employee whose manager just added them: no account yet — make one here,
+        // with the same email, and the manager's code is waiting once they're in.
+        if (e.code == 'no_account') _create = true;
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -107,6 +112,10 @@ class _SignInScreenState extends State<SignInScreen> {
       case _Step.email:
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Text(_create ? 'Create your account' : 'Sign in', style: T.title(bd)),
+          if (_create) ...[
+            const SizedBox(height: S.s),
+            Text('New to the team? Use the email your manager added — their code for you is waiting once you\'re in.', style: T.bodyMuted(bd)),
+          ],
           const SizedBox(height: S.l),
           if (_create) ...[
             LineField(controller: _name, label: 'Your name', hint: 'As your team knows you', caps: TextCapitalization.words, autofill: const [AutofillHints.name]),

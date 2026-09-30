@@ -1,7 +1,10 @@
 // The shapes the venue app works with. Each mirrors a table or a server function's row;
 // `fromRow` reads the snake_case JSON PostgREST returns.
 import '../logic/roles.dart';
+import '../logic/staff.dart';
 import '../logic/venue_kinds.dart';
+
+export '../logic/staff.dart' show StaffStatus, ClaimError;
 
 double _num(Object? v, [double fallback = 0]) => switch (v) {
       num n => n.toDouble(),
@@ -117,14 +120,100 @@ class Venue {
       );
 }
 
+/// Someone on the team as the roster shows them (team_roster, 053). Owners and managers
+/// also see who's waiting and who's paused, phone numbers, and why; everyone else sees the
+/// active team. [name] is what the venue calls them (the details the owner entered), else
+/// their profile name.
 class StaffMember {
   final String id;
   final String handle;
   final String name;
   final StaffRole role;
   final bool thankable;
-  const StaffMember({required this.id, required this.handle, required this.name, required this.role, this.thankable = true});
+  final StaffStatus status;
+
+  /// Owners and managers, and the person themself, only.
+  final String? phone;
+  final DateTime? joinedAt;
+  final String? approvedBy;
+  final DateTime? lockedAt;
+  final String? lockReason;
+  final String? reportTo;
+
+  /// On the clock since — shown to the team so a shift lead knows who's in.
+  final DateTime? onShiftSince;
+
+  const StaffMember({
+    required this.id,
+    required this.handle,
+    required this.name,
+    required this.role,
+    this.thankable = true,
+    this.status = StaffStatus.active,
+    this.phone,
+    this.joinedAt,
+    this.approvedBy,
+    this.lockedAt,
+    this.lockReason,
+    this.reportTo,
+    this.onShiftSince,
+  });
+
+  factory StaffMember.fromRoster(Map<String, dynamic> r) {
+    final handle = (r['handle'] as String?) ?? '';
+    final staffName = (r['staff_name'] as String?)?.trim();
+    return StaffMember(
+      id: r['user_id'] as String,
+      handle: handle,
+      name: (staffName?.isNotEmpty ?? false) ? staffName! : ((r['display_name'] as String?) ?? (handle.isEmpty ? 'someone' : handle)),
+      role: StaffRole.parse(r['role'] as String?),
+      thankable: r['thankable'] != false,
+      status: StaffStatus.parse(r['status'] as String?),
+      phone: r['phone'] as String?,
+      joinedAt: _time(r['joined_at']),
+      approvedBy: r['approved_by'] as String?,
+      lockedAt: _time(r['locked_at']),
+      lockReason: r['lock_reason'] as String?,
+      reportTo: r['report_to'] as String?,
+      onShiftSince: _time(r['on_shift_since']),
+    );
+  }
+
+  bool get onShift => onShiftSince != null;
+
+  StaffMember copyWith({
+    String? name,
+    StaffRole? role,
+    bool? thankable,
+    StaffStatus? status,
+    String? phone,
+    bool clearPhone = false,
+    DateTime? lockedAt,
+    String? lockReason,
+    String? reportTo,
+    bool clearLock = false,
+    DateTime? onShiftSince,
+    bool clearShift = false,
+    String? approvedBy,
+  }) =>
+      StaffMember(
+        id: id,
+        handle: handle,
+        name: name ?? this.name,
+        role: role ?? this.role,
+        thankable: thankable ?? this.thankable,
+        status: status ?? this.status,
+        phone: clearPhone ? null : (phone ?? this.phone),
+        joinedAt: joinedAt,
+        approvedBy: approvedBy ?? this.approvedBy,
+        lockedAt: clearLock ? null : (lockedAt ?? this.lockedAt),
+        lockReason: clearLock ? null : (lockReason ?? this.lockReason),
+        reportTo: clearLock ? null : (reportTo ?? this.reportTo),
+        onShiftSince: clearShift ? null : (onShiftSince ?? this.onShiftSince),
+      );
 }
+
+DateTime? _time(Object? v) => v == null ? null : DateTime.tryParse('$v')?.toLocal();
 
 class ProfileHit {
   final String id;
@@ -148,6 +237,186 @@ class StaffInvite {
   final StaffRole role;
   final DateTime expiresAt;
   const StaffInvite({required this.code, required this.role, required this.expiresAt});
+}
+
+// ── staff access (053): the owner's code, lock-out, the history, the clock ───
+/// The owner's code for a new employee, shown ONCE (only its hash is kept).
+class StaffCode {
+  final String? enrolmentId;
+  final String code;
+  final DateTime expiresAt;
+  const StaffCode({this.enrolmentId, required this.code, required this.expiresAt});
+}
+
+/// Someone a manager added who hasn't typed their code yet (staff_enrolments_open).
+class Enrolment {
+  final String id;
+  final String name;
+  final String email;
+  final String? phone;
+  final StaffRole role;
+  final DateTime createdAt;
+  final DateTime expiresAt;
+  final int attempts;
+  final String? addedBy;
+  const Enrolment({
+    required this.id,
+    required this.name,
+    required this.email,
+    this.phone,
+    required this.role,
+    required this.createdAt,
+    required this.expiresAt,
+    this.attempts = 0,
+    this.addedBy,
+  });
+
+  factory Enrolment.fromRow(Map<String, dynamic> r) => Enrolment(
+        id: r['id'] as String,
+        name: (r['staff_name'] as String?) ?? '',
+        email: (r['email'] as String?) ?? '',
+        phone: r['phone'] as String?,
+        role: StaffRole.parse(r['role'] as String?),
+        createdAt: _time(r['created_at']) ?? DateTime.now(),
+        expiresAt: _time(r['expires_at']) ?? DateTime.now(),
+        attempts: _int(r['attempts']),
+        addedBy: r['added_by'] as String?,
+      );
+
+  bool get expired => !expiresAt.isAfter(DateTime.now());
+
+  /// Five wrong tries: the code is dead until a manager makes a new one.
+  bool get usedUp => attempts >= 5;
+}
+
+/// A venue that added the email I signed in with, waiting for the owner's code
+/// (my_staff_enrolments). Never carries the code itself.
+class MyEnrolment {
+  final String id;
+  final String venueId;
+  final String venueName;
+  final VenueKind venueKind;
+  final StaffRole role;
+  final String? staffName;
+  final String? addedBy;
+  final DateTime expiresAt;
+  final int triesLeft;
+  const MyEnrolment({
+    required this.id,
+    required this.venueId,
+    required this.venueName,
+    this.venueKind = VenueKind.bar,
+    required this.role,
+    this.staffName,
+    this.addedBy,
+    required this.expiresAt,
+    this.triesLeft = 5,
+  });
+
+  factory MyEnrolment.fromRow(Map<String, dynamic> r) => MyEnrolment(
+        id: r['id'] as String,
+        venueId: r['venue_id'] as String,
+        venueName: (r['venue_name'] as String?) ?? 'a venue',
+        venueKind: VenueKind.parse(r['venue_kind'] as String?),
+        role: StaffRole.parse(r['role'] as String?),
+        staffName: r['staff_name'] as String?,
+        addedBy: r['added_by'] as String?,
+        expiresAt: _time(r['expires_at']) ?? DateTime.now(),
+        triesLeft: _int(r['tries_left'], 5),
+      );
+}
+
+/// What typing the owner's code did (claim_staff_enrolment). A wrong code is an answer,
+/// not an error: the database counts the try and says how many are left.
+class ClaimResult {
+  final bool ok;
+  final String? venueId;
+  final String? venueName;
+  final StaffRole? role;
+  final ClaimError? error;
+  final int? left;
+  const ClaimResult({required this.ok, this.venueId, this.venueName, this.role, this.error, this.left});
+
+  factory ClaimResult.fromJson(Map<String, dynamic> j) => j['ok'] == true
+      ? ClaimResult(ok: true, venueId: j['venue_id'] as String?, venueName: j['venue'] as String?, role: StaffRole.parse(j['role'] as String?))
+      : ClaimResult(ok: false, error: ClaimError.parse(j['error'] as String?), left: _intOrNull(j['left']));
+}
+
+/// A venue where I'm waiting for a yes, or paused (my_staff_status). It carries the
+/// venue's name because a paused person can no longer read the venue itself.
+class StaffAccess {
+  final String venueId;
+  final String venueName;
+  final VenueKind venueKind;
+  final StaffRole role;
+  final StaffStatus status;
+  final String? lockReason;
+  final DateTime? lockedAt;
+  final String? reportTo;
+  final String? reportToRole;
+  const StaffAccess({
+    required this.venueId,
+    required this.venueName,
+    this.venueKind = VenueKind.bar,
+    required this.role,
+    required this.status,
+    this.lockReason,
+    this.lockedAt,
+    this.reportTo,
+    this.reportToRole,
+  });
+
+  factory StaffAccess.fromRow(Map<String, dynamic> r) => StaffAccess(
+        venueId: r['venue_id'] as String,
+        venueName: (r['venue_name'] as String?) ?? 'a venue',
+        venueKind: VenueKind.parse(r['venue_kind'] as String?),
+        role: StaffRole.parse(r['role'] as String?),
+        status: StaffStatus.parse(r['status'] as String?),
+        lockReason: r['lock_reason'] as String?,
+        lockedAt: _time(r['locked_at']),
+        reportTo: r['report_to'] as String?,
+        reportToRole: r['report_to_role'] as String?,
+      );
+
+  bool get locked => status == StaffStatus.locked;
+}
+
+/// One line of the team's history (staff_history). Names are resolved by the database.
+class StaffEvent {
+  final int id;
+  final String kind;
+  final String? actor;
+  final String? subject;
+  final Map<String, dynamic> detail;
+  final DateTime at;
+  const StaffEvent({required this.id, required this.kind, this.actor, this.subject, this.detail = const {}, required this.at});
+
+  factory StaffEvent.fromRow(Map<String, dynamic> r) => StaffEvent(
+        id: _int(r['id']),
+        kind: (r['kind'] as String?) ?? '',
+        actor: r['actor'] as String?,
+        subject: r['subject'] as String?,
+        detail: r['detail'] is Map ? Map<String, dynamic>.from(r['detail'] as Map) : const {},
+        at: _time(r['created_at']) ?? DateTime.now(),
+      );
+}
+
+/// Hours on the clock for one person since a date (shift_hours) — for pay, listed by name.
+class ShiftRow {
+  final String userId;
+  final String name;
+  final StaffRole role;
+  final DateTime? onSince;
+  final int minutes;
+  const ShiftRow({required this.userId, required this.name, required this.role, this.onSince, required this.minutes});
+
+  factory ShiftRow.fromRow(Map<String, dynamic> r) => ShiftRow(
+        userId: r['user_id'] as String,
+        name: (r['name'] as String?) ?? 'someone',
+        role: StaffRole.parse(r['role'] as String?),
+        onSince: _time(r['on_since']),
+        minutes: _int(r['minutes']),
+      );
 }
 
 /// A room: tonight's party with the venue's name on it.
