@@ -1736,6 +1736,195 @@ try {
     ok("nobody edits the roster's status directly (no update policy)",
       (await as(priya, `update public.venue_staff set status='active' where venue_id=$1 and user_id=$2 returning 1`, [bar, sam])).rows.length === 0);
   }
+
+  // ── 24. the rota, breaks, corrections, pay and payroll (054) ──────────────────
+  if ((await db.query(`select to_regprocedure('public.payroll_days(uuid,date,date,text)') f`)).rows[0].f) {
+    console.log("\n── 24. the rota, breaks, corrections, pay and payroll (054) ──");
+    const t = Date.now();
+    const boss = await mkUser("Asha", `vf-asha-${t}`);
+    const mgr = await mkUser("Priya", `vf-rp-priya-${t}`);
+    const mgr2 = await mkUser("Kiran", `vf-rp-kiran-${t}`);
+    const sam = await mkUser("Sam", `vf-rp-sam-${t}`);
+    const bea = await mkUser("Bea", `vf-rp-bea-${t}`);
+    const noor = await mkUser("Noor", `vf-rp-noor-${t}`);
+    const cook = await mkUser("Cook", `vf-rp-cook-${t}`);
+    const vid = randomUUID();
+    await as(boss, `insert into public.venues (id, name, slug, created_by, kind, country) values ($1,'Verify Rota Bar',$2,$3,'bar','IN')`, [vid, `vf-rota-${t}`, boss]);
+    await as(boss, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [vid, boss]);
+    for (const [uid, role] of [[mgr, "manager"], [mgr2, "manager"], [sam, "bartender"], [bea, "bartender"], [noor, "server"], [cook, "kitchen"]]) {
+      await seat(vid, uid, role);
+    }
+    // The transaction's clock stands still (now() is its start), so times are placed around it.
+    const now0 = (await db.query(`select now() n`)).rows[0].n;
+    const at = (h) => new Date(now0.getTime() + h * 3600e3).toISOString();
+    const week = async (who) => (await as(who, `select public.rota_week($1,$2,$3) w`, [vid, at(-1), at(24 * 7)])).rows[0].w;
+    const save = (who, sid, uid, role, from, to, brk = 0, note = null) =>
+      as(who, `select public.rota_save_shift($1,$2,$3,$4,null,$5,$6,$7,$8) id`, [vid, sid, uid, role, at(from), at(to), brk, note]);
+
+    // the rota
+    const fri = randomUUID();
+    await save(mgr, fri, sam, "bartender", 48, 56, 30, "Friday late");
+    ok("a manager plans a shift", (await week(mgr)).shifts.some((x) => x.id === fri && x.user_id === sam && !x.published));
+    ok("…a draft the team doesn't see yet", (await week(sam)).shifts.length === 0 && (await as(sam, `select id from public.rota_shifts where venue_id=$1`, [vid])).rows.length === 0);
+    ok("a bartender can't plan the rota", await refused(() => save(sam, null, sam, "bartender", 72, 80)));
+    ok("nobody is booked twice at once", await refused(() => save(mgr, null, sam, "bartender", 50, 60)));
+    ok("a break has to fit inside the shift", await refused(() => save(mgr, null, bea, "bartender", 48, 50, 180)));
+    const open = randomUUID();
+    await save(mgr, open, null, "server", 72, 78);
+    const pub = (await as(mgr, `select public.rota_publish($1,$2,$3) n`, [vid, at(-1), at(24 * 7)])).rows[0].n;
+    const sw = await week(sam);
+    ok("publishing the week shows it to the team", pub === 2 && sw.shifts.length === 2 && sw.can_plan === false);
+    ok("…read from the table too, published only", (await as(sam, `select id from public.rota_shifts where venue_id=$1`, [vid])).rows.length === 2);
+    ok("nobody writes the rota directly",
+      await refused(() => as(mgr, `insert into public.rota_shifts (venue_id, role, starts_at, ends_at) values ($1,'server',$2,$3)`, [vid, at(90), at(95)])));
+
+    // time off
+    const toff = (await as(noor, `select public.request_time_off($1,$2,$3,'Sister''s wedding') id`, [vid, at(96), at(120)])).rows[0].id;
+    ok("staff ask for time off", !!toff);
+    ok("…not for the same days twice", await refused(() => as(noor, `select public.request_time_off($1,$2,$3,null)`, [vid, at(100), at(110)])));
+    ok("a colleague can't answer it", await refused(() => as(sam, `select public.decide_time_off($1,true)`, [toff])));
+    await as(mgr, `select public.decide_time_off($1,true)`, [toff]);
+    ok("a manager approves it", (await db.query(`select status from public.time_off where id=$1`, [toff])).rows[0].status === "approved");
+    ok("…and nobody can be put on the rota then", await refused(() => save(mgr, null, noor, "server", 100, 106)));
+    const toffM = (await as(mgr2, `select public.request_time_off($1,$2,$3,null) id`, [vid, at(130), at(150)])).rows[0].id;
+    ok("a manager can't approve another manager's time off", await refused(() => as(mgr, `select public.decide_time_off($1,true)`, [toffM])));
+    ok("nobody approves their own", await refused(() => as(mgr2, `select public.decide_time_off($1,true)`, [toffM])));
+    await as(boss, `select public.decide_time_off($1,true)`, [toffM]);
+    ok("…the owner can", (await db.query(`select status from public.time_off where id=$1`, [toffM])).rows[0].status === "approved");
+    const offForSam = (await week(sam)).time_off.find((x) => x.user_id === noor);
+    ok("the team sees who's off — not why", offForSam && offForSam.note === null);
+    ok("…the planners see why", (await week(mgr)).time_off.find((x) => x.user_id === noor)?.note === "Sister's wedding");
+    await as(sam, `select public.set_cannot_work($1, array[1,2]::smallint[])`, [vid]);
+    ok("staff say which weekdays they can't work; the planner sees it",
+      JSON.stringify((await week(mgr)).team.find((x) => x.user_id === sam)?.cannot_work) === "[1,2]");
+    ok("…their colleagues don't", (await week(noor)).team.find((x) => x.user_id === sam)?.cannot_work === null);
+
+    // picking up and giving away
+    ok("a bartender can't take a server's shift", await refused(() => as(sam, `select public.rota_take_shift($1)`, [open])));
+    const pick = (await as(noor, `select public.rota_take_shift($1) id`, [open])).rows[0].id;
+    ok("a server asks for the open shift, and it waits for a yes",
+      !!pick && (await db.query(`select user_id from public.rota_shifts where id=$1`, [open])).rows[0].user_id === null);
+    ok("a colleague can't say yes", await refused(() => as(sam, `select public.rota_decide_swap($1,true)`, [pick])));
+    await as(mgr, `select public.rota_decide_swap($1,true)`, [pick]);
+    ok("a manager says yes and it's hers", (await db.query(`select user_id from public.rota_shifts where id=$1`, [open])).rows[0].user_id === noor);
+    const offer = (await as(sam, `select public.rota_offer_shift($1) id`, [fri])).rows[0].id;
+    ok("staff offer a shift they can't do, and teammates see it",
+      !!offer && (await as(bea, `select id from public.rota_swaps where id=$1`, [offer])).rows.length === 1);
+    ok("…only their own shifts", await refused(() => as(bea, `select public.rota_offer_shift($1)`, [open])));
+    ok("a server can't take a bartender's shift", await refused(() => as(noor, `select public.rota_take_shift($1)`, [fri])));
+    await as(bea, `select public.rota_take_shift($1)`, [fri]);
+    await as(bea, `select public.rota_withdraw_swap($1)`, [offer]);
+    const back = (await db.query(`select status, to_user from public.rota_swaps where id=$1`, [offer])).rows[0];
+    ok("the taker can change their mind: it goes back on offer", back.status === "offered" && back.to_user === null);
+    await as(bea, `select public.rota_take_shift($1)`, [fri]);
+    await as(mgr, `select public.rota_decide_swap($1,true)`, [offer]);
+    ok("approved: the shift changes hands", (await db.query(`select user_id from public.rota_shifts where id=$1`, [fri])).rows[0].user_id === bea);
+
+    // copying a week forward
+    const copied = (await as(mgr, `select public.rota_copy($1,$2,$3,7,'Asia/Kolkata') n`, [vid, at(-1), at(24 * 7)])).rows[0].n;
+    const drafts = (await db.query(`select count(*)::int n from public.rota_shifts where venue_id=$1 and published_at is null`, [vid])).rows[0].n;
+    ok("a week copies forward as drafts", copied === 2 && drafts === 2);
+    ok("…and copying it twice doesn't double it", (await as(mgr, `select public.rota_copy($1,$2,$3,7,'Asia/Kolkata') n`, [vid, at(-1), at(24 * 7)])).rows[0].n === 0);
+    ok("a bartender can't copy or publish", await refused(() => as(sam, `select public.rota_publish($1,$2,$3)`, [vid, at(-1), at(24 * 14)])));
+
+    // someone who leaves leaves their future shifts open
+    await db.query(`insert into public.staff_shifts (venue_id, user_id, started_at, ended_at) values ($1,$2, now() - interval '60 hours', now() - interval '56 hours')`, [vid, bea]);
+    await as(bea, `delete from public.venue_staff where venue_id=$1 and user_id=$2`, [vid, bea]);
+    ok("someone who leaves leaves their future shifts open", (await db.query(`select user_id from public.rota_shifts where id=$1`, [fri])).rows[0].user_id === null);
+
+    // breaks
+    await as(sam, `select public.clock_in($1)`, [vid]);
+    ok("on the clock, a break starts", !!(await as(sam, `select public.start_break($1) b`, [vid])).rows[0].b);
+    ok("…one at a time", await refused(() => as(sam, `select public.start_break($1)`, [vid])));
+    ok("…and shows on the shift", !!(await as(sam, `select * from public.my_shift_state($1)`, [vid])).rows[0]?.break_since);
+    await as(sam, `select public.end_break($1)`, [vid]);
+    ok("…and ends", (await as(sam, `select * from public.my_shift_state($1)`, [vid])).rows[0]?.break_since === null);
+    ok("no break without a shift", await refused(() => as(cook, `select public.start_break($1)`, [vid])));
+    await as(sam, `select public.start_break($1)`, [vid]);
+    await as(sam, `select public.clock_out($1)`, [vid]);
+    ok("clocking out ends the break", (await db.query(`select count(*)::int n from public.shift_breaks where user_id=$1 and ended_at is null`, [sam])).rows[0].n === 0);
+    await as(noor, `select public.clock_in($1)`, [vid]);
+    await as(noor, `select public.start_break($1, true)`, [vid]);
+    await as(mgr, `select public.lock_staff($1,$2,'Come and see me',null)`, [vid, noor]);
+    ok("a pause ends the shift and the break",
+      (await db.query(`select count(*)::int n from public.shift_breaks where user_id=$1 and ended_at is null`, [noor])).rows[0].n === 0);
+    await as(mgr, `select public.unlock_staff($1,$2)`, [vid, noor]);
+    ok("nobody writes breaks directly",
+      await refused(() => as(noor, `insert into public.shift_breaks (shift_id, venue_id, user_id) select id, venue_id, user_id from public.staff_shifts where user_id = auth.uid() limit 1`)));
+
+    // hours after breaks: 6 hours yesterday, 30 minutes unpaid and 15 minutes paid
+    const past = randomUUID();
+    await db.query(`insert into public.staff_shifts (id, venue_id, user_id, started_at, ended_at) values ($1,$2,$3, now() - interval '30 hours', now() - interval '24 hours')`, [past, vid, cook]);
+    await db.query(`insert into public.shift_breaks (shift_id, venue_id, user_id, started_at, ended_at, paid) values
+                      ($1,$2,$3, now() - interval '28 hours', now() - interval '27 hours 30 minutes', false),
+                      ($1,$2,$3, now() - interval '26 hours', now() - interval '25 hours 45 minutes', true)`, [past, vid, cook]);
+    const hrs = (await as(mgr, `select * from public.shift_hours($1, now() - interval '2 days')`, [vid])).rows.find((r) => r.user_id === cook);
+    ok("unpaid breaks come off the hours; paid ones don't", hrs?.minutes === 330 && hrs?.break_minutes === 30, `— ${JSON.stringify(hrs)}`);
+
+    // corrections
+    const own = randomUUID();
+    await db.query(`insert into public.staff_shifts (id, venue_id, user_id, started_at, ended_at) values ($1,$2,$3, now() - interval '40 hours', now() - interval '36 hours')`, [own, vid, mgr]);
+    ok("nobody corrects their own times", await refused(() => as(mgr, `select public.correct_shift($1, now() - interval '41 hours', now() - interval '36 hours', 'I was early')`, [own])));
+    ok("a bartender can't correct anyone's", await refused(() => as(sam, `select public.correct_shift($1, now() - interval '30 hours', now() - interval '23 hours', 'Stayed late')`, [past])));
+    ok("a correction needs a reason", await refused(() => as(mgr, `select public.correct_shift($1, now() - interval '30 hours', now() - interval '23 hours', '')`, [past])));
+    ok("…and can't end in the future", await refused(() => as(mgr, `select public.correct_shift($1, now() - interval '30 hours', now() + interval '2 hours', 'Late close')`, [past])));
+    await as(mgr, `select public.correct_shift($1, now() - interval '30 hours', now() - interval '23 hours', 'Stayed to close; forgot to clock out')`, [past]);
+    const cr = (await db.query(`select old_ended, new_ended from public.shift_corrections where shift_id=$1`, [past])).rows;
+    ok("the times change, and the old ones are kept",
+      cr.length === 1 && cr[0].old_ended.getTime() === now0.getTime() - 24 * 3600e3 && cr[0].new_ended.getTime() === now0.getTime() - 23 * 3600e3);
+    ok("…the person sees it on their own timesheet",
+      (await as(cook, `select * from public.staff_timesheet($1,$2, now() - interval '3 days', now())`, [vid, cook])).rows.some((r) => r.corrections.length === 1));
+    ok("…a colleague can't read it", (await as(sam, `select id from public.shift_corrections`)).rows.length === 0);
+    ok("…or anyone else's timesheet", await refused(() => as(sam, `select * from public.staff_timesheet($1,$2, now() - interval '3 days', now())`, [vid, cook])));
+    ok("corrections can't be edited or deleted",
+      (await as(mgr, `update public.shift_corrections set reason = 'x' returning 1`)).rows.length === 0 &&
+      (await as(mgr, `delete from public.shift_corrections returning 1`)).rows.length === 0);
+    const missed = (await as(mgr, `select public.add_missed_shift($1,$2, now() - interval '54 hours', now() - interval '48 hours', 30, 'Clock was down on Saturday') id`, [vid, sam])).rows[0].id;
+    const ms = (await as(mgr, `select * from public.staff_timesheet($1,$2, now() - interval '3 days', now())`, [vid, sam])).rows.find((r) => r.shift_id === missed);
+    ok("a missed shift is added, with its reason and its break", ms?.worked_minutes === 330 && ms?.corrections[0]?.kind === "added");
+    ok("…and can't overlap another", await refused(() => as(mgr, `select public.add_missed_shift($1,$2, now() - interval '50 hours', now() - interval '49 hours', 0, 'Again')`, [vid, sam])));
+
+    // pay
+    ok("nobody sets their own pay", await refused(() => as(mgr, `select public.set_staff_pay($1,$2,300)`, [vid, mgr])));
+    ok("a manager can't set another manager's", await refused(() => as(mgr, `select public.set_staff_pay($1,$2,300)`, [vid, mgr2])));
+    await as(boss, `select public.set_staff_pay($1,$2,450)`, [vid, mgr]);
+    ok("…the owner can", (await as(boss, `select * from public.pay_rates($1)`, [vid])).rows.find((r) => r.user_id === mgr)?.hourly_rate === "450.00");
+    ok("a bartender can't set pay", await refused(() => as(sam, `select public.set_staff_pay($1,$2,999)`, [vid, cook])));
+    await as(mgr, `select public.set_staff_pay($1,$2,200)`, [vid, cook]);
+    const brunch = (await as(mgr, `select public.add_missed_shift($1,$2, now() - interval '10 hours', now() - interval '8 hours', 0, 'Covered brunch') id`, [vid, cook])).rows[0].id;
+    await as(mgr, `select public.set_staff_pay($1,$2,300)`, [vid, cook]);
+    ok("a shift keeps the rate it was worked at", (await db.query(`select hourly_rate from public.staff_shifts where id=$1`, [brunch])).rows[0].hourly_rate === "200.00");
+    const mine = (await as(cook, `select * from public.pay_rates($1)`, [vid])).rows;
+    ok("each person sees their own rate, never a colleague's", mine.length === 1 && mine[0].user_id === cook && mine[0].hourly_rate === "300.00");
+    ok("the history says pay changed, never how much",
+      (await db.query(`select detail from public.staff_events where venue_id=$1 and kind='pay_changed'`, [vid])).rows.every((r) => JSON.stringify(r.detail) === "{}"));
+
+    // the published plan for a day nobody clocked
+    await db.query(`insert into public.rota_shifts (venue_id, user_id, role, starts_at, ends_at, break_minutes, published_at) values ($1,$2,'server', now() - interval '50 hours', now() - interval '44 hours', 30, now())`, [vid, noor]);
+
+    // payroll
+    const pay = (await as(mgr, `select * from public.payroll_days($1, (now() at time zone 'UTC')::date - 3, (now() at time zone 'UTC')::date, 'UTC')`, [vid])).rows;
+    const sum = (uid, k) => pay.filter((r) => r.user_id === uid).reduce((n, r) => n + Number(r[k] ?? 0), 0);
+    ok("payroll: the hours per person, after unpaid breaks", sum(cook, "worked_minutes") === 390 + 120, `— ${sum(cook, "worked_minutes")}`);
+    ok("…and pay at the rate each shift was worked at", sum(cook, "pay").toFixed(2) === "2350.00", `— ${sum(cook, "pay")}`);
+    ok("…corrected days are marked", pay.some((r) => r.user_id === cook && r.corrected));
+    ok("…a day on the published rota with no clock-in shows the plan", sum(noor, "planned_minutes") === 330 && pay.some((r) => r.user_id === noor && r.planned_minutes === 330 && r.worked_minutes === 0));
+    ok("…someone who has left still gets paid", pay.some((r) => r.user_id === bea && r.worked_minutes === 240 && r.role === "left"));
+    const names = pay.map((r) => r.name);
+    ok("…in name order, never ranked", names.join("|") === [...names].sort((a, b) => a.localeCompare(b)).join("|"));
+    ok("a bartender can't run payroll", await refused(() => as(sam, `select * from public.payroll_days($1, current_date - 3, current_date, 'UTC')`, [vid])));
+    ok("payroll covers up to 62 days", await refused(() => as(mgr, `select * from public.payroll_days($1, current_date - 70, current_date, 'UTC')`, [vid])));
+    ok("an unknown time zone falls back to UTC instead of failing",
+      (await as(mgr, `select * from public.payroll_days($1, (now() at time zone 'UTC')::date - 3, (now() at time zone 'UTC')::date, 'Mars/Olympus')`, [vid])).rows.length === pay.length);
+
+    const kinds = (await as(mgr, `select distinct kind from public.staff_history($1)`, [vid])).rows.map((r) => r.kind);
+    ok("the team's history has the rota, swaps, time off, corrections and pay",
+      ["rota_published", "swap_decided", "time_off_decided", "shift_corrected", "shift_added", "pay_changed"].every((k) => kinds.includes(k)), `— ${kinds.join(", ")}`);
+    for (const tb of ["rota_swaps", "time_off", "shift_corrections"]) {
+      ok(`nobody writes ${tb} directly`,
+        await refused(() => as(mgr, `insert into public.${tb} (venue_id) values ($1)`, [vid])));
+    }
+  }
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

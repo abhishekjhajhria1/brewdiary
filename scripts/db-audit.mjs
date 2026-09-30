@@ -718,6 +718,56 @@ try {
     ok("shift_hours(): listed by name, never ranked by hours", sh && /order by 2/.test(sh.d) && !/order by[^;]*minutes/i.test(sh.d));
   }
 
+  // ── the rota, breaks and payroll (054) ────────────────────────────────────
+  if (!fns.includes("payroll_days")) {
+    console.log("  ~ the rota, breaks and payroll (054) not applied — skipping");
+  } else {
+    console.log("\n── the rota, breaks, corrections, pay and payroll (054) ──");
+    for (const f of ["rota_save_shift", "rota_delete_shift", "rota_publish", "rota_copy", "rota_week", "rota_offer_shift",
+                     "rota_take_shift", "rota_decide_swap", "rota_withdraw_swap", "request_time_off", "decide_time_off",
+                     "cancel_time_off", "time_off_list", "set_cannot_work", "start_break", "end_break", "my_shift_state",
+                     "staff_timesheet", "correct_shift", "add_missed_shift", "set_staff_pay", "pay_rates", "payroll_days"]) {
+      ok(`fn ${f}()`, fns.includes(f), "— MISSING");
+    }
+    for (const tb of ["rota_shifts", "rota_swaps", "time_off", "shift_breaks", "shift_corrections"]) {
+      const r = await one(`select relrowsecurity r from pg_class where oid = $1::regclass`, [`public.${tb}`]);
+      ok(`${tb}: row-level security on`, r?.r === true);
+      const w = await all(`select policyname from pg_policies where schemaname='public' and tablename=$1 and cmd <> 'SELECT'`, [tb]);
+      ok(`${tb}: no client write policy (functions only)`, w.length === 0);
+    }
+    const touch = await all(`
+      select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.prokind = 'f'
+        and pg_get_functiondef(p.oid) ~* '(update\\s+public\\.shift_corrections|delete\\s+from\\s+public\\.shift_corrections)'`);
+    ok("shift corrections are append-only: no function updates or deletes one", touch.length === 0,
+      `— ${touch.map((r) => r.proname).join(", ")}`);
+    const pd = await one(`select pg_get_functiondef('public.payroll_days(uuid,date,date,text)'::regprocedure) d`);
+    ok("payroll_days(): owners and managers only (team.manage)", pd && /'team\.manage'/.test(pd.d));
+    ok("payroll_days(): in name order, never ranked by hours or pay", pd && /order by 2, 4/.test(pd.d) && !/order by[^;]*(worked|pay|minutes)/i.test(pd.d));
+    const sh = await one(`select pg_get_functiondef('public.shift_hours(uuid,timestamptz)'::regprocedure) d`);
+    ok("shift_hours(): unpaid breaks come off, still listed by name", sh && /shift_minutes/.test(sh.d) && /order by 2/.test(sh.d));
+    const cs = await one(`select pg_get_functiondef('public.correct_shift(uuid,timestamptz,timestamptz,text)'::regprocedure) d`);
+    ok("correct_shift(): nobody corrects their own times, and a reason is required", cs && /own times/.test(cs.d) && /say why/.test(cs.d));
+    const sp = await one(`select pg_get_functiondef('public.set_staff_pay(uuid,uuid,numeric)'::regprocedure) d`);
+    ok("set_staff_pay(): nobody sets their own pay; the history never records the amount",
+      sp && /own pay/.test(sp.d) && /'pay_changed', '\{\}'/.test(sp.d));
+    const inv = await one(`select prosecdef d from pg_proc where oid = 'public.shift_minutes(uuid,timestamptz,timestamptz)'::regprocedure`);
+    ok("shift_minutes(): runs as the caller (SECURITY INVOKER)", inv && inv.d === false);
+    for (const f of ["public.shift_minutes(uuid,timestamptz,timestamptz)", "public.can_correct_times(uuid,uuid,uuid)"]) {
+      const g = await one(`select has_function_privilege('authenticated', $1, 'EXECUTE') a,
+                                  coalesce((select has_function_privilege('anon', $1, 'EXECUTE')), false) b`, [f]);
+      ok(`${f.split("(")[0].replace("public.", "")}(): not callable from an app`, g && !g.a && !g.b);
+    }
+    for (const tg of ["staff_shift_closed", "staff_shift_rate", "venue_staff_left_rota"]) {
+      ok(`trigger ${tg}`, !!(await one(`select 1 from pg_trigger where tgname = $1 and not tgisinternal`, [tg])));
+    }
+    const rp = await one(`select qual from pg_policies where schemaname='public' and tablename='rota_shifts' and policyname='rota_shifts_read'`);
+    ok("rota_shifts: the team reads the PUBLISHED rota; drafts are the planners'", rp && /published_at IS NOT NULL/i.test(rp.qual) && /rota\.edit/.test(rp.qual));
+    const kc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'staff_events_kind_check'`);
+    ok("the team's history knows rota, swap, time-off, correction and pay changes",
+      kc && ["rota_published", "swap_decided", "time_off_decided", "shift_corrected", "shift_added", "pay_changed"].every((k) => kc.d.includes(k)));
+  }
+
   // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
   // pinned to search_path=public that calls one unqualified works on a laptop and fails
   // in production. None may.
