@@ -216,6 +216,13 @@ void main() {
       expect(find.text('Please report to Ira (owner).'), findsOneWidget);
       expect(Session.instance.venue, isNull, reason: 'nothing of the venue stays open');
 
+      // No signal: the check fails — and the pause stays on screen, it isn't lifted by a blip.
+      demo.offline = true;
+      await Session.instance.refreshVenues();
+      await t.pumpAndSettle();
+      expect(find.text('Your access is paused'), findsOneWidget);
+      demo.offline = false;
+
       demo.unpauseMe('demo-sweets');
       await t.pumpAndSettle();
       expect(Session.instance.venue?.name, 'Mithai Mahal', reason: 'given access again: straight back in');

@@ -118,7 +118,22 @@ class Session extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// What the screens show from here, in one string: a re-check that changes none of it
+  /// doesn't repaint the app (it runs every minute).
+  String get _shape => [
+        user?.id,
+        error,
+        venue?.id,
+        lockedOut?.venueId,
+        lockedOut?.lockReason,
+        lockedOut?.reportTo,
+        for (final v in venues) '${v.id}:${v.myRole.db}:${v.name}:${v.verified}',
+        for (final a in access) '${a.venueId}:${a.status.db}:${a.lockReason}:${a.reportTo}',
+        for (final e in enrolments) '${e.id}:${e.triesLeft}',
+      ].join('|');
+
   Future<void> _refresh(bool notify) async {
+    final before = _shape;
     _lastCheck = DateTime.now();
     try {
       venues = await Backend.i.myVenues();
@@ -126,17 +141,18 @@ class Session extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e) {
       error = '$e';
     }
-    // Waiting, paused and codes to type: a database without 053 simply has none.
+    // Waiting, paused and codes to type. A database without 053 simply has none; a failed
+    // read (no signal) keeps what we last knew — a blip must never lift a pause off screen.
     try {
       access = await Backend.i.myStaffStatus();
-    } catch (_) {
-      access = const [];
-    }
+    } on BackendError catch (e) {
+      if (e.code == 'needs_update') access = const [];
+    } catch (_) {}
     try {
       enrolments = await Backend.i.myEnrolments();
-    } catch (_) {
-      enrolments = const [];
-    }
+    } on BackendError catch (e) {
+      if (e.code == 'needs_update') enrolments = const [];
+    } catch (_) {}
     final want = venue?.id ?? lockedOut?.venueId ?? Prefs.getString(_venueKey);
     final lock = access.where((a) => a.locked && a.venueId == want).firstOrNull;
     if (lock != null) {
@@ -153,7 +169,7 @@ class Session extends ChangeNotifier with WidgetsBindingObserver {
       final keep = venue?.id ?? Prefs.getString(_venueKey);
       venue = venues.where((v) => v.id == keep).firstOrNull ?? (venues.length == 1 && !_onList ? venues.first : null);
     }
-    if (notify) notifyListeners();
+    if (notify && _shape != before) notifyListeners();
   }
 
   /// After a sign-in completes: take the backend's user and load their venues.

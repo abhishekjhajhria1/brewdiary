@@ -352,6 +352,7 @@ class DemoBackend implements Backend {
   @override
   Future<List<Venue>> myVenues() async {
     _needUser();
+    if (offline) throw _noSignal;
     return List.unmodifiable(_venues);
   }
 
@@ -622,6 +623,7 @@ class DemoBackend implements Backend {
   @override
   Future<List<MyEnrolment>> myEnrolments() async {
     _needUser();
+    if (offline) throw _noSignal;
     final now = DateTime.now();
     return [
       for (final c in _codes)
@@ -678,9 +680,14 @@ class DemoBackend implements Backend {
 
   final Map<String, Venue> _paused = {};
 
+  /// For the walk-throughs: the phone has no signal, so where you stand can't be read.
+  bool offline = false;
+  static const _noSignal = BackendError('Couldn\'t reach brewdiary — check your connection and try again.');
+
   @override
   Future<List<StaffAccess>> myStaffStatus() async {
     _needUser();
+    if (offline) throw _noSignal;
     return List.unmodifiable(_myAccess);
   }
 
