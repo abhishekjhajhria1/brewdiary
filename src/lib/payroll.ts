@@ -195,3 +195,99 @@ export function payrollCsv(o: { venue: string; currency: string; from: string; t
   lines.push(row(["Team", "", "", hm(worked), hoursDecimal(worked), hm(planned), "", cents(payrollTotalCents(people)), ""]));
   return `${lines.join("\n")}\n`;
 }
+
+// ── periods, the file, the venue's clock ─────────────────────────────────────
+
+/** The periods offered. A current period stops at today: payroll pays for time worked, so
+ *  days still to come aren't in it. (Twin of PayPeriod in payroll.dart.) */
+export const PAY_PERIODS = [
+  { id: "thisWeek", label: "This week" },
+  { id: "lastWeek", label: "Last week" },
+  { id: "thisMonth", label: "This month" },
+  { id: "lastMonth", label: "Last month" },
+] as const;
+export type PayPeriod = (typeof PAY_PERIODS)[number]["id"];
+
+const utc = (day: string): Date => new Date(`${day}T00:00:00Z`);
+const iso = (d: Date): string => d.toISOString().slice(0, 10);
+const addDays = (day: string, n: number): string => {
+  const d = utc(day);
+  d.setUTCDate(d.getUTCDate() + n);
+  return iso(d);
+};
+
+/** [first, last] day of [p] (both included, YYYY-MM-DD) for a venue whose today is [today]. */
+export function payPeriod(p: PayPeriod, today: string): [string, string] {
+  const t = utc(today);
+  const monday = addDays(today, -((t.getUTCDay() + 6) % 7));
+  const y = t.getUTCFullYear();
+  const m = t.getUTCMonth();
+  switch (p) {
+    case "thisWeek":
+      return [monday, today];
+    case "lastWeek":
+      return [addDays(monday, -7), addDays(monday, -1)];
+    case "thisMonth":
+      return [iso(new Date(Date.UTC(y, m, 1))), today];
+    case "lastMonth":
+      return [iso(new Date(Date.UTC(y, m - 1, 1))), iso(new Date(Date.UTC(y, m, 0)))];
+  }
+}
+
+/** Today's date where the venue is (the browser may be somewhere else). */
+export function todayIn(tz: string, now: Date = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  } catch {
+    return iso(now);
+  }
+}
+
+/** "payroll-the-gin-room-2026-09-01-to-2026-09-30.csv" (twin of payrollFileName in Dart). */
+export function payrollFileName(venue: string, from: string, to: string): string {
+  let slug = venue.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (slug.length > 40) slug = slug.slice(0, 40).replace(/-+$/, "");
+  return `payroll-${slug || "venue"}-${from}-to-${to}.csv`;
+}
+
+/** The file's text: a byte-order mark first, so Excel reads names in any script as UTF-8
+ *  (without it, Excel on Windows guesses a legacy code page and mangles them). */
+export const payrollFileText = (csv: string): string => `﻿${csv}`;
+
+/** The time zone a venue's days are counted in — the venue's, not the viewer's. A country
+ *  with one zone maps straight; a wide one by state where we know it; UTC otherwise (the
+ *  database accepts only a real zone name). Twin of venueTimeZone in the venue app's
+ *  logic/area.dart, held to the same cases. */
+export function venueTimeZone(country: string, region?: string | null): string {
+  const c = country.toUpperCase();
+  if (c === "US") {
+    const r = (region ?? "").toUpperCase();
+    if (["NY", "MA", "NJ", "PA", "FL", "GA", "DC", "MD", "VA", "NC", "SC", "OH", "MI", "CT", "RI", "VT", "NH", "ME", "DE"].includes(r)) return "America/New_York";
+    if (["IL", "TX", "MN", "WI", "MO", "LA", "TN", "AL", "MS", "IA", "OK", "KS", "AR", "NE"].includes(r)) return "America/Chicago";
+    if (["CO", "UT", "NM", "MT", "WY", "ID"].includes(r)) return "America/Denver";
+    if (r === "AZ") return "America/Phoenix";
+    if (r === "HI") return "Pacific/Honolulu";
+    if (r === "AK") return "America/Anchorage";
+    return "America/Los_Angeles";
+  }
+  const zones: Record<string, string> = {
+    IN: "Asia/Kolkata", GB: "Europe/London", IE: "Europe/Dublin", FR: "Europe/Paris",
+    DE: "Europe/Berlin", ES: "Europe/Madrid", IT: "Europe/Rome", NL: "Europe/Amsterdam",
+    PT: "Europe/Lisbon", BE: "Europe/Brussels", AT: "Europe/Vienna", PL: "Europe/Warsaw",
+    SE: "Europe/Stockholm", NO: "Europe/Oslo", DK: "Europe/Copenhagen", FI: "Europe/Helsinki",
+    CH: "Europe/Zurich", TR: "Europe/Istanbul", AE: "Asia/Dubai", SG: "Asia/Singapore",
+    TH: "Asia/Bangkok", JP: "Asia/Tokyo", KR: "Asia/Seoul", ZA: "Africa/Johannesburg",
+    NZ: "Pacific/Auckland", LK: "Asia/Colombo", NP: "Asia/Kathmandu", SA: "Asia/Riyadh",
+  };
+  return zones[c] ?? "UTC";
+}
+
+/** Minutes for the screen: "7h 05m", "45m", "0m" (twin of formatMinutes in the venue app). */
+export function minutesWords(minutes: number): string {
+  if (minutes <= 0) return "0m";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${String(m).padStart(2, "0")}m`;
+}

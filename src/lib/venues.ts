@@ -16,6 +16,7 @@ import { supabase } from "./supabase";
 import { useAuth } from "./profile";
 import { alcoholIsChoice, parseVenueKind, sellsAlcohol, type VenueKind } from "./venueKinds";
 import { parseClaimError, parseStaffStatus, type ClaimError, type StaffStatus } from "./staffAccess";
+import { parsePayrollDay, type PayrollDay } from "./payroll";
 
 // The roles (045). What each may do is data in public.role_capabilities; see roles.ts.
 export type StaffRole = "owner" | "manager" | "supervisor" | "bartender" | "server" | "host" | "kitchen";
@@ -692,4 +693,77 @@ export async function deleteVenue(venueId: string) {
   if (!supabase) return;
   await supabase.from("venues").delete().eq("id", venueId);
   bump();
+}
+
+// ── pay and payroll (054) ────────────────────────────────────────────────────
+// Owners and managers see hours and pay by person (in NAME order, never ranked) and
+// download the CSV (payroll.ts builds it). The database decides who may: payroll_days()
+// wants team.manage, and set_staff_pay() refuses your own rate and a role you can't grant.
+
+/** Per person per day for [from, to] (YYYY-MM-DD, both included), days counted in the
+ *  venue's time zone [tz]. */
+export function usePayroll(
+  venueId: string | null,
+  from: string,
+  to: string,
+  tz: string,
+): { rows: PayrollDay[]; loading: boolean; error: string | null } {
+  const v = useVersion();
+  const [state, setState] = useState<{ rows: PayrollDay[]; loading: boolean; error: string | null }>({ rows: [], loading: true, error: null });
+  useEffect(() => {
+    if (!supabase || !venueId) {
+      setState({ rows: [], loading: false, error: null });
+      return;
+    }
+    let active = true;
+    setState((s) => ({ ...s, loading: true }));
+    (async () => {
+      const { data, error } = await supabase!.rpc("payroll_days", { vid: venueId, from_day: from, to_day: to, tz });
+      if (!active) return;
+      setState({
+        rows: error ? [] : ((data ?? []) as Record<string, unknown>[]).map(parsePayrollDay),
+        loading: false,
+        error: said(error),
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [venueId, from, to, tz, v]);
+  return state;
+}
+
+/** Hourly rates by user id — the team's for owners and managers, your own otherwise. */
+export function usePayRates(venueId: string | null): Record<string, number | null> {
+  const v = useVersion();
+  const [rates, setRates] = useState<Record<string, number | null>>({});
+  useEffect(() => {
+    if (!supabase || !venueId) {
+      setRates({});
+      return;
+    }
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase!.rpc("pay_rates", { vid: venueId });
+      if (!active) return;
+      const out: Record<string, number | null> = {};
+      if (!error) {
+        for (const r of (data ?? []) as Record<string, unknown>[]) {
+          out[String(r.user_id)] = r.hourly_rate === null || r.hourly_rate === undefined ? null : Number(r.hourly_rate);
+        }
+      }
+      setRates(out);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [venueId, v]);
+  return rates;
+}
+
+/** Set someone's hourly rate, or clear it with null. Never your own; the team's history
+ *  notes that it changed, never the amount. */
+export async function setStaffPay(venueId: string, userId: string, rate: number | null): Promise<string | null> {
+  if (!supabase) return "offline";
+  return settled(supabase.rpc("set_staff_pay", { vid: venueId, uid: userId, rate }));
 }

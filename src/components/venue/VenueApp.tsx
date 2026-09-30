@@ -27,6 +27,9 @@ import {
   useOpenEnrolments,
   useStaffAccess,
   claimStaffCode,
+  usePayroll,
+  usePayRates,
+  setStaffPay,
   type StaffCode,
   type VenueStaff,
   type StaffRole,
@@ -59,6 +62,19 @@ import {
 import { KNOWN_COUNTRIES } from "@/lib/jurisdiction";
 import { VENUE_KINDS, VENUE_KIND_LABEL, VENUE_KIND_BLURB, alcoholIsChoice, isCounter } from "@/lib/venueKinds";
 import { currencyForCountry, currencySymbol, formatMoney } from "@/lib/money";
+import {
+  PAY_PERIODS,
+  payPeriod,
+  payrollCsv,
+  payrollFileName,
+  payrollFileText,
+  payrollTotalCents,
+  payrollTotals,
+  minutesWords,
+  todayIn,
+  venueTimeZone,
+  type PayPeriod,
+} from "@/lib/payroll";
 import { useRoomGuests, staffAwardVibe, recordSpend, STAFF_VIBE_REASONS } from "@/lib/points";
 import { todayKey } from "@/lib/date";
 import { peakDays, pctChange } from "@/lib/venueAdvisor";
@@ -578,6 +594,7 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
         <>
           <TeamKudos venueId={venue.id} />
           <TeamPanel venue={venue} meId={meId} staff={staff} />
+          <PayrollPanel venue={venue} meId={meId} />
         </>
       )}
 
@@ -1885,6 +1902,200 @@ function TeamPanel({ venue, meId, staff }: { venue: Venue; meId: string; staff: 
         </>
       )}
     </>
+  );
+}
+
+// ── payroll (054): hours and pay by person, and the file an accountant opens ────
+// In NAME order — for pay, never a ranking. A day is the VENUE's (its time zone), and a
+// shift counts on the day it started. The CSV is byte for byte the one the venue app
+// shares (payroll.ts and payroll.dart are held to one fixture). brewdiary reports hours
+// and rates; overtime, tax and deductions stay with the payroll provider.
+function PayrollPanel({ venue, meId }: { venue: Venue; meId: string }) {
+  const tz = venueTimeZone(venue.country, venue.region);
+  const [period, setPeriod] = useState<PayPeriod>("lastWeek");
+  const [from, to] = payPeriod(period, todayIn(tz));
+  const { rows, loading, error } = usePayroll(venue.id, from, to, tz);
+  const rates = usePayRates(venue.id);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const currency = currencyForCountry(venue.country);
+  const money = (n: number) => formatMoney(n, currency, { round: false });
+  const people = payrollTotals(rows);
+  const worked = people.reduce((n, p) => n + p.workedMinutes, 0);
+  const noRate = people.filter((p) => p.missingRate && p.role !== "owner").map((p) => p.name);
+
+  function download() {
+    const csv = payrollCsv({ venue: venue.name, currency, from, to, rows });
+    const url = URL.createObjectURL(new Blob([payrollFileText(csv)], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = payrollFileName(venue.name, from, to);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  return (
+    <div className="mt-8 border-t border-line pt-5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="label text-faint">Payroll</p>
+        <div className="flex flex-wrap gap-1.5">
+          {PAY_PERIODS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPeriod(p.id)}
+              aria-pressed={period === p.id}
+              className={clsx(
+                "rounded-ctl px-2.5 py-1 text-xs transition-colors",
+                period === p.id ? "bg-ink font-medium text-paper" : "glass glass-press text-muted hover:text-ink",
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="mb-3 text-xs text-faint">
+        {from === to ? from : `${from} to ${to}`} · days in {tz}
+      </p>
+
+      {loading && rows.length === 0 ? (
+        <div className="glass h-32 animate-pulse rounded-tile" />
+      ) : error ? (
+        <p className="text-sm text-faint" role="status">{error}</p>
+      ) : (
+        <>
+          <div className="glass grid grid-cols-2 gap-4 rounded-tile p-5">
+            <Stat label="hours worked" value={minutesWords(worked)} />
+            <Stat label="pay" value={money(payrollTotalCents(people) / 100)} accent />
+          </div>
+
+          {noRate.length > 0 && (
+            <p className="mt-3 text-xs leading-relaxed text-accent" role="status">
+              No rate for {noRate.join(", ")} — their hours are in the file without pay. Set one with “Pay” below.
+            </p>
+          )}
+          {msg && <p className="mt-3 text-xs text-accent" role="status">{msg}</p>}
+
+          {people.length === 0 ? (
+            <p className="mt-4 text-sm text-faint">No hours in this period.</p>
+          ) : (
+            <ul className="mt-4 divide-y divide-line border-y border-line">
+              {people.map((p) => {
+                const canPay = p.userId !== meId && p.role !== "owner" && p.role !== "left" && canGrant(venue.myRole, p.role as StaffRole);
+                const rate = rates[p.userId] ?? null;
+                return (
+                  <li key={p.userId} className="py-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate text-[15px] text-ink">
+                        {p.userId === meId ? "you" : p.name}{" "}
+                        <span className="text-xs text-faint">
+                          {p.role === "left" ? "left the team" : (ROLE_LABEL[p.role as StaffRole] ?? p.role)} · {p.daysWorked}{" "}
+                          {p.daysWorked === 1 ? "day" : "days"} · {minutesWords(p.workedMinutes)}
+                          {p.plannedMinutes > 0 ? ` of ${minutesWords(p.plannedMinutes)} planned` : ""}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-3 text-sm">
+                        <span className="tnum text-ink">{p.payCents === null ? (p.workedMinutes > 0 && p.role !== "owner" ? "no rate" : "") : money(p.payCents / 100)}</span>
+                        {canPay && (
+                          <button onClick={() => setEditing(editing === p.userId ? null : p.userId)} className="text-faint transition-colors hover:text-ink">
+                            Pay
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                    {editing === p.userId && (
+                      <PayRateForm
+                        name={p.name}
+                        currency={currency}
+                        rate={rate}
+                        onCancel={() => setEditing(null)}
+                        onSave={async (r) => {
+                          setEditing(null);
+                          const err = await setStaffPay(venue.id, p.userId, r);
+                          setMsg(err ?? (r === null ? `${p.name}'s rate is cleared.` : `${p.name}'s rate is saved.`));
+                        }}
+                      />
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <button
+            onClick={download}
+            disabled={rows.length === 0}
+            className="glass glass-press mt-4 w-full rounded-ctl py-3 text-sm font-medium text-ink transition-opacity disabled:opacity-40"
+          >
+            Download CSV
+          </button>
+          <p className="mt-3 max-w-prose text-xs leading-relaxed text-faint">
+            By name, for pay — never a ranking. Unpaid breaks come off the hours; a shift keeps the rate it started
+            at. The file opens in any spreadsheet: one line per person per day, then the totals. Overtime, tax and
+            deductions are your payroll provider&apos;s — brewdiary reports hours and rates. Corrections and missed
+            shifts are made in the venue app, always with a reason.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PayRateForm({
+  name,
+  currency,
+  rate,
+  onSave,
+  onCancel,
+}: {
+  name: string;
+  currency: string;
+  rate: number | null;
+  onSave: (rate: number | null) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(rate === null ? "" : String(rate));
+  const [err, setErr] = useState<string | null>(null);
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const r = Number(text.trim().replace(/,/g, ""));
+    if (!text.trim() || !Number.isFinite(r) || r < 0 || r > 100000) {
+      setErr("A number from 0 to 1,00,000.");
+      return;
+    }
+    onSave(Math.round(r * 100) / 100);
+  }
+  return (
+    <form onSubmit={submit} className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+      <label className="sr-only" htmlFor={`rate-${name}`}>
+        {name}&apos;s hourly rate
+      </label>
+      <span className="text-faint">{currencySymbol(currency)}</span>
+      <input
+        id={`rate-${name}`}
+        inputMode="decimal"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="per hour"
+        className="glass w-28 rounded-ctl px-3 py-1.5 text-ink outline-none"
+        autoFocus
+      />
+      <button type="submit" className="font-medium text-accent hover:opacity-80">
+        Save
+      </button>
+      {rate !== null && (
+        <button type="button" onClick={() => onSave(null)} className="text-faint hover:text-ink">
+          Clear
+        </button>
+      )}
+      <button type="button" onClick={onCancel} className="text-faint hover:text-ink">
+        Cancel
+      </button>
+      {err && <span className="w-full text-xs text-accent">{err}</span>}
+      <span className="w-full text-xs text-faint">Before tax. The team&apos;s history notes that it changed — never the amount.</span>
+    </form>
   );
 }
 
