@@ -1,0 +1,58 @@
+name: brewdiary_bar
+description: "brewdiary bar — the venue staff app: floor, orders, guests, stock, team, reports."
+publish_to: 'none'
+
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # The shared pure logic (a 1:1 port of src/lib), also used by the guest app.
+  brewdiary_core:
+    path: ../packages/brewdiary_core
+  supabase_flutter: ^2.17.2
+  shared_preferences: ^2.5.5
+  http: ^1.6.0
+  intl: ^0.20.3
+  uuid: ^4.6.0
+  url_launcher: ^6.3.2
+  share_plus: ^13.3.0
+  flutter_displaymode: ^0.7.0
+  qr_flutter: ^4.1.0
+  flutter_secure_storage: ^11.2.0
+  geolocator: ^14.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  # The house type, bundled (OFL) — the same families as the guest app, so the two
+  # read as one product. Variable fonts: weights go through FontVariation('wght', …).
+  fonts:
+    - family: Hanken Grotesk
+      fonts:
+        - asset: assets/fonts/HankenGrotesk.ttf
+        - asset: assets/fonts/HankenGrotesk-Italic.ttf
+          style: italic
+    - family: Newsreader
+      fonts:
+        - asset: assets/fonts/Newsreader.ttf
+        - asset: assets/fonts/Newsreader-Italic.ttf
+          style: italic
+    # Phosphor Icons (MIT) — see lib/ui/icons.dart.
+    - family: Phosphor
+      fonts:
+        - asset: assets/fonts/Phosphor.ttf
+    - family: PhosphorFill
+      fonts:
+        - asset: assets/fonts/Phosphor-Fill.ttf
+    - family: PhosphorBold
+      fonts:
+        - asset: assets/fonts/Phosphor-Bold.ttf

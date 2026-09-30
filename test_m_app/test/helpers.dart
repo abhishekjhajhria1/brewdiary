@@ -3,8 +3,8 @@
 import 'dart:io';
 
 import 'package:brewdiary/app.dart';
-import 'package:brewdiary/core/date.dart';
-import 'package:brewdiary/core/menus.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/menus.dart';
 import 'package:brewdiary/data/auth.dart';
 import 'package:brewdiary/data/base.dart';
 import 'package:brewdiary/data/entries.dart';
@@ -112,5 +112,7 @@ Menu sampleMenu() => groupMenu([
           'price': r.$5,
           'kind': r.$6,
           'no_alcohol': r.$7,
+          if (r.$1 == 'm6') 'diet': 'veg',
+          if (r.$1 == 'm6') 'allergens': ['gluten'],
         },
     ])!;

@@ -2,7 +2,7 @@
 // (wishlist_items) when signed in, optimistic writes, local→remote on sign-in.
 import 'package:flutter/foundation.dart';
 
-import '../core/date.dart';
+import 'package:brewdiary_core/date.dart';
 import 'auth.dart';
 import 'base.dart';
 

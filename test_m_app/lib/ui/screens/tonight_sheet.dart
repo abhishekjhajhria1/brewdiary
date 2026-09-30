@@ -10,8 +10,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/date.dart';
-import '../../core/derive.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/derive.dart';
 import '../../data/entries.dart';
 import '../../data/reminder.dart';
 import '../../data/settings.dart';

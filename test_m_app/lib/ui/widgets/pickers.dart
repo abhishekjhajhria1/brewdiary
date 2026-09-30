@@ -5,9 +5,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import '../../core/date.dart';
-import '../../core/jurisdiction.dart';
-import '../../core/money.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/jurisdiction.dart';
+import 'package:brewdiary_core/money.dart';
 import '../theme.dart';
 import 'common.dart';
 

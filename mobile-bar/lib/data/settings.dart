@@ -1,0 +1,22 @@
+// Per-device settings: the theme.
+import 'package:flutter/material.dart';
+
+import 'prefs.dart';
+
+/// Light · dark · system. Dark is the default — bars are dark.
+class ThemeStore extends ChangeNotifier {
+  static final instance = ThemeStore();
+  static const _key = 'bar.theme';
+  ThemeMode get mode => switch (Prefs.getString(_key)) {
+        'light' => ThemeMode.light,
+        'system' => ThemeMode.system,
+        _ => ThemeMode.dark,
+      };
+
+  bool get isDark => mode == ThemeMode.dark || (mode == ThemeMode.system && WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark);
+  void toggle() => set(isDark ? ThemeMode.light : ThemeMode.dark);
+  void set(ThemeMode m) {
+    Prefs.setString(_key, switch (m) { ThemeMode.light => 'light', ThemeMode.system => 'system', ThemeMode.dark => 'dark' });
+    notifyListeners();
+  }
+}

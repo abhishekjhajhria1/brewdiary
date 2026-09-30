@@ -33,6 +33,25 @@ If you can read a recipe, you can read this.
     Flutter app to Supabase and Ninkasi, turn on email-code sign-in, how bars connect to guests (table
     menus, rooms, perks), how the data is linked and where it must never go, and a roadmap for making
     the bar side more fun.
+13. **[13 — The area heat map](13-area-heat-map.md)** — how a venue sees "the kind of people outside":
+    neighbourhoods of people who said yes, what they like, when they go out, and a typical night's
+    spend as a band. Every rule that keeps it from pointing at a person, and how to read it. Also how
+    outside tools (scrapers, feeds) bring in public facts about places: events, openings, dry days.
+14. **[14 — Connecting everything: Supabase, Cloudflare and both apps](14-supabase-cloudflare-connect.md)**
+    — one database, four windows (website, venue dashboard, guest app, venue app): what each needs,
+    Supabase and Cloudflare setup, hosting on Vercel or Cloudflare Workers, app links that open the
+    right app, how a night flows between the apps, and a go-live checklist.
+15. **[15 — The counter: liquor stores, sweet shops, bakeries and every shop](15-the-counter-shops.md)**
+    — the till's checkout (priced by the server, sold by weight too), stock that follows every sale,
+    suppliers, the law on a bottle (ID check, dry days, legal hours, per-sale limits, MRP — all
+    deny-by-default), how to open a state for alcohol sales, and the excise register.
+16. **[16 — Service and ordering](16-service-and-ordering.md)** — the floor, tabs, the bar and kitchen
+    screens, the bill (staff decide how it's paid), the host's waitlist, the live board, and the table's
+    own QR: the menu with the veg mark and allergens, ordering from the table, "call staff / bill please".
+17. **[17 — The team: adding employees, the owner's code, pausing access](17-staff-access.md)** — how an
+    owner adds an employee (their email plus a 6-digit code the owner gives them), shared invite codes
+    that wait for a yes, pausing someone's access with a reason and who to report to, the team's
+    history, and the time clock (for pay, never a ranking).
 
 ## The one-paragraph version
 brewdiary is a **drink diary**. You open it, tap tonight's date on a calendar, and jot down what you

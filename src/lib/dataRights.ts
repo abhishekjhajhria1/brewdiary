@@ -27,7 +27,7 @@ export async function exportEverything(): Promise<string | null> {
   const [profile, entries, wishlist, expenses, shares, points, spend, consent] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", me).maybeSingle(),
     supabase.from("entries").select("*").eq("user_id", me),
-    supabase.from("wishlist").select("*").eq("user_id", me),
+    supabase.from("wishlist_items").select("*").eq("user_id", me),
     supabase.from("expenses").select("*").eq("payer_id", me),
     supabase.from("expense_shares").select("*").eq("user_id", me),
     supabase.from("point_events").select("*").eq("subject_user_id", me),

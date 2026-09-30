@@ -1,7 +1,7 @@
 // Split — Splitwise-style shared tabs among friends. A port of src/lib/expenses.ts.
 // Expenses + shares + settlements are stored; each pair's balance is DERIVED
 // (computeBalances in core/misc.dart).
-import '../core/misc.dart';
+import 'package:brewdiary_core/misc.dart';
 import 'auth.dart';
 import 'base.dart';
 

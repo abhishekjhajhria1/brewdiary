@@ -399,8 +399,8 @@ try {
 
   // A book may only be opened on a guest who actually came (interaction gate) by staff.
   const sgDef = await one(`select pg_get_functiondef('public.set_guest_note(uuid,uuid,text,text[])'::regprocedure) d`);
-  ok("set_guest_note(): gated on has_venue_interaction + is_venue_staff",
-    sgDef && /has_venue_interaction/.test(sgDef.d) && /is_venue_staff/.test(sgDef.d));
+  ok("set_guest_note(): gated on has_venue_interaction + a staff capability",
+    sgDef && /has_venue_interaction/.test(sgDef.d) && /(is_venue_staff|venue_can\s*\(\s*vid\s*,\s*me\s*,\s*'guests\.notes')/.test(sgDef.d));
 
   // ── menus (042): the paper menu on the table, never an offer ──────────────
   const vmDef = await one(`
@@ -435,6 +435,356 @@ try {
   } else {
     console.log("  ~ challenge_board_v2 (043) not applied — skipping");
   }
+
+  // ── staff roles (045) + capability gates (046) ───────────────────────────
+  // Checked once 045 is applied; before that the live schema simply predates it.
+  if (!have.includes("role_capabilities")) {
+    console.log("  ~ staff roles (045) not applied — skipping");
+  } else {
+    console.log("\n── staff roles: who may do what, decided by the DB (045/046) ──");
+    for (const f of ["venue_role", "venue_can", "can_grant_role", "set_staff_role", "set_thankable",
+                     "create_staff_invite", "accept_staff_invite"]) {
+      ok(`fn ${f}()`, fns.includes(f), "— MISSING");
+    }
+    ok("table staff_invites", have.includes("staff_invites"), "— MISSING");
+    const rcw = await all(`select policyname from pg_policies where schemaname='public' and tablename='role_capabilities' and cmd <> 'SELECT'`);
+    ok("role_capabilities: NO client write policy (the matrix is data we write, not the venue)", rcw.length === 0);
+    const caps = await all(`select role, capability from public.role_capabilities`);
+    const has = (role, cap) => caps.some((r) => r.role === role && r.capability === cap);
+    const every = [...new Set(caps.map((r) => r.capability))];
+    ok("owner holds every capability", every.every((c) => has("owner", c)));
+    ok("a manager holds everything but deleting the venue",
+      every.filter((c) => c !== "venue.delete").every((c) => has("manager", c)) && !has("manager", "venue.delete"));
+    for (const role of ["kitchen", "host"]) {
+      ok(`${role}: can't touch a guest's tab, perks, card or notes`,
+        ["spend.record", "perks.redeem", "guests.card", "guests.notes"].every((c) => !has(role, c)));
+    }
+    ok("only owner/manager run the team, the reports, the menu, the perks and the settings",
+      ["team.manage", "reports.view", "menu.edit", "perks.edit", "settings.edit"].every(
+        (c) => caps.filter((r) => r.capability === c).every((r) => r.role === "owner" || r.role === "manager")));
+    ok("today's bartender keeps every power it had (tab, vibe, perks, room, guest book)",
+      ["spend.record", "guests.vibe", "perks.redeem", "rooms.open", "guests.card", "guests.notes", "guests.at_tables"].every((c) => has("bartender", c)));
+
+    const vsPol = await all(`select policyname, cmd, coalesce(qual,'') q, coalesce(with_check,'') w
+                               from pg_policies where schemaname='public' and tablename='venue_staff'`);
+    ok("venue_staff: still NO update policy (roles change via set_staff_role only)", !vsPol.some((p) => p.cmd === "UPDATE" || p.cmd === "ALL"));
+    const ins = vsPol.find((p) => p.cmd === "INSERT");
+    if (fns.includes("enrol_staff")) {
+      // 053: nobody is inserted onto a roster from a client — the owner's code or an approved invite.
+      ok("venue_staff insert: only the creator's own owner row (everyone else: the owner's code or an approved invite)",
+        ins && /created_by/.test(ins.w) && /'owner'/.test(ins.w) && !/can_grant_role/.test(ins.w));
+    } else {
+      ok("venue_staff insert: a role is granted only by someone senior enough (can_grant_role)", ins && /can_grant_role/.test(ins.w));
+    }
+    const del = vsPol.find((p) => p.cmd === "DELETE");
+    ok("venue_staff delete: the owner's row can't be removed from a client", del && /owner/.test(del.q) && /can_grant_role/.test(del.q));
+    const cg = await one(`select pg_get_functiondef('public.can_grant_role(uuid,uuid,text)'::regprocedure) d`);
+    ok("can_grant_role(): 'owner' is never granted from an app", cg && /<>\s*'owner'/.test(cg.d));
+    const ssr = await one(`select pg_get_functiondef('public.set_staff_role(uuid,uuid,text)'::regprocedure) d`);
+    ok("set_staff_role(): nobody changes their own role", ssr && /own role/.test(ssr.d));
+    const st = await one(`select pg_get_functiondef('public.set_thankable(uuid,boolean)'::regprocedure) d`);
+    ok("set_thankable(): only ever your OWN row (the opt-out that actually works)", st && /user_id\s*=\s*auth\.uid\(\)/.test(st.d));
+    const ga = await one(`select pg_get_functiondef('public.venues_guard_admin_fields()'::regprocedure) d`);
+    ok("venues: a VERIFIED venue can't move country/region, change kind or slug by itself",
+      ga && ["country", "region", "kind", "slug"].every((c) => new RegExp(`new\\.${c}\\s+is distinct from`).test(ga.d)));
+    const iw = await all(`select policyname from pg_policies where schemaname='public' and tablename='staff_invites' and cmd <> 'SELECT'`);
+    ok("staff_invites: NO client write policy (created and accepted through functions)", iw.length === 0);
+
+    const gated = {
+      "record_spend(uuid,uuid,numeric)": "spend.record",
+      "staff_award(uuid,uuid,text)": "guests.vibe",
+      "redeem_perk(uuid,uuid)": "perks.redeem",
+      "record_visit(uuid,uuid)": "perks.redeem",
+      "perk_status(uuid,uuid)": "perks.redeem",
+      "set_guest_note(uuid,uuid,text,text[])": "guests.notes",
+      "venue_guest_card(uuid,uuid)": "guests.card",
+      "room_guests(uuid)": "guests.at_tables",
+      "parties_guard_venue()": "rooms.open",
+    };
+    for (const [sig, cap] of Object.entries(gated)) {
+      const d = await one(`select pg_get_functiondef('public.${sig}'::regprocedure) d`);
+      ok(`${sig.split("(")[0]}(): asks the '${cap}' capability, not just "on the team"`,
+        d && d.d.includes(`'${cap}'`) && /venue_can\s*\(/.test(d.d) && !/is_venue_staff\s*\(/.test(d.d));
+    }
+    for (const [t, cap] of [["spend_events", "spend.record"], ["perk_redemptions", "perks.redeem"],
+                            ["venue_checkins", "perks.redeem"], ["venue_guest_notes", "guests.card"]]) {
+      const r = await one(`select coalesce(qual,'') q from pg_policies where schemaname='public' and tablename=$1 and cmd='SELECT'`, [t]);
+      ok(`${t}: staff read it with the '${cap}' capability`, r && r.q.includes(cap));
+    }
+  }
+
+  // ── every kind of shop (047): the law follows what a place SELLS ──────────
+  if (!fns.includes("venue_legal_class")) {
+    console.log("  ~ every kind of shop (047) not applied — skipping");
+  } else {
+    console.log("\n── every kind of shop: the law follows what's sold (047) ──");
+    const kc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'venues_kind_check'`);
+    ok("venues.kind: bar, club, restaurant, cafe, store, sweet_shop, bakery, shop",
+      kc && ["bar", "club", "restaurant", "cafe", "store", "sweet_shop", "bakery", "shop"].every((k) => kc.d.includes(`'${k}'`)));
+    const lc = await all(`select k, a, public.venue_legal_class(k, a) c from (values
+      ('bar', false), ('club', false), ('store', false), ('cafe', true), ('cafe', false),
+      ('restaurant', true), ('sweet_shop', true), ('bakery', false), ('shop', true)) t(k, a)`);
+    const cls = Object.fromEntries(lc.map((r) => [`${r.k}:${r.a}`, r.c]));
+    ok("a bar or club is on-trade whatever it claims", cls["bar:false"] === "on_trade" && cls["club:false"] === "on_trade");
+    ok("a liquor store is off-trade", cls["store:false"] === "off_trade");
+    ok("a café or restaurant is on-trade only if it serves alcohol",
+      cls["cafe:true"] === "on_trade" && cls["cafe:false"] === "no_alcohol" && cls["restaurant:true"] === "on_trade");
+    ok("a sweet shop, bakery or shop never sells alcohol (a shop that does is a store)",
+      cls["sweet_shop:true"] === "no_alcohol" && cls["bakery:false"] === "no_alcohol" && cls["shop:true"] === "no_alcohol");
+    const pg = await one(`select pg_get_functiondef('public.venue_perks_guard()'::regprocedure) d`);
+    ok("venue_perks_guard(): decides by legal class, and a no-alcohol card still can't reward alcohol",
+      pg && /venue_legal_class/.test(pg.d) && /no_alcohol/.test(pg.d) && /reward_alcoholic/.test(pg.d));
+    ok("venue_perks_guard(): an unresearched country is still NO for every kind", pg && /pol is null/.test(pg.d));
+    const rg = await one(`select pg_get_functiondef('public.parties_guard_venue_kind()'::regprocedure) d`);
+    ok("a COUNTER (store, sweet shop, bakery, shop) runs no rooms", rg && /venue_is_counter/.test(rg.d));
+    const ga2 = await one(`select pg_get_functiondef('public.venues_guard_admin_fields()'::regprocedure) d`);
+    ok("a verified venue can't flip its alcohol licence by itself", ga2 && /new\.serves_alcohol\s+is distinct from/.test(ga2.d));
+    const sa = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'venues_serves_alcohol_check'`);
+    ok("the venues table can't hold a sober bar or a licensed bakery", Boolean(sa));
+  }
+
+  // ── the area heat map (048): consenting groups, never a person ─────────────
+  if (!fns.includes("area_heat_map")) {
+    console.log("  ~ the area heat map (048) not applied — skipping");
+  } else {
+    console.log("\n── the area heat map: consenting groups, never a person (048) ──");
+    const hm = await one(`select pg_get_functiondef('public.area_heat_map(uuid,integer,text)'::regprocedure) d,
+      (select prosecdef from pg_proc where oid = 'public.area_heat_map(uuid,integer,text)'::regprocedure) sd,
+      (select proconfig::text from pg_proc where oid = 'public.area_heat_map(uuid,integer,text)'::regprocedure) cfg`);
+    ok("area_heat_map(): SECURITY DEFINER with a pinned search_path", hm && hm.sd && /search_path=public/.test(hm.cfg ?? ""));
+    ok("area_heat_map(): only a role with area.view, only a verified venue",
+      hm && /venue_can\(vid, auth\.uid\(\), 'area\.view'\)/.test(hm.d) && /not v\.verified/.test(hm.d));
+    ok("area_heat_map(): counts only people who said yes to BOTH trends and nights out",
+      hm && (hm.d.match(/share_trends and p\.share_nights_out/g) ?? []).length >= 2);
+    ok("area_heat_map(): a cell needs 5+ people AND 3+ venues", hm && /count\(distinct c\.user_id\) >= 5 and count\(distinct c\.venue_id\) >= 3/.test(hm.d));
+    ok("area_heat_map(): spend needs the caller's AND each venue's yes (give to get), in bands",
+      hm && /where v\.area_share/.test(hm.d) && /vc\.area_share/.test(hm.d) && /spend_band_floor/.test(hm.d));
+    ok("area_heat_map(): every figure rounded down to 5s, nothing under 5", hm && /\(a\.n \/ 5\) \* 5/.test(hm.d) && /where a\.n >= 5/.test(hm.d));
+    ok("area_heat_map(): fixed windows of whole days", hm && /when days_back <= 7 then 7 when days_back <= 30 then 30 else 90/.test(hm.d) && /< current_date/.test(hm.d));
+    ok("area_heat_map(): returns no person and no venue", hm && !/returns table \([^)]*(user_id|venue_id|name)/i.test(hm.d));
+    ok("area_heat_map(): nothing about age, gender or religion", hm && !/\b(birth|age_|gender|sex|religio|caste)/i.test(hm.d));
+    const optin = await all(`select table_name, column_name, column_default from information_schema.columns
+      where table_schema = 'public' and ((table_name = 'profiles' and column_name = 'share_nights_out') or (table_name = 'venues' and column_name = 'area_share'))`);
+    ok("both opt-ins exist and default to OFF", optin.length === 2 && optin.every((r) => r.column_default === "false"));
+    const gg = await one(`select pg_get_functiondef('public.venues_guard_geohash()'::regprocedure) d`);
+    ok("a verified venue can't move to another area", gg && /left\(new\.geohash, 4\) <> left\(old\.geohash, 4\)/.test(gg.d));
+    const gc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'venues_geohash_chars'`);
+    ok("a venue's location is a real geohash, not free text", Boolean(gc));
+    const bands = await one(`select public.spend_band_floor(1200, 'INR') a, public.spend_band_floor(400, 'INR') b, public.spend_band_floor(60, 'USD') c`);
+    ok("spend_band_floor() matches money.ts", bands && Number(bands.a) === 1000 && Number(bands.b) === 0 && Number(bands.c) === 50);
+    const at = await one(`select pg_get_functiondef('public.area_taste_trends(text,integer)'::regprocedure) d`);
+    ok("area_taste_trends(): still consenting-only, k ≥ 5, matched on the ~40 km cell",
+      at && /p\.share_trends/.test(at.d) && />= 5/.test(at.d) && /left\(p\.trends_geo, 4\) = left\(trim\(in_geo\), 4\)/.test(at.d));
+  }
+
+  // ── outside signals (049): public facts about places, never people ──────────
+  if (!fns.includes("venue_area_signals")) {
+    console.log("  ~ outside signals (049) not applied — skipping");
+  } else {
+    console.log("\n── outside signals: places and happenings, never people (049) ──");
+    const rls = await one(`select relrowsecurity r from pg_class where oid = 'public.area_signals'::regclass`);
+    ok("area_signals: RLS on", rls && rls.r === true);
+    const pol = await one(`select count(*)::int n from pg_policies where schemaname = 'public' and tablename = 'area_signals'`);
+    ok("area_signals: no client policy at all (server-only writes, reads via a function)", pol && pol.n === 0);
+    const cols = (await all(`select column_name c from information_schema.columns where table_schema = 'public' and table_name = 'area_signals'`)).map((r) => r.c);
+    ok("area_signals: no column that could hold a person", cols.length > 0 && !cols.some((c) => /user|profile|author|person|email|phone|handle|name/.test(c)), `— ${cols.join(", ")}`);
+    const g = await one(`select pg_get_functiondef('public.area_signals_guard()'::regprocedure) d`);
+    ok("area_signals_guard(): refuses emails, phone numbers, @handles and personal fact keys",
+      g && /email address/.test(g.d) && /phone number/.test(g.d) && /@handle/.test(g.d) && /jsonb_object_keys/.test(g.d));
+    const trg = await one(`select count(*)::int n from pg_trigger where tgrelid = 'public.area_signals'::regclass and tgname = 'area_signals_guard'`);
+    ok("area_signals_guard fires on insert and update", trg && trg.n === 1);
+    const rd = await one(`select pg_get_functiondef('public.venue_area_signals(uuid,integer)'::regprocedure) d`);
+    ok("venue_area_signals(): the venue's own staff, a verified venue, its own area, unexpired",
+      rd && /is_venue_staff\(vid, auth\.uid\(\)\)/.test(rd.d) && /not v\.verified/.test(rd.d) && /s\.area = left\(v\.geohash, 4\)/.test(rd.d) && /expires_at > now\(\)/.test(rd.d));
+  }
+
+  // ── the counter (050): stock, sales, and the law on a bottle ────────────────
+  if (!fns.includes("ring_sale")) {
+    console.log("  ~ the counter (050) not applied — skipping");
+  } else {
+    console.log("\n── the counter: stock, sales, and the law on a bottle (050) ──");
+    const writes = await all(`select tablename, cmd from pg_policies where schemaname = 'public'
+      and tablename in ('stock_moves', 'shop_sales', 'shop_sale_lines') and cmd <> 'SELECT'`);
+    ok("stock_moves, shop_sales, shop_sale_lines: no client write policy (functions only)", writes.length === 0,
+      `— ${writes.map((w) => `${w.tablename}:${w.cmd}`).join(", ")}`);
+    const rs = await one(`select pg_get_functiondef('public.ring_sale(uuid,uuid,jsonb,text,boolean)'::regprocedure) d`);
+    ok("ring_sale(): needs payments.take", rs && /venue_can\(vid, auth\.uid\(\), 'payments\.take'\)/.test(rs.d));
+    ok("ring_sale(): the SERVER prices every line (p.price), never the till", rs && /p\.price \* q/.test(rs.d) && !/l->>'price'/.test(rs.d));
+    ok("ring_sale(): alcohol needs a researched state, open hours, an ID check and the per-sale limit",
+      rs && /store_sale_status/.test(rs.d) && /not st\.researched or not st\.allowed_now/.test(rs.d) && /check ID first/.test(rs.d) && /max_ml/.test(rs.d));
+    const ss = await one(`select pg_get_functiondef('public.store_sale_status(uuid)'::regprocedure) d`);
+    ok("store_sale_status(): no retail rule → no alcohol (deny-by-default), dry days stop it all day",
+      ss && /r\.country is null/.test(ss.d) && /dry_days/.test(ss.d));
+    const mrp = await all(`select pg_get_constraintdef(oid) d from pg_constraint where conrelid = 'public.shop_products'::regclass`);
+    ok("shop_products: a price can never exceed the MRP", mrp.some((c) => /price <= mrp/.test(c.d)));
+    const pg2 = await one(`select pg_get_functiondef('public.shop_products_guard()'::regprocedure) d`);
+    ok("a shop that sells no alcohol can't list any", pg2 && /venue_legal_class/.test(pg2.d) && /no_alcohol/.test(pg2.d));
+    const saleCols = (await all(`select column_name c from information_schema.columns where table_schema = 'public' and table_name = 'shop_sales'`)).map((r) => r.c);
+    ok("shop_sales: no guest column — the till sells to \"a customer\"", saleCols.length > 0 && !saleCols.some((c) => /guest|customer|subject|user_id/.test(c)), `— ${saleCols.join(", ")}`);
+    ok("shop_sales: an alcohol sale can't exist without an ID check", (await all(`select pg_get_constraintdef(oid) d from pg_constraint where conrelid = 'public.shop_sales'::regclass`)).some((c) => /has_alcohol/.test(c.d) && /id_checked/.test(c.d)));
+    const ruleWrites = await all(`select tablename from pg_policies where schemaname = 'public' and tablename in ('retail_alcohol_rules', 'dry_days') and cmd <> 'SELECT'`);
+    ok("retail rules and dry days are written out-of-band only", ruleWrites.length === 0);
+    const unsourced = await one(`select (select count(*) from public.retail_alcohol_rules where char_length(trim(source)) < 5)
+      + (select count(*) from public.dry_days where char_length(trim(source)) < 5) n`);
+    ok("every retail rule and dry day cites its source", unsourced && Number(unsourced.n) === 0);
+  }
+
+  // ── service (051): the floor, tabs, stations, the bill, the table link ──────
+  if (!fns.includes("close_tab")) {
+    console.log("  ~ service (051) not applied — skipping");
+  } else {
+    console.log("\n── service: tabs, stations, bills, the table link (051) ──");
+    const w = await all(`select tablename, cmd from pg_policies where schemaname = 'public'
+      and tablename in ('tabs', 'order_lines', 'tab_payments', 'order_requests', 'table_calls') and cmd <> 'SELECT'`);
+    ok("tabs, lines, payments, requests, calls: no client write policy (functions only)", w.length === 0, `— ${w.map((x) => `${x.tablename}:${x.cmd}`).join(", ")}`);
+    const al = await one(`select pg_get_functiondef('public.add_order_lines(uuid,jsonb,text)'::regprocedure) d`);
+    ok("add_order_lines(): orders.take; name, price and station copied from the menu; 86'd refused",
+      al && /'orders\.take'/.test(al.d) && /m\.price/.test(al.d) && /m\.station/.test(al.d) && /not m\.available/.test(al.d));
+    const ct = await one(`select pg_get_functiondef('public.close_tab(uuid,jsonb,numeric)'::regprocedure) d`);
+    ok("close_tab(): payments.take; the subtotal is the non-void lines, kept as a snapshot", ct && /'payments\.take'/.test(ct.d) && /status <> 'void'/.test(ct.d) && /subtotal = sub/.test(ct.d));
+    const vl = await one(`select pg_get_functiondef('public.void_line(uuid,text)'::regprocedure) d`);
+    ok("void_line(): a reason always; your own fresh line, or a supervisor", vl && /char_length\(trim\(coalesce\(reason/.test(vl.d) && /orders\.void_own/.test(vl.d) && /orders\.approve/.test(vl.d));
+    const sl = await one(`select pg_get_functiondef('public.set_line_status(uuid,text)'::regprocedure) d`);
+    ok("set_line_status(): the bar moves bar tickets, the kitchen kitchen tickets, forward only", sl && /station\.bar/.test(sl.d) && /station\.kitchen/.test(sl.d) && /rank_to <= rank_from/.test(sl.d));
+    const ro = await one(`select pg_get_functiondef('public.request_order(text,uuid,jsonb,text)'::regprocedure) d`);
+    ok("request_order(): signed in, the venue switched it on, rate-limited — a request, never lines",
+      ro && /auth\.uid\(\) is null/.test(ro.d) && /v\.table_service/.test(ro.d) && /interval '20 seconds'/.test(ro.d) && !/insert into public\.order_lines/.test(ro.d));
+    const si = await one(`select pg_get_functiondef('public.service_inbox(uuid)'::regprocedure) d`);
+    ok("service_inbox(): never returns who asked", si && !/returns table \([^)]*requested_by/.test(si.d) && !/select[^;]*r\.requested_by/.test(si.d));
+    const rq = await all(`select policyname, qual from pg_policies where schemaname = 'public' and tablename in ('order_requests', 'table_calls')`);
+    ok("a guest reads only their own requests and calls", rq.length === 2 && rq.every((p) => /requested_by = auth\.uid\(\)/.test(p.qual)));
+    const wf = await one(`select pg_get_functiondef('public.waitlist_forget()'::regprocedure) d`);
+    ok("the waitlist forgets names within a day", wf && /interval '20 hours'/.test(wf.d));
+    const ts = await one(`select column_default d from information_schema.columns where table_schema = 'public' and table_name = 'venues' and column_name = 'table_service'`);
+    ok("ordering from the table is off until a venue switches it on", ts && ts.d === "false");
+    const al2 = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'venue_menu_items_allergens_check'`);
+    ok("menu allergens are the EU's 14", al2 && ["gluten", "crustaceans", "sesame", "lupin", "molluscs"].every((a) => al2.d.includes(a)));
+    const tabCols = (await all(`select column_name c from information_schema.columns where table_schema = 'public' and table_name in ('tabs', 'order_lines')`)).map((r) => r.c);
+    ok("tabs and lines hold no guest: no user column", !tabCols.some((c) => /guest_id|user_id|subject/.test(c)), `— ${tabCols.join(", ")}`);
+  }
+
+  // ── the door (052) ──────────────────────────────────────────────────────────
+  if (!fns.includes("door_tick")) {
+    console.log("  ~ the door (052) not applied — skipping");
+  } else {
+    console.log("\n── the door: counts, never people (052) ──");
+    const dw = await all(`select cmd from pg_policies where schemaname = 'public' and tablename = 'door_events' and cmd <> 'SELECT'`);
+    ok("door_events: no client write policy (door_tick() only)", dw.length === 0);
+    const dc = (await all(`select column_name c from information_schema.columns where table_schema = 'public' and table_name = 'door_events'`)).map((r) => r.c);
+    ok("door_events: a count and a time — no column that could say who came in", !dc.some((c) => /guest|user_id|name|photo|id_number|subject/.test(c)), `— ${dc.join(", ")}`);
+    const dt = await one(`select pg_get_functiondef('public.door_tick(uuid,integer)'::regprocedure) d`);
+    ok("door_tick(): the door role (guests.seat), 1 to 12 at a time", dt && /'guests\.seat'/.test(dt.d) && /n < -12 or n > 12/.test(dt.d));
+  }
+
+  // ── staff access (053) ──────────────────────────────────────────────────────
+  if (!fns.includes("enrol_staff")) {
+    console.log("  ~ staff access (053) not applied — skipping");
+  } else {
+    console.log("\n── staff access: the owner's code, approvals, lock-out, the clock (053) ──");
+    for (const f of ["enrol_staff", "reissue_staff_code", "revoke_staff_enrolment", "staff_enrolments_open", "my_staff_enrolments",
+                     "claim_staff_enrolment", "approve_staff", "decline_staff", "lock_staff", "unlock_staff", "set_staff_details",
+                     "team_roster", "my_staff_status", "staff_history", "clock_in", "clock_out", "end_staff_shift", "my_shift", "shift_hours"]) {
+      ok(`fn ${f}()`, fns.includes(f), "— MISSING");
+    }
+    const sc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'venue_staff_status_check'`);
+    ok("venue_staff.status is pending | active | locked", sc && /pending/.test(sc.d) && /active/.test(sc.d) && /locked/.test(sc.d));
+    for (const f of ["is_venue_staff(uuid,uuid)", "is_venue_manager(uuid,uuid)", "venue_role(uuid,uuid)"]) {
+      const d = await one(`select pg_get_functiondef('public.${f}'::regprocedure) d`);
+      ok(`${f.split("(")[0]}(): only ACTIVE staff count, so a lock-out stops everything`, d && /status = 'active'/.test(d.d));
+    }
+    const enPol = await all(`select policyname from pg_policies where schemaname='public' and tablename='staff_enrolments'`);
+    ok("staff_enrolments: no policies at all (a code's hash never leaves the database)", enPol.length === 0);
+    const enCols = (await all(`select column_name c from information_schema.columns where table_schema='public' and table_name='staff_enrolments'`)).map((r) => r.c);
+    ok("staff_enrolments: the code is kept only as a hash", enCols.includes("code_hash") && !enCols.includes("code"));
+    for (const tb of ["staff_events", "staff_shifts", "staff_details"]) {
+      const w = await all(`select policyname from pg_policies where schemaname='public' and tablename=$1 and cmd <> 'SELECT'`, [tb]);
+      ok(`${tb}: no client write policy (functions and the trigger only)`, w.length === 0);
+    }
+    const cr = await one(`select pg_get_function_result('public.claim_staff_enrolment(uuid,text)'::regprocedure) r`);
+    ok("claim_staff_enrolment() returns a result, so a wrong try is counted, not rolled back", cr && cr.r === "jsonb");
+    ok("every roster change is written to the history by a trigger",
+      !!(await one(`select 1 from pg_trigger where tgname = 'venue_staff_log' and not tgisinternal`)));
+    const ai = await one(`select pg_get_functiondef('public.accept_staff_invite(text)'::regprocedure) d`);
+    ok("accept_staff_invite(): joins as PENDING, a manager's yes comes first", ai && /'pending'/.test(ai.d));
+    const rd = await one(`select qual from pg_policies where schemaname='public' and tablename='venue_staff' and policyname='venue_staff_read'`);
+    ok("venue_staff: a paused or waiting person can read their own row", rd && /user_id = auth\.uid\(\)/.test(rd.qual));
+    const vu = await all(`select policyname from pg_policies where schemaname='public' and tablename='venue_staff' and cmd = 'UPDATE'`);
+    ok("venue_staff: still no update policy (status and role change through functions)", vu.length === 0);
+    for (const f of ["room_staff(uuid)", "thank_staff(uuid,uuid,text)"]) {
+      const d = await one(`select pg_get_functiondef('public.${f}'::regprocedure) d`);
+      ok(`${f.split("(")[0]}(): thanks go to active staff only`, d && /status = 'active'/.test(d.d));
+    }
+    const sh = await one(`select pg_get_functiondef('public.shift_hours(uuid,timestamptz)'::regprocedure) d`);
+    ok("shift_hours(): listed by name, never ranked by hours", sh && /order by 2/.test(sh.d) && !/order by[^;]*minutes/i.test(sh.d));
+  }
+
+  // ── the rota, breaks and payroll (054) ────────────────────────────────────
+  if (!fns.includes("payroll_days")) {
+    console.log("  ~ the rota, breaks and payroll (054) not applied — skipping");
+  } else {
+    console.log("\n── the rota, breaks, corrections, pay and payroll (054) ──");
+    for (const f of ["rota_save_shift", "rota_delete_shift", "rota_publish", "rota_copy", "rota_week", "rota_offer_shift",
+                     "rota_take_shift", "rota_decide_swap", "rota_withdraw_swap", "request_time_off", "decide_time_off",
+                     "cancel_time_off", "time_off_list", "set_cannot_work", "start_break", "end_break", "my_shift_state",
+                     "staff_timesheet", "correct_shift", "add_missed_shift", "set_break_paid", "set_staff_pay", "pay_rates", "payroll_days"]) {
+      ok(`fn ${f}()`, fns.includes(f), "— MISSING");
+    }
+    for (const tb of ["rota_shifts", "rota_swaps", "time_off", "shift_breaks", "shift_corrections"]) {
+      const r = await one(`select relrowsecurity r from pg_class where oid = $1::regclass`, [`public.${tb}`]);
+      ok(`${tb}: row-level security on`, r?.r === true);
+      const w = await all(`select policyname from pg_policies where schemaname='public' and tablename=$1 and cmd <> 'SELECT'`, [tb]);
+      ok(`${tb}: no client write policy (functions only)`, w.length === 0);
+    }
+    const touch = await all(`
+      select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.prokind = 'f'
+        and pg_get_functiondef(p.oid) ~* '(update\\s+public\\.shift_corrections|delete\\s+from\\s+public\\.shift_corrections)'`);
+    ok("shift corrections are append-only: no function updates or deletes one", touch.length === 0,
+      `— ${touch.map((r) => r.proname).join(", ")}`);
+    const pd = await one(`select pg_get_functiondef('public.payroll_days(uuid,date,date,text)'::regprocedure) d`);
+    ok("payroll_days(): owners and managers only (team.manage)", pd && /'team\.manage'/.test(pd.d));
+    ok("payroll_days(): in name order, never ranked by hours or pay", pd && /order by 2, 4/.test(pd.d) && !/order by[^;]*(worked|pay|minutes)/i.test(pd.d));
+    const sh = await one(`select pg_get_functiondef('public.shift_hours(uuid,timestamptz)'::regprocedure) d`);
+    ok("shift_hours(): unpaid breaks come off, still listed by name", sh && /shift_minutes/.test(sh.d) && /order by 2/.test(sh.d));
+    const cs = await one(`select pg_get_functiondef('public.correct_shift(uuid,timestamptz,timestamptz,text)'::regprocedure) d`);
+    ok("correct_shift(): nobody corrects their own times, and a reason is required", cs && /own times/.test(cs.d) && /say why/.test(cs.d));
+    const sp = await one(`select pg_get_functiondef('public.set_staff_pay(uuid,uuid,numeric)'::regprocedure) d`);
+    ok("set_staff_pay(): nobody sets their own pay; the history never records the amount",
+      sp && /own pay/.test(sp.d) && /'pay_changed', '\{\}'/.test(sp.d));
+    ok("start_break(): nobody marks their own break paid (no 'paid' argument)",
+      !(await one(`select to_regprocedure('public.start_break(uuid,boolean)') f`))?.f && !!(await one(`select to_regprocedure('public.start_break(uuid)') f`))?.f);
+    const bp = await one(`select pg_get_functiondef('public.set_break_paid(uuid,boolean)'::regprocedure) d`);
+    ok("set_break_paid(): never your own; the same people who correct times",
+      bp && /own pay/.test(bp.d) && /can_correct_times/.test(bp.d) && /'break_changed'/.test(bp.d));
+    const inv = await one(`select prosecdef d from pg_proc where oid = 'public.shift_minutes(uuid,timestamptz,timestamptz)'::regprocedure`);
+    ok("shift_minutes(): runs as the caller (SECURITY INVOKER)", inv && inv.d === false);
+    for (const f of ["public.shift_minutes(uuid,timestamptz,timestamptz)", "public.can_correct_times(uuid,uuid,uuid)"]) {
+      const g = await one(`select has_function_privilege('authenticated', $1, 'EXECUTE') a,
+                                  coalesce((select has_function_privilege('anon', $1, 'EXECUTE')), false) b`, [f]);
+      ok(`${f.split("(")[0].replace("public.", "")}(): not callable from an app`, g && !g.a && !g.b);
+    }
+    for (const tg of ["staff_shift_closed", "staff_shift_rate", "venue_staff_left_rota"]) {
+      ok(`trigger ${tg}`, !!(await one(`select 1 from pg_trigger where tgname = $1 and not tgisinternal`, [tg])));
+    }
+    const rp = await one(`select qual from pg_policies where schemaname='public' and tablename='rota_shifts' and policyname='rota_shifts_read'`);
+    ok("rota_shifts: the team reads the PUBLISHED rota; drafts are the planners'", rp && /published_at IS NOT NULL/i.test(rp.qual) && /rota\.edit/.test(rp.qual));
+    const kc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'staff_events_kind_check'`);
+    ok("the team's history knows rota, swap, time-off, correction, break and pay changes",
+      kc && ["rota_published", "swap_decided", "time_off_decided", "shift_corrected", "shift_added", "pay_changed", "break_changed"].every((k) => kc.d.includes(k)));
+  }
+
+  // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
+  // pinned to search_path=public that calls one unqualified works on a laptop and fails
+  // in production. None may.
+  // (OFFSET 0 keeps the schema filter first: pg_get_functiondef() refuses aggregates.)
+  const unq = await all(`
+    select f.proname from (
+      select p.oid, p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.prokind = 'f' offset 0
+    ) f
+    where pg_get_functiondef(f.oid) ~ '(^|[^.])(gen_random_bytes|digest|crypt|gen_salt|hmac)\\s*\\('`);
+  ok("no public function calls a pgcrypto function without its schema", unq.length === 0,
+    `— ${unq.map((r) => r.proname).join(", ")}`);
 
   console.log("\n── orphans / drift ──────────────────────────────────");
   const badCurrency = await one(`

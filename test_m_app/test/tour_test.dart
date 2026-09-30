@@ -6,7 +6,7 @@
 import 'dart:math';
 
 import 'package:brewdiary/app.dart';
-import 'package:brewdiary/core/date.dart';
+import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary/ui/screens/you_screen.dart';
 import 'package:brewdiary/ui/screens/morning_after.dart';
 import 'package:brewdiary/ui/screens/tonight_sheet.dart';

@@ -37,6 +37,57 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
+  # The same audit + flow, on a THROWAWAY Postgres built from supabase/ — every migration
+  # applied in order to a fresh schema. Needs no secrets, so it runs on every push and PR:
+  # a migration that fails to apply, or a rule it breaks, shows up before the maintainer
+  # runs it for real. (scripts/db-local.sh; Postgres is preinstalled on the runner.)
+  database-local:
+    name: every migration · audit · flow (throwaway Postgres)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Only the pure-JS `pg` driver is needed here. Skipping install scripts keeps
+      # onnxruntime-node's binary download (a network call this job never uses) from
+      # failing the database checks when that host times out.
+      - run: npm ci --ignore-scripts
+      - run: npm run db:local
+
+  # The Flutter apps. Their parity tests prove the Dart ports behave exactly like src/lib,
+  # so they belong in the gates too.
+  flutter:
+    name: flutter · analyze · test (${{ matrix.dir }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dir: packages/brewdiary_core   # the shared pure-Dart logic + parity tests
+            analyze: dart analyze
+            test: dart test
+          - dir: test_m_app                # the guest app
+            analyze: flutter analyze
+            test: flutter test
+          - dir: mobile-bar                # the venue staff app (its tests read supabase/045)
+            analyze: flutter analyze
+            test: flutter test
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.5
+          cache: true
+      - run: flutter pub get
+      - run: ${{ matrix.analyze }}
+      - run: ${{ matrix.test }}
+
   database:
     name: schema audit · end-to-end flow
     runs-on: ubuntu-latest

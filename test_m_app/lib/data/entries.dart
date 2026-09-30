@@ -9,9 +9,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../core/date.dart';
-import '../core/seed.dart';
-import '../core/types.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/seed.dart';
+import 'package:brewdiary_core/types.dart';
 import 'auth.dart';
 import 'base.dart';
 

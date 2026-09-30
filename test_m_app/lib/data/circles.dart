@@ -4,7 +4,7 @@
 //
 // Insert gotcha: tables whose select policy calls a SECURITY DEFINER fn trip
 // PostgREST on INSERT..RETURNING — ids are generated client-side, no .select().
-import '../core/misc.dart';
+import 'package:brewdiary_core/misc.dart';
 import 'auth.dart';
 import 'base.dart';
 

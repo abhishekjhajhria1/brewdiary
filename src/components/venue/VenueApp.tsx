@@ -16,8 +16,23 @@ import {
   useVerification,
   createVenue,
   updateVenue,
-  addStaff,
   removeStaff,
+  enrolStaff,
+  reissueStaffCode,
+  revokeStaffEnrolment,
+  approveStaff,
+  declineStaff,
+  lockStaff,
+  unlockStaff,
+  useOpenEnrolments,
+  useStaffAccess,
+  claimStaffCode,
+  usePayroll,
+  usePayRates,
+  setStaffPay,
+  type StaffCode,
+  type VenueStaff,
+  type StaffRole,
   deleteVenue,
   requestVerification,
   withdrawVerification,
@@ -26,6 +41,8 @@ import {
   type Venue,
 } from "@/lib/venues";
 import { searchUsers, type SocialProfile } from "@/lib/friends";
+import { ROLE_LABEL, STAFF_ROLES, canGrant } from "@/lib/roles";
+import { claimMessage, codeDigits, codeLifeLeft, enrolShareText, reportLine, roleWithArticle, validStaffEmail, validStaffPhone } from "@/lib/staffAccess";
 import { useVenueRooms, createParty } from "@/lib/parties";
 import { RoomQr } from "./RoomQr";
 import { useMyKudos, useVenueKudosTotal, setThankable } from "@/lib/kudos";
@@ -43,11 +60,26 @@ import {
   type VenueKind,
 } from "@/lib/perks";
 import { KNOWN_COUNTRIES } from "@/lib/jurisdiction";
+import { VENUE_KINDS, VENUE_KIND_LABEL, VENUE_KIND_BLURB, alcoholIsChoice, isCounter } from "@/lib/venueKinds";
 import { currencyForCountry, currencySymbol, formatMoney } from "@/lib/money";
+import {
+  PAY_PERIODS,
+  payPeriod,
+  payrollCsv,
+  payrollFileName,
+  payrollFileText,
+  payrollTotalCents,
+  payrollTotals,
+  minutesWords,
+  todayIn,
+  venueTimeZone,
+  type PayPeriod,
+} from "@/lib/payroll";
 import { useRoomGuests, staffAwardVibe, recordSpend, STAFF_VIBE_REASONS } from "@/lib/points";
 import { todayKey } from "@/lib/date";
 import { peakDays, pctChange } from "@/lib/venueAdvisor";
 import { requestLocationGeohash } from "@/lib/trends";
+import { VENUE_PRECISION } from "@/lib/geohash";
 import { VenueAdvisor } from "./VenueAdvisor";
 import { GuestBook } from "./GuestBook";
 import { VenueMenu } from "./VenueMenu";
@@ -272,6 +304,7 @@ function VenueHome({ me }: { me: Profile }) {
   if (venues.length === 0 && !creating) {
     return (
       <>
+        <StaffAccessPanel />
         <p className="label mb-2 text-faint">Welcome, {me.name}</p>
         <h1 className="font-display text-3xl leading-tight tracking-tight text-ink">Claim your venue.</h1>
         <p className="mt-3 max-w-prose text-[15px] leading-relaxed text-muted">
@@ -289,6 +322,7 @@ function VenueHome({ me }: { me: Profile }) {
 
   return (
     <>
+      <StaffAccessPanel />
       <div className="mb-5 flex items-end justify-between">
         <p className="label text-faint">Your venues</p>
         {!creating && (
@@ -314,6 +348,7 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
   const [slug, setSlug] = useState("");
   const [city, setCity] = useState("");
   const [kind, setKind] = useState<VenueKind>("bar");
+  const [servesAlcohol, setServesAlcohol] = useState(false);
   const [country, setCountry] = useState("IN");
   const [region, setRegion] = useState("");
   const [busy, setBusy] = useState(false);
@@ -325,8 +360,8 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
 
   // Say NOW whether a loyalty card is even possible here, rather than letting them
   // set the shop up and hit a wall at the perk screen.
-  const policy = perkPolicy(country, region, kind);
-  const policyNote = perkPolicyNote(country, region, kind);
+  const policy = perkPolicy(country, region, kind, servesAlcohol);
+  const policyNote = perkPolicyNote(country, region, kind, servesAlcohol);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -337,6 +372,7 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
       slug: slug.trim() || undefined,
       city,
       kind,
+      servesAlcohol,
       country,
       region: region.trim() || undefined,
     });
@@ -356,28 +392,33 @@ function CreateVenue({ meId, onDone }: { meId: string; onDone: () => void }) {
         <input value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} placeholder="web address (optional)" className={inputClass} aria-label="Web address slug" />
         <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City (optional)" className={inputClass} aria-label="City" />
 
-        {/* Bar or bottle shop. Not cosmetic: a shop runs no rooms, and its loyalty
-            card needs its own legal permission, because at a shop a visit is a sale. */}
+        {/* What kind of place. Not cosmetic: a counter (a liquor store, a sweet shop, a
+            bakery, a shop) runs no rooms; a liquor store's card needs its own legal
+            permission, because at a shop a visit is a sale; a place that sells no alcohol
+            is outside alcohol-promotion law altogether (047). */}
         <div className="glass grid grid-cols-2 gap-1 rounded-ctl p-1" role="group" aria-label="Venue kind">
-          {([
-            { id: "bar", label: "Bar", blurb: "People drink here" },
-            { id: "store", label: "Shop", blurb: "People carry out" },
-          ] as const).map((k) => (
+          {VENUE_KINDS.map((k) => (
             <button
-              key={k.id}
+              key={k}
               type="button"
-              onClick={() => setKind(k.id)}
-              aria-pressed={kind === k.id}
+              onClick={() => setKind(k)}
+              aria-pressed={kind === k}
               className={clsx(
                 "rounded-[7px] px-3 py-2 text-left transition-colors",
-                kind === k.id ? "bg-ink text-paper" : "text-faint hover:text-ink",
+                kind === k ? "bg-ink text-paper" : "text-faint hover:text-ink",
               )}
             >
-              <span className="block text-sm font-medium">{k.label}</span>
-              <span className={clsx("block text-[11px]", kind === k.id ? "opacity-70" : "text-faint")}>{k.blurb}</span>
+              <span className="block text-sm font-medium">{VENUE_KIND_LABEL[k]}</span>
+              <span className={clsx("block text-[11px]", kind === k ? "opacity-70" : "text-faint")}>{VENUE_KIND_BLURB[k]}</span>
             </button>
           ))}
         </div>
+        {alcoholIsChoice(kind) && (
+          <label className="flex items-center gap-2 px-1 text-sm text-muted">
+            <input type="checkbox" checked={servesAlcohol} onChange={(e) => setServesAlcohol(e.target.checked)} />
+            We serve alcohol (licensed)
+          </label>
+        )}
 
         <select
           value={country}
@@ -485,7 +526,7 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
 
   // A shop's first tab is the TILL, not the room — it has no rooms at all (the DB
   // refuses to attach one), because a bottle shop isn't a place you sit and drink.
-  const store = venue.kind === "store";
+  const store = isCounter(venue.kind);
 
   // A bartender only ever needs Tonight — the rest is a manager's job, so we don't
   // show them doors they can't open.
@@ -552,33 +593,8 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
       {section === "team" && canManage && (
         <>
           <TeamKudos venueId={venue.id} />
-
-          <p className="label mb-1.5 text-faint">The team</p>
-          <p className="mb-3 text-xs leading-relaxed text-faint">
-            Bartenders can open a room, record a tab and hand out vibe. Managers can also set the perk and
-            add staff.
-          </p>
-          <ul className="mb-3 divide-y divide-line border-y border-line">
-            {staff.map((s) => (
-              <li key={s.id} className="flex items-center justify-between gap-3 py-2.5">
-                <span className="min-w-0 truncate text-[15px] text-ink">
-                  {s.id === meId ? "you" : s.name} <span className="text-faint">@{s.handle}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-3 text-sm">
-                  <span className="text-xs text-faint">{s.role}</span>
-                  {s.role !== "owner" && s.id !== meId && (
-                    <button
-                      onClick={() => removeStaff(venue.id, s.id)}
-                      className="text-faint transition-colors hover:text-ink"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <AddStaff venueId={venue.id} meId={meId} />
+          <TeamPanel venue={venue} meId={meId} staff={staff} />
+          <PayrollPanel venue={venue} meId={meId} />
         </>
       )}
 
@@ -1413,8 +1429,8 @@ function VenuePerkEditor({ venue }: { venue: Venue }) {
   // A SHOP is judged by the shop's rules, not the bar's: its own jurisdiction
   // permission, visits only, and never an alcoholic reward — see perkPolicy(). Pass
   // the kind or a bottle shop inherits a pub's freedoms.
-  const policy = perkPolicy(venue.country, venue.region, venue.kind);
-  const note = perkPolicyNote(venue.country, venue.region, venue.kind);
+  const policy = perkPolicy(venue.country, venue.region, venue.kind, venue.servesAlcohol);
+  const note = perkPolicyNote(venue.country, venue.region, venue.kind, venue.servesAlcohol);
   const currency = currencyForCountry(venue.country);
 
   // Never leave the editor sitting on an option the venue can't lawfully use.
@@ -1659,66 +1675,573 @@ function QuietNights({ venue }: { venue: Venue }) {
   );
 }
 
-function AddStaff({ venueId, meId }: { venueId: string; meId: string }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SocialProfile[]>([]);
-  const [added, setAdded] = useState<Set<string>>(new Set());
+// ── staff access (053) ───────────────────────────────────────────────────────
+// Where I stand beyond the venues I work: a code a venue's owner gave me to type (they
+// added my email), and where I'm waiting for a yes or paused — with why and who to see.
+function StaffAccessPanel() {
+  const { codes, access } = useStaffAccess();
+  if (codes.length === 0 && access.length === 0) return null;
+  return (
+    <div className="mb-8 space-y-3">
+      {codes.map((c) => (
+        <ClaimCode key={c.id} code={c} />
+      ))}
+      {access.map((a) => (
+        <div key={a.venueId} className="glass rounded-tile p-5">
+          <p className="label mb-1.5 text-faint">{a.status === "locked" ? "Paused" : "Waiting for a yes"}</p>
+          <p className="font-display text-xl leading-tight text-ink">{a.venueName}</p>
+          {a.status === "locked" ? (
+            <>
+              <p className="mt-2 text-[15px] text-ink">{reportLine(a.reportTo, a.reportToRole)}</p>
+              {a.lockReason && <p className="mt-1.5 font-display text-lg italic text-muted">&ldquo;{a.lockReason}&rdquo;</p>}
+              <p className="mt-2 text-xs leading-relaxed text-faint">
+                Your access here is paused, so the venue&apos;s screens are closed to you. Nothing you recorded is lost.
+              </p>
+            </>
+          ) : (
+            <p className="mt-1.5 text-sm text-muted">
+              You asked to join as {roleWithArticle(ROLE_LABEL[a.role] ?? a.role)} — an owner or manager says yes first.
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
-  useEffect(() => {
-    if (query.trim().length < 2) {
-      setResults([]);
+function ClaimCode({ code }: { code: { id: string; venueName: string; role: StaffRole; addedBy?: string; expiresAt: string; triesLeft: number } }) {
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [left, setLeft] = useState(code.triesLeft);
+
+  async function join(e: React.FormEvent) {
+    e.preventDefault();
+    const digits = codeDigits(typed);
+    if (digits.length !== 6) {
+      setError("The code is 6 digits.");
       return;
     }
-    const t = setTimeout(async () => setResults(await searchUsers(query)), 300);
-    return () => clearTimeout(t);
-  }, [query, meId]);
-
-  async function add(id: string) {
-    setAdded((s) => new Set(s).add(id));
-    const err = await addStaff(venueId, id, "bartender");
-    if (err) setAdded((s) => { const n = new Set(s); n.delete(id); return n; });
+    setBusy(true);
+    setError(null);
+    const r = await claimStaffCode(code.id, digits);
+    setBusy(false);
+    if (r.ok) return; // the venue list refreshes with the venue in it
+    if (r.left != null) setLeft(r.left);
+    setError(r.message ?? claimMessage(r.error, r.left, code.addedBy));
   }
 
   return (
-    <div className="mb-4">
-      <label htmlFor={`add-staff-${venueId}`} className="label mb-2 block text-faint">Add to the team</label>
+    <form onSubmit={join} className="glass rounded-tile p-5">
+      <p className="label mb-1.5 text-faint">A code to type</p>
+      <p className="font-display text-xl leading-tight text-ink">{code.venueName}</p>
+      <p className="mt-1.5 text-sm text-muted">
+        {code.addedBy ?? "A manager"} added you as {roleWithArticle(ROLE_LABEL[code.role] ?? code.role)}. Type the 6-digit code they gave you.
+      </p>
+      <label htmlFor={`claim-${code.id}`} className="sr-only">The owner&apos;s code</label>
       <input
-        id={`add-staff-${venueId}`}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Find a person by name or @handle"
-        className={inputClass}
+        id={`claim-${code.id}`}
+        value={typed}
+        onChange={(e) => setTyped(e.target.value)}
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        placeholder="6 digits"
+        maxLength={7}
+        className={clsx(inputClass, "mt-3 text-center font-display text-2xl tracking-[0.3em]")}
       />
-      {query.trim().length >= 2 && (
-        <ul className="mt-2 space-y-2">
-          {results.length === 0 && <li className="px-1 text-sm text-faint">No one by that name or handle.</li>}
-          {results.map((p) => {
-            const isAdded = added.has(p.id);
-            return (
-              <li key={p.id} className="flex items-center justify-between gap-3 px-1">
-                <span className="min-w-0 truncate text-[15px] text-ink">
-                  {p.name} <span className="text-faint">@{p.handle}</span>
-                </span>
-                <button
-                  disabled={isAdded}
-                  onClick={() => add(p.id)}
-                  className={clsx("shrink-0 text-sm transition-colors", isAdded ? "cursor-default text-faint" : "font-medium text-accent hover:opacity-80")}
-                >
-                  {isAdded ? "Added" : "Add"}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      {error && <p className="mt-2 text-sm text-accent">{error}</p>}
+      <button type="submit" disabled={busy} className="mt-3 w-full rounded-ctl bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50">
+        {busy ? "One moment…" : `Join ${code.venueName}`}
+      </button>
+      <p className="mt-2 text-xs text-faint">
+        {left === 1 ? "1 try" : `${left} tries`} left · the code {codeLifeLeft(new Date(code.expiresAt), new Date())} · it only works for the email you&apos;re signed in with.
+      </p>
+    </form>
+  );
+}
+
+// The team, for an owner or manager: add an employee (their code, shown once), say yes
+// to someone who used a shared invite, pause someone's access with a reason and who to
+// report to, give it back, remove. The database decides each (venue_can, can_grant_role).
+function TeamPanel({ venue, meId, staff }: { venue: Venue; meId: string; staff: VenueStaff[] }) {
+  const codes = useOpenEnrolments(venue.id, true);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [pausing, setPausing] = useState<string | null>(null);
+  const [shown, setShown] = useState<{ name: string; email: string; role: StaffRole; code: StaffCode } | null>(null);
+  const mine = venue.myRole;
+  const run = async (p: Promise<string | null>, done: string) => setMsg((await p) ?? done);
+  const waiting = staff.filter((s) => s.status === "pending");
+  const on = staff.filter((s) => s.status === "active");
+  const paused = staff.filter((s) => s.status === "locked");
+  const bosses = on.filter((s) => s.role === "owner" || s.role === "manager");
+
+  const row = (s: VenueStaff, actions: React.ReactNode) => (
+    <li key={s.id} className="py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0 truncate text-[15px] text-ink">
+          {s.id === meId ? "you" : s.name} <span className="text-faint">@{s.handle}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-3 text-sm">
+          <span className="text-xs text-faint">
+            {ROLE_LABEL[s.role] ?? s.role}
+            {s.onShiftSince && s.status === "active" ? " · on shift" : ""}
+          </span>
+          {s.role !== "owner" && s.id !== meId && canGrant(mine, s.role) && actions}
+        </span>
+      </div>
+      {s.status === "locked" && (
+        <p className="mt-1 text-xs text-faint">
+          {reportLine(s.reportTo, null)}
+          {s.lockReason ? ` “${s.lockReason}”` : ""}
+        </p>
+      )}
+      {pausing === s.id && (
+        <PauseForm
+          name={s.name}
+          bosses={bosses}
+          meId={meId}
+          onCancel={() => setPausing(null)}
+          onPause={async (reason, reportTo) => {
+            setPausing(null);
+            await run(lockStaff(venue.id, s.id, reason, reportTo), `${s.name} is paused.`);
+          }}
+        />
+      )}
+    </li>
+  );
+  const btn = (label: string, onClick: () => void, strong = false) => (
+    <button onClick={onClick} className={clsx("transition-colors", strong ? "font-medium text-accent hover:opacity-80" : "text-faint hover:text-ink")}>
+      {label}
+    </button>
+  );
+
+  return (
+    <>
+      <AddEmployee venue={venue} onMade={(m) => setShown(m)} />
+      {shown && <CodeShown venue={venue} {...shown} onDone={() => setShown(null)} />}
+      {msg && <p className="mb-3 text-xs text-accent" role="status">{msg}</p>}
+
+      {waiting.length > 0 && (
+        <>
+          <p className="label mb-1.5 text-faint">Waiting for your yes</p>
+          <p className="mb-2 text-xs leading-relaxed text-faint">They used a shared invite code. Say yes only if you know who this is.</p>
+          <ul className="mb-5 divide-y divide-line border-y border-line">
+            {waiting.map((s) =>
+              row(
+                s,
+                <>
+                  {btn("Say no", () => run(declineStaff(venue.id, s.id), `Said no to ${s.name}.`))}
+                  {btn("Approve", () => run(approveStaff(venue.id, s.id), `${s.name} is on the team.`), true)}
+                </>,
+              ),
+            )}
+          </ul>
+        </>
+      )}
+
+      {codes.length > 0 && (
+        <>
+          <p className="label mb-1.5 text-faint">Added, not in yet</p>
+          <ul className="mb-5 divide-y divide-line border-y border-line">
+            {codes.map((c) => {
+              const dead = c.attempts >= 5 || new Date(c.expiresAt) <= new Date();
+              return (
+                <li key={c.id} className="flex items-center justify-between gap-3 py-2.5">
+                  <span className="min-w-0 truncate text-[15px] text-ink">
+                    {c.name} <span className="text-faint">{c.email}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3 text-sm">
+                    <span className="text-xs text-faint">
+                      {ROLE_LABEL[c.role]} · {c.attempts >= 5 ? "5 wrong tries" : `code ${codeLifeLeft(new Date(c.expiresAt), new Date())}`}
+                    </span>
+                    {btn("Cancel", () => run(revokeStaffEnrolment(c.id), `${c.name}'s code is cancelled.`))}
+                    {btn(
+                      "New code",
+                      async () => {
+                        const r = await reissueStaffCode(c.id);
+                        if (r.code) setShown({ name: c.name, email: c.email, role: c.role, code: r.code });
+                        else setMsg(r.error ?? "Couldn't make a new code.");
+                      },
+                      dead,
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+
+      <p className="label mb-1.5 text-faint">The team</p>
+      <ul className="mb-5 divide-y divide-line border-y border-line">
+        {on.map((s) =>
+          row(
+            s,
+            <>
+              {btn("Pause", () => setPausing(s.id))}
+              {btn("Remove", () => run(removeStaff(venue.id, s.id).then(() => null), `${s.name} is off the team.`))}
+            </>,
+          ),
+        )}
+      </ul>
+
+      {paused.length > 0 && (
+        <>
+          <p className="label mb-1.5 text-faint">Paused</p>
+          <ul className="mb-5 divide-y divide-line border-y border-line">
+            {paused.map((s) =>
+              row(
+                s,
+                <>
+                  {btn("Remove", () => run(removeStaff(venue.id, s.id).then(() => null), `${s.name} is off the team.`))}
+                  {btn("Give access again", () => run(unlockStaff(venue.id, s.id), `${s.name} can use the app again.`), true)}
+                </>,
+              ),
+            )}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
+// ── payroll (054): hours and pay by person, and the file an accountant opens ────
+// In NAME order — for pay, never a ranking. A day is the VENUE's (its time zone), and a
+// shift counts on the day it started. The CSV is byte for byte the one the venue app
+// shares (payroll.ts and payroll.dart are held to one fixture). brewdiary reports hours
+// and rates; overtime, tax and deductions stay with the payroll provider.
+function PayrollPanel({ venue, meId }: { venue: Venue; meId: string }) {
+  const tz = venueTimeZone(venue.country, venue.region);
+  const [period, setPeriod] = useState<PayPeriod>("lastWeek");
+  const [from, to] = payPeriod(period, todayIn(tz));
+  const { rows, loading, error } = usePayroll(venue.id, from, to, tz);
+  const rates = usePayRates(venue.id);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const currency = currencyForCountry(venue.country);
+  const money = (n: number) => formatMoney(n, currency, { round: false });
+  const people = payrollTotals(rows);
+  const worked = people.reduce((n, p) => n + p.workedMinutes, 0);
+  const noRate = people.filter((p) => p.missingRate && p.role !== "owner").map((p) => p.name);
+
+  function download() {
+    const csv = payrollCsv({ venue: venue.name, currency, from, to, rows });
+    const url = URL.createObjectURL(new Blob([payrollFileText(csv)], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = payrollFileName(venue.name, from, to);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  return (
+    <div className="mt-8 border-t border-line pt-5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="label text-faint">Payroll</p>
+        <div className="flex flex-wrap gap-1.5">
+          {PAY_PERIODS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPeriod(p.id)}
+              aria-pressed={period === p.id}
+              className={clsx(
+                "rounded-ctl px-2.5 py-1 text-xs transition-colors",
+                period === p.id ? "bg-ink font-medium text-paper" : "glass glass-press text-muted hover:text-ink",
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="mb-3 text-xs text-faint">
+        {from === to ? from : `${from} to ${to}`} · days in {tz}
+      </p>
+
+      {loading && rows.length === 0 ? (
+        <div className="glass h-32 animate-pulse rounded-tile" />
+      ) : error ? (
+        <p className="text-sm text-faint" role="status">{error}</p>
+      ) : (
+        <>
+          <div className="glass grid grid-cols-2 gap-4 rounded-tile p-5">
+            <Stat label="hours worked" value={minutesWords(worked)} />
+            <Stat label="pay" value={money(payrollTotalCents(people) / 100)} accent />
+          </div>
+
+          {noRate.length > 0 && (
+            <p className="mt-3 text-xs leading-relaxed text-accent" role="status">
+              No rate for {noRate.join(", ")} — their hours are in the file without pay. Set one with “Pay” below.
+            </p>
+          )}
+          {msg && <p className="mt-3 text-xs text-accent" role="status">{msg}</p>}
+
+          {people.length === 0 ? (
+            <p className="mt-4 text-sm text-faint">No hours in this period.</p>
+          ) : (
+            <ul className="mt-4 divide-y divide-line border-y border-line">
+              {people.map((p) => {
+                const canPay = p.userId !== meId && p.role !== "owner" && p.role !== "left" && canGrant(venue.myRole, p.role as StaffRole);
+                const rate = rates[p.userId] ?? null;
+                return (
+                  <li key={p.userId} className="py-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate text-[15px] text-ink">
+                        {p.userId === meId ? "you" : p.name}{" "}
+                        <span className="text-xs text-faint">
+                          {p.role === "left" ? "left the team" : (ROLE_LABEL[p.role as StaffRole] ?? p.role)} · {p.daysWorked}{" "}
+                          {p.daysWorked === 1 ? "day" : "days"} · {minutesWords(p.workedMinutes)}
+                          {p.plannedMinutes > 0 ? ` of ${minutesWords(p.plannedMinutes)} planned` : ""}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-3 text-sm">
+                        <span className="tnum text-ink">{p.payCents === null ? (p.workedMinutes > 0 && p.role !== "owner" ? "no rate" : "") : money(p.payCents / 100)}</span>
+                        {canPay && (
+                          <button onClick={() => setEditing(editing === p.userId ? null : p.userId)} className="text-faint transition-colors hover:text-ink">
+                            Pay
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                    {editing === p.userId && (
+                      <PayRateForm
+                        name={p.name}
+                        currency={currency}
+                        rate={rate}
+                        onCancel={() => setEditing(null)}
+                        onSave={async (r) => {
+                          setEditing(null);
+                          const err = await setStaffPay(venue.id, p.userId, r);
+                          setMsg(err ?? (r === null ? `${p.name}'s rate is cleared.` : `${p.name}'s rate is saved.`));
+                        }}
+                      />
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <button
+            onClick={download}
+            disabled={rows.length === 0}
+            className="glass glass-press mt-4 w-full rounded-ctl py-3 text-sm font-medium text-ink transition-opacity disabled:opacity-40"
+          >
+            Download CSV
+          </button>
+          <p className="mt-3 max-w-prose text-xs leading-relaxed text-faint">
+            By name, for pay — never a ranking. Unpaid breaks come off the hours; a shift keeps the rate it started
+            at. The file opens in any spreadsheet: one line per person per day, then the totals. Overtime, tax and
+            deductions are your payroll provider&apos;s — brewdiary reports hours and rates. Corrections and missed
+            shifts are made in the venue app, always with a reason.
+          </p>
+        </>
       )}
     </div>
   );
 }
 
-// The owner sets the venue's coarse location once — standing in the bar. We keep only
-// a ~40 km geohash cell (never a pin), which is what area taste trends match on so
-// Ninkasi can read the neighbourhood. updateVenue bumps the version, so the label here
-// flips to "set" on its own once the venue reloads.
+function PayRateForm({
+  name,
+  currency,
+  rate,
+  onSave,
+  onCancel,
+}: {
+  name: string;
+  currency: string;
+  rate: number | null;
+  onSave: (rate: number | null) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(rate === null ? "" : String(rate));
+  const [err, setErr] = useState<string | null>(null);
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const r = Number(text.trim().replace(/,/g, ""));
+    if (!text.trim() || !Number.isFinite(r) || r < 0 || r > 100000) {
+      setErr("A number from 0 to 1,00,000.");
+      return;
+    }
+    onSave(Math.round(r * 100) / 100);
+  }
+  return (
+    <form onSubmit={submit} className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+      <label className="sr-only" htmlFor={`rate-${name}`}>
+        {name}&apos;s hourly rate
+      </label>
+      <span className="text-faint">{currencySymbol(currency)}</span>
+      <input
+        id={`rate-${name}`}
+        inputMode="decimal"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="per hour"
+        className="glass w-28 rounded-ctl px-3 py-1.5 text-ink outline-none"
+        autoFocus
+      />
+      <button type="submit" className="font-medium text-accent hover:opacity-80">
+        Save
+      </button>
+      {rate !== null && (
+        <button type="button" onClick={() => onSave(null)} className="text-faint hover:text-ink">
+          Clear
+        </button>
+      )}
+      <button type="button" onClick={onCancel} className="text-faint hover:text-ink">
+        Cancel
+      </button>
+      {err && <span className="w-full text-xs text-accent">{err}</span>}
+      <span className="w-full text-xs text-faint">Before tax. The team&apos;s history notes that it changed — never the amount.</span>
+    </form>
+  );
+}
+
+function PauseForm({
+  name,
+  bosses,
+  meId,
+  onPause,
+  onCancel,
+}: {
+  name: string;
+  bosses: VenueStaff[];
+  meId: string;
+  onPause: (reason: string, reportTo: string | null) => void;
+  onCancel: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [to, setTo] = useState<string | null>(bosses.find((b) => b.id === meId)?.id ?? bosses[0]?.id ?? null);
+  return (
+    <div className="glass mt-2 rounded-ctl p-3">
+      <p className="text-xs leading-relaxed text-faint">
+        Everything here stops for {name} at once, and they&apos;re clocked out. They see your message and who to report to.
+      </p>
+      <label htmlFor="pause-why" className="sr-only">Why (they&apos;ll see this)</label>
+      <input
+        id="pause-why"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        maxLength={200}
+        placeholder="Why (they'll see this)"
+        className={clsx(inputClass, "mt-2")}
+      />
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {bosses.map((b) => (
+          <button
+            key={b.id}
+            onClick={() => setTo(b.id)}
+            aria-pressed={to === b.id}
+            className={clsx("rounded-ctl px-3 py-1.5 text-xs transition-colors", to === b.id ? "bg-ink text-paper" : "glass text-muted hover:text-ink")}
+          >
+            Report to {b.id === meId ? "me" : b.name}
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center gap-3 text-sm">
+        <button onClick={() => onPause(reason, to)} className="font-medium text-accent hover:opacity-80">
+          Pause access
+        </button>
+        <button onClick={onCancel} className="text-faint hover:text-ink">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Add an employee: their details and the role. brewdiary makes a 6-digit code, shown once;
+// they sign in to brewdiary bar with that email and type it.
+function AddEmployee({ venue, onMade }: { venue: Venue; onMade: (m: { name: string; email: string; role: StaffRole; code: StaffCode }) => void }) {
+  const roles = STAFF_ROLES.filter((r) => canGrant(venue.myRole, r));
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [role, setRole] = useState<StaffRole>(roles.includes("server") ? "server" : roles[roles.length - 1] ?? "server");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return setError("Add their name.");
+    if (!validStaffEmail(email)) return setError("That email doesn't look right.");
+    if (phone.trim() && !validStaffPhone(phone)) return setError("That phone number doesn't look right.");
+    setBusy(true);
+    setError(null);
+    const r = await enrolStaff(venue.id, { name, email, phone, role });
+    setBusy(false);
+    if (!r.code) return setError(r.error ?? "Couldn't add them.");
+    onMade({ name: name.trim(), email: email.trim().toLowerCase(), role, code: r.code });
+    setName("");
+    setEmail("");
+    setPhone("");
+  }
+
+  return (
+    <form onSubmit={submit} className="mb-6">
+      <p className="label mb-1.5 text-faint">Add an employee</p>
+      <p className="mb-2.5 text-xs leading-relaxed text-faint">
+        They sign in to brewdiary bar with this email and type the code you get here. Only then are they on the team, as the role you pick.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input aria-label="Their name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Their name" maxLength={60} className={inputClass} />
+        <input aria-label="Their email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Their email" className={inputClass} />
+        <input aria-label="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (optional)" className={inputClass} />
+        <select aria-label="Role" value={role} onChange={(e) => setRole(e.target.value as StaffRole)} className={inputClass}>
+          {roles.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABEL[r]}
+            </option>
+          ))}
+        </select>
+      </div>
+      {error && <p className="mt-2 text-sm text-accent">{error}</p>}
+      <button type="submit" disabled={busy} className="mt-2.5 rounded-ctl bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50">
+        {busy ? "One moment…" : "Make their code"}
+      </button>
+    </form>
+  );
+}
+
+function CodeShown({ venue, name, email, role, code, onDone }: { venue: Venue; name: string; email: string; role: StaffRole; code: StaffCode; onDone: () => void }) {
+  const spaced = code.code.length === 6 ? `${code.code.slice(0, 3)} ${code.code.slice(3)}` : code.code;
+  const text = enrolShareText({ venue: venue.name, roleWord: ROLE_LABEL[role], email, code: code.code });
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="glass mb-6 rounded-tile p-5 text-center" role="status">
+      <p className="text-sm text-muted">{name}&apos;s code</p>
+      <p className="mt-2 font-display text-5xl tracking-[0.2em] text-ink tabular-nums">{spaced}</p>
+      <p className="mx-auto mt-3 max-w-prose text-xs leading-relaxed text-faint">
+        Shown once — share it now, or tell them in person. It works only for {email}, for 48 hours, with 5 tries.
+      </p>
+      <div className="mt-4 flex items-center justify-center gap-4 text-sm">
+        <button
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(text);
+              setCopied(true);
+            } catch {
+              /* no clipboard — the code is on screen */
+            }
+          }}
+          className="font-medium text-accent hover:opacity-80"
+        >
+          {copied ? "Copied" : "Copy the message"}
+        </button>
+        <button onClick={onDone} className="text-faint hover:text-ink">
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// The owner sets the venue's location once — standing in the venue. We keep a ~1 km
+// geohash cell (a venue's address is public anyway): its first 4 characters are what
+// area taste trends match on, its first 5 place it on the area heat map (048).
+// updateVenue bumps the version, so the label flips to "set" once the venue reloads.
 function VenueLocation({ venue }: { venue: Venue }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -1726,7 +2249,7 @@ function VenueLocation({ venue }: { venue: Venue }) {
   async function setLoc() {
     setBusy(true);
     setMsg(null);
-    const { geohash, error } = await requestLocationGeohash();
+    const { geohash, error } = await requestLocationGeohash(VENUE_PRECISION);
     if (error || !geohash) {
       setBusy(false);
       setMsg(error ?? "Couldn't read a location.");
@@ -1741,8 +2264,8 @@ function VenueLocation({ venue }: { venue: Venue }) {
     <div className="mt-6 border-t border-line pt-4">
       <p className="text-sm text-ink">Venue location</p>
       <p className="mb-2.5 text-xs leading-relaxed text-faint">
-        Stand in your venue and set its location once. We keep only a rough ~40&nbsp;km cell — never a pin — so
-        Ninkasi can read what your neighbourhood is drinking. {venue.geohash ? "It's set." : "Not set yet."}
+        Stand in your venue and set its location once. We keep a ~1&nbsp;km cell — never a pin — so Ninkasi can
+        read what your area is drinking and the area map can place you. {venue.geohash ? "It's set." : "Not set yet."}
       </p>
       <div className="flex items-center gap-3">
         <button
@@ -1762,6 +2285,21 @@ function VenueLocation({ venue }: { venue: Venue }) {
         )}
       </div>
       {msg && <p className="mt-2 text-xs text-accent">{msg}</p>}
+      <label className="mt-4 flex items-start gap-3 text-sm text-ink">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={venue.areaShare}
+          onChange={(e) => updateVenue(venue.id, { areaShare: e.target.checked })}
+        />
+        <span>
+          Share our totals with the area map
+          <span className="block text-xs leading-relaxed text-faint">
+            Counts and bands only, from guests who said yes, in groups of 5+ people across 3+ venues. Venues that
+            share see the typical night&apos;s spend around them; venues that don&apos;t, don&apos;t.
+          </span>
+        </span>
+      </label>
     </div>
   );
 }

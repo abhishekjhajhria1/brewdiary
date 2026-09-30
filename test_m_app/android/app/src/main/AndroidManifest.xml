@@ -48,6 +48,7 @@
                 <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/u/"/>
                 <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/party/"/>
                 <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/m/"/>
+                <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/t/"/>
             </intent-filter>
             <!-- A venue's NFC tag holds https://bwdy.site/m/<slug>. Claiming it here
                  sends the tap straight to the app (open or not) instead of a
@@ -56,6 +57,7 @@
                 <action android:name="android.nfc.action.NDEF_DISCOVERED"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/m/"/>
+                <data android:scheme="https" android:host="bwdy.site" android:pathPrefix="/t/"/>
             </intent-filter>
         </activity>
         <!-- The home-screen widget: this month's mosaic (lib/ui/home_widget.dart draws it). -->

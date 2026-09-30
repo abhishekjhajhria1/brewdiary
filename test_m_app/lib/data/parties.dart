@@ -3,7 +3,7 @@
 //
 // A party_shares row exposes one entry to one party; the recap is derived from
 // whatever guests shared in. Sparks/vibe are positive-only and server-authoritative.
-import '../core/money.dart';
+import 'package:brewdiary_core/money.dart';
 import 'auth.dart';
 import 'base.dart';
 import 'circles.dart' show SharedEntry;

@@ -2,9 +2,9 @@
 // nights count), a failed network load says so and retries, and the reminder
 // skips evenings you've already written in.
 import 'package:brewdiary/app.dart';
-import 'package:brewdiary/core/date.dart';
-import 'package:brewdiary/core/derive.dart';
-import 'package:brewdiary/core/types.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/types.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/data/reminder.dart';
 import 'package:brewdiary/ui/screens/morning_after.dart';

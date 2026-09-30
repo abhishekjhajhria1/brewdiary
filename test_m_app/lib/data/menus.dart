@@ -2,7 +2,7 @@
 // tapping the NFC tag / scanning the QR on the table (bwdy.site/m/<slug>); the
 // phone routes that link here. The read is anonymous-capable and records nothing:
 // opening a menu tells the venue nothing about you.
-import '../core/menus.dart';
+import 'package:brewdiary_core/menus.dart';
 import 'base.dart';
 
 class MenuApi {

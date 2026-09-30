@@ -8,7 +8,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
-import '../core/bartender.dart';
+import 'package:brewdiary_core/bartender.dart';
 import 'base.dart';
 
 class BartenderStream {

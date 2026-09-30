@@ -38,13 +38,18 @@ absent, an RLS flag that never got enabled, a `SECURITY DEFINER` function silent
 wrong jurisdiction's rules. That has happened here. So after ANY migration:
 
 ```bash
-npm run db:audit   # READ-ONLY. Asserts the SHAPE of the live schema + every security invariant.
-npm run db:verify  # Plays a whole night against the real schema IN A TRANSACTION IT ROLLS BACK.
+npm run db:audit    # READ-ONLY. Asserts the SHAPE of the live schema + every security invariant.
+npm run db:verify   # Plays a whole night against the real schema IN A TRANSACTION IT ROLLS BACK.
+npm run db:contract # READ-ONLY. Every .from()/.rpc() call in the three apps, checked against the schema.
+npm run db:local    # All three, on a THROWAWAY local Postgres built from supabase/ (no secrets needed).
 ```
 
 `db:audit` is what caught `perk_policy()` judging every venue on earth by Massachusetts law —
 a bug no unit test could see, because every caller was a trigger and nothing ever threw.
-Both run in CI (`.github/workflows/ci.yml`) on every push to `main`.
+Both run in CI (`.github/workflows/ci.yml`) on every push to `main`. `db:local`
+(`scripts/db-local.sh`) applies schema.sql + every numbered migration to a fresh Postgres and runs
+the same two checks there — on every push and PR — so a new migration is proven before the
+maintainer runs it for real. It needs the Postgres server binaries (`initdb`, `pg_ctl`).
 
 ---
 
@@ -59,11 +64,13 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `src/components/` | Feature-grouped UI: `calendar/`, `log/`, `you/`, `together/`, `discover/`, `bartender/`, `share/`, `onboarding/`, `venue/`, `kiosk/`, `profile/`, `ui/`. |
 | `src/lib/` | Framework-free logic — the "brains". See the table below. |
 | `public/` | Static assets: PWA `manifest.webmanifest`, `sw.js`, app icons. |
-| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`030`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
+| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`053`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
 | `ai-db/` | The **separate** AI database schema (pseudonymous Ninkasi corpus; deny-all RLS). |
 | `scripts/` | Dev/ops tooling: `db.mjs` (migration runner), `gen-icons.mjs`, `verify-venue.mjs` (the only path that approves a venue), `ninkasi/` (dataset export, trend sync, AI-DB verify). |
 | `tests/` | Vitest unit tests for `src/lib` (excluded from `next build`). |
-| `test_m_app/` | The **Flutter mobile user app** (Android + iOS) on the same Supabase backend. Pure logic in `lib/core` is a 1:1 port of `src/lib` with parity tests — change one, change both. See `test_m_app/README.md`; connecting it to the server, Ninkasi, email-code sign-in and the bar side: `docs/12-mobile-server-and-venues.md`. |
+| `test_m_app/` | The **Flutter mobile user app** (Android + iOS) on the same Supabase backend. Its pure logic lives in `packages/brewdiary_core/` (shared with the venue app), a 1:1 port of `src/lib` with parity tests — change one, change both. See `test_m_app/README.md`; connecting it to the server, Ninkasi, email-code sign-in and the bar side: `docs/12-mobile-server-and-venues.md`. |
+| `packages/brewdiary_core/` | The pure-Dart logic both Flutter apps share (dates, derive, drinks, money, jurisdiction, menus), with the parity tests. `dart test` inside it. |
+| `mobile-bar/` | The **venue staff app** (Flutter; iOS + Android, phones + tablets) for bars, clubs, restaurants, cafés, liquor stores, sweet shops, bakeries and other shops — role-based. Same backend. Runs as a demo venue with no env. The build list and what's done: `mobile-bar/PLAN.md`. |
 | `docs/` | The beginner-proof handbook (committed — for every developer you hire). |
 | `.claude/skills/taste-engine/` | The design/product spec + anti-slop engine. Loaded as a Claude Code skill; **keep it here** (moving it breaks the skill). |
 | `internal/` | **Git-ignored** local planning/handoff. Not in a fresh clone. |
@@ -82,8 +89,13 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `profile.ts` | Auth (Supabase) + `useAuth`/`useProfile`. The seam real auth plugs into. |
 | `friends.ts` / `circles.ts` / `parties.ts` | Together social: friends+feed, private circles, parties/events (+ host-approval). A party doubles as a venue "room" (`venue_id`). |
 | `points.ts` | Sparks/vibe boards over the append-only `point_events` ledger (positive-only, counts-only) + the kiosk board poller + the `kiosk_visible` opt-in. |
-| `venues.ts` / `perks.ts` | The bar side: venues (`kind`: **bar** = on-trade, **store** = off-trade), staff roles, verification; up to 3 perk **tiers**, each an independent punch-card with its own claim clock. |
+| `venues.ts` / `perks.ts` | The bar side: venues, staff roles, verification; up to 3 perk **tiers**, each an independent punch-card with its own claim clock. |
+| `venueKinds.ts` | The eight kinds of venue (047) and their **legal class**: on-trade (bar, club, a licensed restaurant/café), off-trade (**store** = liquor store), no-alcohol (sweet shop, bakery, shop, an unlicensed café). A no-alcohol place is outside alcohol-promotion law but still deny-by-default on the country. **Counters** (store, sweet shop, bakery, shop) run a till, not rooms. |
+| `roles.ts` | Staff roles (owner, manager, supervisor, bartender, server, host, kitchen) and what each may do — a mirror of `role_capabilities` (045); the DB's `venue_can()` decides. A test parses the SQL so the copies can't drift. |
+| `geohash.ts` | On-device geohash. People are kept at 4 letters (~40 km) at most, venues at 6 (~1 km). `subcells()` / `directionFrom()` are the area heat map's grid (048), twinned in `packages/brewdiary_core/lib/geo.dart` with the same tests. The map itself shows only groups of 5+ people who said yes, across 3+ venues, rounded to 5s (`docs/13`). |
+| `signals.ts` | **Outside signals** (049): public facts about places (events, openings, dry days, prices) from scrapers and feeds. `cleanSignal()` is the only way in (the `/api/signals/import` route and `npm run signals:import`): places and happenings, never people — contact details redacted, person-records refused, coordinates turned into a geohash. The table has no client policy; staff read via `venue_area_signals()`. |
 | `jurisdiction.ts` | **Where you are decides what the app may lawfully do.** Deny-by-default: an unresearched country gets the STRICTEST setting, never the most permissive. Mirrors `public.jurisdiction_policy` — **the DATABASE is the authority**; this copy only lets the UI *explain* the rule instead of just failing. |
+| `staffAccess.ts` | The team (053): the words and checks around **adding an employee with the owner's code** (a 6-digit code, hashed, email-bound, 48 h, 5 tries) and a **paused** person — twinned with `mobile-bar/lib/logic/staff.dart` (same test cases). The hooks and calls live in `venues.ts`. Nobody is inserted onto a roster from a client any more: the owner's code or an invite a manager approves. Only ACTIVE staff pass `is_venue_staff`/`venue_role`, so a pause stops everything at once. `docs/17`. |
 | `kudos.ts` | Thanking staff. A manager sees ONE total for the team — a per-person league table is impossible, and not just hidden: the RLS policy makes it unreadable even via direct SQL. |
 | `guestbook.ts` | The venue **guest book** — a **first-party** CRM (migration 040). A venue keeps notes/tags on guests it has actually served, and sees history IT generated (visits, tabs, perks). Hard rule enforced in the DB: **no join to `entries`** (a guest's diary never reaches a venue) and **no cross-venue read**. Notes are staff-written only; the guest can see every note kept on them and delete it (`my_venue_books`, You → Settings). This is the deliberate first-party revision of the older "never a per-guest list" line — we still refuse a churn list of strangers or anyone's activity elsewhere. |
 | `menus.ts` | Table **menus** (migration 042), opened by an NFC tag / QR holding `bwdy.site/m/<slug>`. A menu is NOT an offer (no discount column), is reached from the table and **never from Discover**, only verified venues are served, and "you'd probably like" (`menuPicks`) is computed on the guest's device — the venue never learns who looked. |
@@ -95,6 +107,10 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `expenses.ts` | Split (Splitwise-style) balance math. |
 | `wishlist.ts` / `trends.ts` / `training.ts` | To-try list, opt-in taste trends, local Ninkasi training export. |
 | `bartender.ts` | Ninkasi persona + system prompt + scripted fallback. |
+| `hostAdvisor.ts` | **Ninkasi for hosts** (`/api/host-ai`): the shift companion for every staff role. The brief is built on the phone from what that role can already see — counts and titles, never a guest — and the briefing rules are twinned in `mobile-bar/lib/logic/host_brief.dart` (same test cases). Signed-in only; never writes the training corpus. |
+| `appLinks.ts` | The `/.well-known` app-link files (rewritten in `next.config.mjs` to `/api/app-links/*`): bwdy.site → the guest app, bar.bwdy.site → the venue app, from server env (fingerprints, Apple team id); 404 until set. How all four windows connect (Supabase, Cloudflare, hosting): `docs/14`. |
+| *(counter, 050)* | Counters' till lives in the venue app (`mobile-bar/lib/logic/counter.dart`) over `supabase/050_shop_counter.sql`: products (never above MRP), a stock ledger (on hand is derived), suppliers, `ring_sale()` (the SERVER prices it), and alcohol that is **deny-by-default** — no `retail_alcohol_rules` row with a source, no bottle sale; a listed dry day stops it; hours, per-sale ml limit and an ID check (a yes, never the ID) apply. A sale has no customer column. `docs/15`. |
+| `tableOrder.ts` | The table's own link `bwdy.site/t/<code>` (051): the menu with the table known, and — when the venue switches `table_service` on — a signed-in guest's order REQUEST (staff accept it onto a tab or decline) and "call staff / bill please / water". Staff never see who asked. The venue side (floor, tabs, bar/kitchen tickets, bills where STAFF decide how it was paid, waitlist, live board) is in `mobile-bar/`; `docs/16`. |
 | `ratelimit.ts` / `aidb.ts` / `supabase-server.ts` | AI-route rate limiting; server-only pseudonymized AI-DB writer; SSR session reader. |
 
 ---

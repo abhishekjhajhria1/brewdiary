@@ -11,6 +11,7 @@ import type { Venue } from "@/lib/venues";
 import { useVenuePerks } from "@/lib/perks";
 import { useAreaTrends } from "@/lib/trends";
 import { currencyForCountry, formatMoney } from "@/lib/money";
+import { isCounter } from "@/lib/venueKinds";
 import {
   ADVISOR_STARTERS,
   ADVISOR_OFFLINE_NOTE,
@@ -46,7 +47,8 @@ export function VenueAdvisor({
     const currency = currencyForCountry(venue.country);
     return {
       venueName: venue.name,
-      kind: venue.kind,
+      // The advisor reads a counter like a shop and everything else like a bar.
+      kind: isCounter(venue.kind) ? "store" : "bar",
       days,
       currency,
       quietNightLabels: (venue.quietNights ?? []).map((d) => WEEKDAYS[d]).filter(Boolean),

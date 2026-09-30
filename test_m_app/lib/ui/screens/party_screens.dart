@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../config.dart';
-import '../../core/date.dart';
-import '../../core/money.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/money.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/circles.dart' show SharedEntry;

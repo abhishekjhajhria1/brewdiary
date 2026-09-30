@@ -899,15 +899,24 @@ class Initial extends StatelessWidget {
 /// Bottom sheet in the house style. It rides ABOVE the keyboard (the whole sheet
 /// lifts, so the primary button is never hidden), scrolls when tall, and dismisses
 /// the keyboard on drag. Pass `title` for a standard header with a close button.
-Future<R?> showBdSheet<R>(BuildContext context, {required WidgetBuilder builder, bool scroll = true, String? title}) {
-  return showModalBottomSheet<R>(
-    context: context,
+///
+/// It returns once the sheet has fully gone — after its closing animation, not at the
+/// pop — so a caller that disposes the sheet's text controllers afterwards never pulls
+/// them out from under a field that's still animating (and, if it had focus, still
+/// rebuilding).
+Future<R?> showBdSheet<R>(BuildContext context, {required WidgetBuilder builder, bool scroll = true, String? title}) async {
+  final navigator = Navigator.of(context);
+  final l10n = MaterialLocalizations.of(context);
+  final route = ModalBottomSheetRoute<R>(
+    capturedThemes: InheritedTheme.capture(from: context, to: navigator.context),
     isScrollControlled: true,
     useSafeArea: true,
     // On a foldable or tablet the sheet stays phone-width, centred.
     constraints: const BoxConstraints(maxWidth: 600),
     backgroundColor: Colors.transparent,
-    barrierColor: context.bd.scrim,
+    modalBarrierColor: context.bd.scrim,
+    barrierLabel: l10n.scrimLabel,
+    barrierOnTapHint: l10n.scrimOnTapHint(l10n.bottomSheetLabel),
     builder: (ctx) {
       final bd = ctx.bd;
       final mq = MediaQuery.of(ctx);
@@ -955,6 +964,9 @@ Future<R?> showBdSheet<R>(BuildContext context, {required WidgetBuilder builder,
       );
     },
   );
+  final result = await navigator.push(route);
+  await route.completed;
+  return result;
 }
 
 OverlayEntry? _toastEntry;

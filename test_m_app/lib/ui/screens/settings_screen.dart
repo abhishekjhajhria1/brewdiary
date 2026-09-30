@@ -14,12 +14,12 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../config.dart';
-import '../../core/date.dart';
-import '../../core/handles.dart';
-import '../../core/jurisdiction.dart';
-import '../../core/misc.dart';
-import '../../core/money.dart';
-import '../../core/types.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/handles.dart';
+import 'package:brewdiary_core/jurisdiction.dart';
+import 'package:brewdiary_core/misc.dart';
+import 'package:brewdiary_core/money.dart';
+import 'package:brewdiary_core/types.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';
@@ -684,6 +684,18 @@ class _PrivacyGroupState extends State<_PrivacyGroup> {
                         trailing: _locating ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: bd.muted)) : null,
                         onTap: _locating ? null : _setArea,
                       ),
+              if (settings.shareTrends)
+                Loader<bool?>(
+                  refresh: profileRev,
+                  load: ProfileApi.shareNightsOut,
+                  builder: (context, on, _) => on == null
+                      ? const SizedBox.shrink()
+                      : SettingRow(
+                          title: 'Neighbourhood maps',
+                          hint: 'Also count me where I go out (the venue rooms I join) — only in groups of 5+ people across 3+ venues. Never my name, never which venue.',
+                          trailing: BdToggle(on: on, label: 'Neighbourhood maps', onChanged: ProfileApi.setShareNightsOut),
+                        ),
+                ),
               SettingRow(
                 title: 'Leaderboard in Together',
                 hint: 'Show the board — and put me on it, next to friends who also opted in. Never your spend.',

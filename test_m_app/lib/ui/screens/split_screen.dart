@@ -3,9 +3,9 @@
 // they said they are; changeable in You → Settings).
 import 'package:flutter/material.dart';
 
-import '../../core/date.dart';
-import '../../core/misc.dart';
-import '../../core/money.dart';
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/misc.dart';
+import 'package:brewdiary_core/money.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/friends.dart';

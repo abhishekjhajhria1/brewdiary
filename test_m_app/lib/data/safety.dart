@@ -4,6 +4,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../config.dart';
 import 'auth.dart';
@@ -59,17 +60,22 @@ class SafetyApi {
   }
 
   /// Write-only; reporting the same person twice is a silent no-op (dedup is never revealed).
+  ///
+  /// A plain insert: an upsert names a conflict target, and Postgres then checks the new
+  /// row against the SELECT policies too — reports has none (nobody reads a report back),
+  /// so every upsert was refused. A duplicate (unique_violation, 23505) is answered like a
+  /// success, so dedup is still never revealed.
   static Future<String?> report(String subjectUserId, ReportReason reason, {String? note, String? planId}) async {
     final c = db;
     final me = auth.meId;
     if (c == null || me == null) return 'offline';
     try {
-      await c.from('reports').upsert(
+      await c.from('reports').insert(
         {'reporter_id': me, 'subject_user_id': subjectUserId, 'plan_id': planId, 'reason': reason.name, 'note': (note?.trim().isEmpty ?? true) ? null : note!.trim()},
-        onConflict: 'reporter_id,subject_user_id',
-        ignoreDuplicates: true,
       );
       return null;
+    } on PostgrestException catch (e) {
+      return e.code == '23505' ? null : "Couldn't send the report — try again.";
     } catch (_) {
       return "Couldn't send the report — try again.";
     }
@@ -177,6 +183,23 @@ class ProfileApi {
   static Future<void> setVisibility(ProfileVisibility v) => _update({'profile_visibility': v.name});
   static Future<void> setSocialHandle(String h) => _update({'social_handle': h.trim().isEmpty ? null : h.trim()});
   static Future<void> setShareTrends(bool v) => _update({'share_trends': v});
+
+  /// Neighbourhood maps (048): the second, separate yes — count me, in groups of 5+
+  /// across 3+ venues, where I go out. Null until the migration is applied, so the
+  /// row stays hidden rather than failing.
+  static Future<bool?> shareNightsOut() async {
+    final c = db;
+    final me = auth.meId;
+    if (c == null || me == null) return null;
+    try {
+      final r = await c.from('profiles').select('share_nights_out').eq('id', me).maybeSingle();
+      return r?['share_nights_out'] == true;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> setShareNightsOut(bool v) => _update({'share_nights_out': v});
 
   /// Store (or clear) the coarse area cell. Raw coordinates never leave the device.
   static Future<void> setTrendsGeo(String? geohash) => _update({'trends_geo': geohash == null ? null : (geohash.length > 12 ? geohash.substring(0, 12) : geohash)});
