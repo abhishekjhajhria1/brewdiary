@@ -16,8 +16,20 @@ import {
   useVerification,
   createVenue,
   updateVenue,
-  addStaff,
   removeStaff,
+  enrolStaff,
+  reissueStaffCode,
+  revokeStaffEnrolment,
+  approveStaff,
+  declineStaff,
+  lockStaff,
+  unlockStaff,
+  useOpenEnrolments,
+  useStaffAccess,
+  claimStaffCode,
+  type StaffCode,
+  type VenueStaff,
+  type StaffRole,
   deleteVenue,
   requestVerification,
   withdrawVerification,
@@ -26,6 +38,8 @@ import {
   type Venue,
 } from "@/lib/venues";
 import { searchUsers, type SocialProfile } from "@/lib/friends";
+import { ROLE_LABEL, STAFF_ROLES, canGrant } from "@/lib/roles";
+import { claimMessage, codeDigits, codeLifeLeft, enrolShareText, reportLine, roleWithArticle, validStaffEmail, validStaffPhone } from "@/lib/staffAccess";
 import { useVenueRooms, createParty } from "@/lib/parties";
 import { RoomQr } from "./RoomQr";
 import { useMyKudos, useVenueKudosTotal, setThankable } from "@/lib/kudos";
@@ -274,6 +288,7 @@ function VenueHome({ me }: { me: Profile }) {
   if (venues.length === 0 && !creating) {
     return (
       <>
+        <StaffAccessPanel />
         <p className="label mb-2 text-faint">Welcome, {me.name}</p>
         <h1 className="font-display text-3xl leading-tight tracking-tight text-ink">Claim your venue.</h1>
         <p className="mt-3 max-w-prose text-[15px] leading-relaxed text-muted">
@@ -291,6 +306,7 @@ function VenueHome({ me }: { me: Profile }) {
 
   return (
     <>
+      <StaffAccessPanel />
       <div className="mb-5 flex items-end justify-between">
         <p className="label text-faint">Your venues</p>
         {!creating && (
@@ -561,33 +577,7 @@ function VenueManage({ venue, meId, canManage }: { venue: Venue; meId: string; c
       {section === "team" && canManage && (
         <>
           <TeamKudos venueId={venue.id} />
-
-          <p className="label mb-1.5 text-faint">The team</p>
-          <p className="mb-3 text-xs leading-relaxed text-faint">
-            Bartenders can open a room, record a tab and hand out vibe. Managers can also set the perk and
-            add staff.
-          </p>
-          <ul className="mb-3 divide-y divide-line border-y border-line">
-            {staff.map((s) => (
-              <li key={s.id} className="flex items-center justify-between gap-3 py-2.5">
-                <span className="min-w-0 truncate text-[15px] text-ink">
-                  {s.id === meId ? "you" : s.name} <span className="text-faint">@{s.handle}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-3 text-sm">
-                  <span className="text-xs text-faint">{s.role}</span>
-                  {s.role !== "owner" && s.id !== meId && (
-                    <button
-                      onClick={() => removeStaff(venue.id, s.id)}
-                      className="text-faint transition-colors hover:text-ink"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <AddStaff venueId={venue.id} meId={meId} />
+          <TeamPanel venue={venue} meId={meId} staff={staff} />
         </>
       )}
 
@@ -1668,58 +1658,371 @@ function QuietNights({ venue }: { venue: Venue }) {
   );
 }
 
-function AddStaff({ venueId, meId }: { venueId: string; meId: string }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SocialProfile[]>([]);
-  const [added, setAdded] = useState<Set<string>>(new Set());
+// ── staff access (053) ───────────────────────────────────────────────────────
+// Where I stand beyond the venues I work: a code a venue's owner gave me to type (they
+// added my email), and where I'm waiting for a yes or paused — with why and who to see.
+function StaffAccessPanel() {
+  const { codes, access } = useStaffAccess();
+  if (codes.length === 0 && access.length === 0) return null;
+  return (
+    <div className="mb-8 space-y-3">
+      {codes.map((c) => (
+        <ClaimCode key={c.id} code={c} />
+      ))}
+      {access.map((a) => (
+        <div key={a.venueId} className="glass rounded-tile p-5">
+          <p className="label mb-1.5 text-faint">{a.status === "locked" ? "Paused" : "Waiting for a yes"}</p>
+          <p className="font-display text-xl leading-tight text-ink">{a.venueName}</p>
+          {a.status === "locked" ? (
+            <>
+              <p className="mt-2 text-[15px] text-ink">{reportLine(a.reportTo, a.reportToRole)}</p>
+              {a.lockReason && <p className="mt-1.5 font-display text-lg italic text-muted">&ldquo;{a.lockReason}&rdquo;</p>}
+              <p className="mt-2 text-xs leading-relaxed text-faint">
+                Your access here is paused, so the venue&apos;s screens are closed to you. Nothing you recorded is lost.
+              </p>
+            </>
+          ) : (
+            <p className="mt-1.5 text-sm text-muted">
+              You asked to join as {roleWithArticle(ROLE_LABEL[a.role] ?? a.role)} — an owner or manager says yes first.
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
-  useEffect(() => {
-    if (query.trim().length < 2) {
-      setResults([]);
+function ClaimCode({ code }: { code: { id: string; venueName: string; role: StaffRole; addedBy?: string; expiresAt: string; triesLeft: number } }) {
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [left, setLeft] = useState(code.triesLeft);
+
+  async function join(e: React.FormEvent) {
+    e.preventDefault();
+    const digits = codeDigits(typed);
+    if (digits.length !== 6) {
+      setError("The code is 6 digits.");
       return;
     }
-    const t = setTimeout(async () => setResults(await searchUsers(query)), 300);
-    return () => clearTimeout(t);
-  }, [query, meId]);
-
-  async function add(id: string) {
-    setAdded((s) => new Set(s).add(id));
-    const err = await addStaff(venueId, id, "bartender");
-    if (err) setAdded((s) => { const n = new Set(s); n.delete(id); return n; });
+    setBusy(true);
+    setError(null);
+    const r = await claimStaffCode(code.id, digits);
+    setBusy(false);
+    if (r.ok) return; // the venue list refreshes with the venue in it
+    if (r.left != null) setLeft(r.left);
+    setError(r.message ?? claimMessage(r.error, r.left, code.addedBy));
   }
 
   return (
-    <div className="mb-4">
-      <label htmlFor={`add-staff-${venueId}`} className="label mb-2 block text-faint">Add to the team</label>
+    <form onSubmit={join} className="glass rounded-tile p-5">
+      <p className="label mb-1.5 text-faint">A code to type</p>
+      <p className="font-display text-xl leading-tight text-ink">{code.venueName}</p>
+      <p className="mt-1.5 text-sm text-muted">
+        {code.addedBy ?? "A manager"} added you as {roleWithArticle(ROLE_LABEL[code.role] ?? code.role)}. Type the 6-digit code they gave you.
+      </p>
+      <label htmlFor={`claim-${code.id}`} className="sr-only">The owner&apos;s code</label>
       <input
-        id={`add-staff-${venueId}`}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Find a person by name or @handle"
-        className={inputClass}
+        id={`claim-${code.id}`}
+        value={typed}
+        onChange={(e) => setTyped(e.target.value)}
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        placeholder="6 digits"
+        maxLength={7}
+        className={clsx(inputClass, "mt-3 text-center font-display text-2xl tracking-[0.3em]")}
       />
-      {query.trim().length >= 2 && (
-        <ul className="mt-2 space-y-2">
-          {results.length === 0 && <li className="px-1 text-sm text-faint">No one by that name or handle.</li>}
-          {results.map((p) => {
-            const isAdded = added.has(p.id);
-            return (
-              <li key={p.id} className="flex items-center justify-between gap-3 px-1">
-                <span className="min-w-0 truncate text-[15px] text-ink">
-                  {p.name} <span className="text-faint">@{p.handle}</span>
-                </span>
-                <button
-                  disabled={isAdded}
-                  onClick={() => add(p.id)}
-                  className={clsx("shrink-0 text-sm transition-colors", isAdded ? "cursor-default text-faint" : "font-medium text-accent hover:opacity-80")}
-                >
-                  {isAdded ? "Added" : "Add"}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      {error && <p className="mt-2 text-sm text-accent">{error}</p>}
+      <button type="submit" disabled={busy} className="mt-3 w-full rounded-ctl bg-ink px-4 py-2.5 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50">
+        {busy ? "One moment…" : `Join ${code.venueName}`}
+      </button>
+      <p className="mt-2 text-xs text-faint">
+        {left === 1 ? "1 try" : `${left} tries`} left · the code {codeLifeLeft(new Date(code.expiresAt), new Date())} · it only works for the email you&apos;re signed in with.
+      </p>
+    </form>
+  );
+}
+
+// The team, for an owner or manager: add an employee (their code, shown once), say yes
+// to someone who used a shared invite, pause someone's access with a reason and who to
+// report to, give it back, remove. The database decides each (venue_can, can_grant_role).
+function TeamPanel({ venue, meId, staff }: { venue: Venue; meId: string; staff: VenueStaff[] }) {
+  const codes = useOpenEnrolments(venue.id, true);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [pausing, setPausing] = useState<string | null>(null);
+  const [shown, setShown] = useState<{ name: string; email: string; role: StaffRole; code: StaffCode } | null>(null);
+  const mine = venue.myRole;
+  const run = async (p: Promise<string | null>, done: string) => setMsg((await p) ?? done);
+  const waiting = staff.filter((s) => s.status === "pending");
+  const on = staff.filter((s) => s.status === "active");
+  const paused = staff.filter((s) => s.status === "locked");
+  const bosses = on.filter((s) => s.role === "owner" || s.role === "manager");
+
+  const row = (s: VenueStaff, actions: React.ReactNode) => (
+    <li key={s.id} className="py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0 truncate text-[15px] text-ink">
+          {s.id === meId ? "you" : s.name} <span className="text-faint">@{s.handle}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-3 text-sm">
+          <span className="text-xs text-faint">
+            {ROLE_LABEL[s.role] ?? s.role}
+            {s.onShiftSince && s.status === "active" ? " · on shift" : ""}
+          </span>
+          {s.role !== "owner" && s.id !== meId && canGrant(mine, s.role) && actions}
+        </span>
+      </div>
+      {s.status === "locked" && (
+        <p className="mt-1 text-xs text-faint">
+          {reportLine(s.reportTo, null)}
+          {s.lockReason ? ` “${s.lockReason}”` : ""}
+        </p>
       )}
+      {pausing === s.id && (
+        <PauseForm
+          name={s.name}
+          bosses={bosses}
+          meId={meId}
+          onCancel={() => setPausing(null)}
+          onPause={async (reason, reportTo) => {
+            setPausing(null);
+            await run(lockStaff(venue.id, s.id, reason, reportTo), `${s.name} is paused.`);
+          }}
+        />
+      )}
+    </li>
+  );
+  const btn = (label: string, onClick: () => void, strong = false) => (
+    <button onClick={onClick} className={clsx("transition-colors", strong ? "font-medium text-accent hover:opacity-80" : "text-faint hover:text-ink")}>
+      {label}
+    </button>
+  );
+
+  return (
+    <>
+      <AddEmployee venue={venue} onMade={(m) => setShown(m)} />
+      {shown && <CodeShown venue={venue} {...shown} onDone={() => setShown(null)} />}
+      {msg && <p className="mb-3 text-xs text-accent" role="status">{msg}</p>}
+
+      {waiting.length > 0 && (
+        <>
+          <p className="label mb-1.5 text-faint">Waiting for your yes</p>
+          <p className="mb-2 text-xs leading-relaxed text-faint">They used a shared invite code. Say yes only if you know who this is.</p>
+          <ul className="mb-5 divide-y divide-line border-y border-line">
+            {waiting.map((s) =>
+              row(
+                s,
+                <>
+                  {btn("Say no", () => run(declineStaff(venue.id, s.id), `Said no to ${s.name}.`))}
+                  {btn("Approve", () => run(approveStaff(venue.id, s.id), `${s.name} is on the team.`), true)}
+                </>,
+              ),
+            )}
+          </ul>
+        </>
+      )}
+
+      {codes.length > 0 && (
+        <>
+          <p className="label mb-1.5 text-faint">Added, not in yet</p>
+          <ul className="mb-5 divide-y divide-line border-y border-line">
+            {codes.map((c) => {
+              const dead = c.attempts >= 5 || new Date(c.expiresAt) <= new Date();
+              return (
+                <li key={c.id} className="flex items-center justify-between gap-3 py-2.5">
+                  <span className="min-w-0 truncate text-[15px] text-ink">
+                    {c.name} <span className="text-faint">{c.email}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3 text-sm">
+                    <span className="text-xs text-faint">
+                      {ROLE_LABEL[c.role]} · {c.attempts >= 5 ? "5 wrong tries" : `code ${codeLifeLeft(new Date(c.expiresAt), new Date())}`}
+                    </span>
+                    {btn("Cancel", () => run(revokeStaffEnrolment(c.id), `${c.name}'s code is cancelled.`))}
+                    {btn(
+                      "New code",
+                      async () => {
+                        const r = await reissueStaffCode(c.id);
+                        if (r.code) setShown({ name: c.name, email: c.email, role: c.role, code: r.code });
+                        else setMsg(r.error ?? "Couldn't make a new code.");
+                      },
+                      dead,
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+
+      <p className="label mb-1.5 text-faint">The team</p>
+      <ul className="mb-5 divide-y divide-line border-y border-line">
+        {on.map((s) =>
+          row(
+            s,
+            <>
+              {btn("Pause", () => setPausing(s.id))}
+              {btn("Remove", () => run(removeStaff(venue.id, s.id).then(() => null), `${s.name} is off the team.`))}
+            </>,
+          ),
+        )}
+      </ul>
+
+      {paused.length > 0 && (
+        <>
+          <p className="label mb-1.5 text-faint">Paused</p>
+          <ul className="mb-5 divide-y divide-line border-y border-line">
+            {paused.map((s) =>
+              row(
+                s,
+                <>
+                  {btn("Remove", () => run(removeStaff(venue.id, s.id).then(() => null), `${s.name} is off the team.`))}
+                  {btn("Give access again", () => run(unlockStaff(venue.id, s.id), `${s.name} can use the app again.`), true)}
+                </>,
+              ),
+            )}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
+function PauseForm({
+  name,
+  bosses,
+  meId,
+  onPause,
+  onCancel,
+}: {
+  name: string;
+  bosses: VenueStaff[];
+  meId: string;
+  onPause: (reason: string, reportTo: string | null) => void;
+  onCancel: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [to, setTo] = useState<string | null>(bosses.find((b) => b.id === meId)?.id ?? bosses[0]?.id ?? null);
+  return (
+    <div className="glass mt-2 rounded-ctl p-3">
+      <p className="text-xs leading-relaxed text-faint">
+        Everything here stops for {name} at once, and they&apos;re clocked out. They see your message and who to report to.
+      </p>
+      <label htmlFor="pause-why" className="sr-only">Why (they&apos;ll see this)</label>
+      <input
+        id="pause-why"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        maxLength={200}
+        placeholder="Why (they'll see this)"
+        className={clsx(inputClass, "mt-2")}
+      />
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {bosses.map((b) => (
+          <button
+            key={b.id}
+            onClick={() => setTo(b.id)}
+            aria-pressed={to === b.id}
+            className={clsx("rounded-ctl px-3 py-1.5 text-xs transition-colors", to === b.id ? "bg-ink text-paper" : "glass text-muted hover:text-ink")}
+          >
+            Report to {b.id === meId ? "me" : b.name}
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center gap-3 text-sm">
+        <button onClick={() => onPause(reason, to)} className="font-medium text-accent hover:opacity-80">
+          Pause access
+        </button>
+        <button onClick={onCancel} className="text-faint hover:text-ink">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Add an employee: their details and the role. brewdiary makes a 6-digit code, shown once;
+// they sign in to brewdiary bar with that email and type it.
+function AddEmployee({ venue, onMade }: { venue: Venue; onMade: (m: { name: string; email: string; role: StaffRole; code: StaffCode }) => void }) {
+  const roles = STAFF_ROLES.filter((r) => canGrant(venue.myRole, r));
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [role, setRole] = useState<StaffRole>(roles.includes("server") ? "server" : roles[roles.length - 1] ?? "server");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return setError("Add their name.");
+    if (!validStaffEmail(email)) return setError("That email doesn't look right.");
+    if (phone.trim() && !validStaffPhone(phone)) return setError("That phone number doesn't look right.");
+    setBusy(true);
+    setError(null);
+    const r = await enrolStaff(venue.id, { name, email, phone, role });
+    setBusy(false);
+    if (!r.code) return setError(r.error ?? "Couldn't add them.");
+    onMade({ name: name.trim(), email: email.trim().toLowerCase(), role, code: r.code });
+    setName("");
+    setEmail("");
+    setPhone("");
+  }
+
+  return (
+    <form onSubmit={submit} className="mb-6">
+      <p className="label mb-1.5 text-faint">Add an employee</p>
+      <p className="mb-2.5 text-xs leading-relaxed text-faint">
+        They sign in to brewdiary bar with this email and type the code you get here. Only then are they on the team, as the role you pick.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input aria-label="Their name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Their name" maxLength={60} className={inputClass} />
+        <input aria-label="Their email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Their email" className={inputClass} />
+        <input aria-label="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (optional)" className={inputClass} />
+        <select aria-label="Role" value={role} onChange={(e) => setRole(e.target.value as StaffRole)} className={inputClass}>
+          {roles.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABEL[r]}
+            </option>
+          ))}
+        </select>
+      </div>
+      {error && <p className="mt-2 text-sm text-accent">{error}</p>}
+      <button type="submit" disabled={busy} className="mt-2.5 rounded-ctl bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50">
+        {busy ? "One moment…" : "Make their code"}
+      </button>
+    </form>
+  );
+}
+
+function CodeShown({ venue, name, email, role, code, onDone }: { venue: Venue; name: string; email: string; role: StaffRole; code: StaffCode; onDone: () => void }) {
+  const spaced = code.code.length === 6 ? `${code.code.slice(0, 3)} ${code.code.slice(3)}` : code.code;
+  const text = enrolShareText({ venue: venue.name, roleWord: ROLE_LABEL[role], email, code: code.code });
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="glass mb-6 rounded-tile p-5 text-center" role="status">
+      <p className="text-sm text-muted">{name}&apos;s code</p>
+      <p className="mt-2 font-display text-5xl tracking-[0.2em] text-ink tabular-nums">{spaced}</p>
+      <p className="mx-auto mt-3 max-w-prose text-xs leading-relaxed text-faint">
+        Shown once — share it now, or tell them in person. It works only for {email}, for 48 hours, with 5 tries.
+      </p>
+      <div className="mt-4 flex items-center justify-center gap-4 text-sm">
+        <button
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(text);
+              setCopied(true);
+            } catch {
+              /* no clipboard — the code is on screen */
+            }
+          }}
+          className="font-medium text-accent hover:opacity-80"
+        >
+          {copied ? "Copied" : "Copy the message"}
+        </button>
+        <button onClick={onDone} className="text-faint hover:text-ink">
+          Done
+        </button>
+      </div>
     </div>
   );
 }

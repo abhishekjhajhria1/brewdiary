@@ -14,8 +14,13 @@ bar.bwdy.site keeps working alongside it; a change in one shows in the other.
 
 **R1 built** (PLAN.md M0–M2, plus every kind of shop): sign in, create or join a venue, roles and
 invites, tonight's room or the till, guests and the guest book, the menu with 86 toggles and table-tag
-QRs, the loyalty card, the numbers, area trends, the Ninkasi advisor, setup and verification.
-[PLAN.md](PLAN.md) is the full list, module by module, with what's done and what's next.
+QRs, the loyalty card, the numbers, area trends, the Ninkasi advisor, setup and verification. Since
+then: the counter (050), service with the floor, tabs, tickets and the bill (051), the door (052), and
+the team (053) — an owner **adds an employee** (email + role → a 6-digit code shown once), the employee
+signs in with that email and types the code, and an owner or manager can **pause anyone's access** with
+a reason and who to report to ([docs/17](../docs/17-staff-access.md)).
+[PLAN.md](PLAN.md) is the full list, module by module; [CHANGELOG.md](CHANGELOG.md) is what changed,
+newest first, and why.
 
 Onboarding a venue is three steps: sign in with an emailed code, name + kind + country, done.
 Everything else (location, verification, perks, menu, team) is optional and comes later.
@@ -36,15 +41,19 @@ service-role key; it's git-ignored. Phones stay portrait; tablets rotate.
 GitHub ([`.github/workflows/android.yml`](../.github/workflows/android.yml)). Open the run's summary
 page and download `brewdiary-venue-apk` or `brewdiary-guest-apk` under **Artifacts** (kept 14 days).
 They run in demo / local mode unless the repository variables `SUPABASE_URL` and `SUPABASE_ANON_KEY`
-are set, need Android 12 or newer, and are signed with the debug key, so allow installs from unknown
-sources.
+are set (the run's summary says which it built), need Android 12 or newer, and are signed with the
+debug key, so allow installs from unknown sources. In the demo, *Café Nilgiri* waits for your code:
+**482913**.
 
 ## The database it needs
 
-Migrations `044`–`047` in [`supabase/`](../supabase/) (guest-card fix, staff roles, capability gates,
-every kind of shop). The maintainer runs them (`node scripts/db.mjs <file>`), then `npm run db:audit`
-and `npm run db:verify`. Before that, `npm run db:local` applies every migration to a throwaway
-Postgres and runs both checks against it.
+Migrations `044`–`053` in [`supabase/`](../supabase/) (guest-card fix, staff roles, capability gates,
+every kind of shop, the area map, outside signals, the counter, service, the door, staff access). The
+maintainer runs them (`node scripts/db.mjs <file>`), then `npm run db:audit` and `npm run db:verify`.
+Before that, `npm run db:local` applies every migration to a throwaway Postgres and runs both checks
+against it, plus `db:contract`: every database call this app (and the website and the users app) makes,
+checked against the schema. An app newer than the database says "apply migration 053" plainly instead
+of failing.
 
 ## Test it
 

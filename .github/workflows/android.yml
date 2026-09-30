@@ -64,15 +64,26 @@ jobs:
           "--dart-define=SUPABASE_URL=${{ vars.SUPABASE_URL }}"
           "--dart-define=SUPABASE_ANON_KEY=${{ vars.SUPABASE_ANON_KEY }}"
           "--dart-define=SITE_URL=${{ vars.SITE_URL || 'https://bwdy.site' }}"
-      - name: Name the APK and note its size and checksum
+      - name: Name the APK and note its size, checksum and backend
+        env:
+          # Only whether they're set is written down, never their values.
+          HAS_BACKEND: ${{ vars.SUPABASE_URL != '' && vars.SUPABASE_ANON_KEY != '' }}
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk "${{ matrix.name }}.apk"
           {
             echo "### ${{ matrix.name }}.apk"
             echo ""
+            if [ "$HAS_BACKEND" = "true" ]; then
+              echo "- backend: the real Supabase project (repository variables SUPABASE_URL + SUPABASE_ANON_KEY)"
+            else
+              echo "- backend: **none.** The venue app runs as the demo venue and the guest app keeps its diary on the phone, with no sign-in. Set the repository variables SUPABASE_URL and SUPABASE_ANON_KEY (Settings → Secrets and variables → Actions → Variables) and re-run for a build that signs in for real."
+            fi
             echo "- size: $(du -h "${{ matrix.name }}.apk" | cut -f1)"
             echo "- sha256: \`$(sha256sum "${{ matrix.name }}.apk" | cut -d' ' -f1)\`"
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$HAS_BACKEND" != "true" ]; then
+            echo "::warning title=No backend::${{ matrix.name }} was built without SUPABASE_URL / SUPABASE_ANON_KEY, so it can't sign in (the venue app is the demo). Set the repository variables for a real build."
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}-apk

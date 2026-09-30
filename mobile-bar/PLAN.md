@@ -1,8 +1,10 @@
 # mobile-bar — the venue staff app: everything that has to be built
 
-**Status (2026-09-29): R1 built, R1.5 under way.** M0–M2 are in this folder (the app, its demo venue and
+**Status (2026-09-30): R1 built, R1.5 under way.** M0–M2 are in this folder (the app, its demo venue and
 tests) and in `supabase/044`–`047` (roles, capability gates, every kind of shop); the area heat map is in
-`048` and `docs/13`. This is the full list of what a
+`048` and `docs/13`; outside signals `049`; the counter `050`; service `051`; the door `052`; the team —
+adding employees with the owner's code, pausing access, history, the time clock — `053` and `docs/17`.
+What changed and why, newest first: [`CHANGELOG.md`](CHANGELOG.md). This is the full list of what a
 bar / restaurant / shop staff app needs, written after scanning the whole repo: the docs, every venue
 migration, the web bar dashboard, the Ninkasi routes and the Flutter user app.
 
@@ -345,10 +347,13 @@ That is the lawful version of the question (M12.6).
 - [x] **M1.6** DB: close the staff holes (1.4 #2). Only an owner adds or removes managers; nobody can add an owner from the app; a role-change path that can't grant above your own rank.
 - [x] **M1.7** DB: lock country, region, kind and slug after verification (1.4 #1).
 - [x] **M1.8** DB: move the `is_venue_staff()` gates to capability checks wherever the role matters (1.4 #3).
-- [x] **M1.9** Staff invites: by handle (exists) and by an invite link / QR carrying a role and an expiry; accept it in the app.
+- [x] **M1.9** Staff invites: by handle (exists) and by an invite link / QR carrying a role and an expiry; accept it in the app. *(053: an invite now makes the person WAITING until a manager approves; adding by handle is gone — the database refuses a direct roster insert.)*
 - [x] **M1.10** Team screen: roster, change role, remove, leave the venue, my "take thanks" switch (`thankable`).
+- [x] **M1.15** Add an employee with the owner's code (053): name, email, phone, role → a 6-digit code shown once (hashed, email-bound, 48 h, 5 tries); the employee signs in with that email and types it. Codes not typed yet: new code, cancel.
+- [x] **M1.16** Pause access (053): a reason and an owner/manager to report to; every call stops at once (only ACTIVE staff count); the app shows who to report to within a minute (on resume and after any refused call, at once); give access again. Nobody pauses themself or the owner.
+- [ ] **M1.17** New-device approval: an employee's first sign-in on a new phone waits for a manager's OK (needs a device id on each call; changes the website's sign-in too).
 - [ ] **M1.11** Shared-device mode (D2): add a person to this device, PIN switch, auto-lock when idle, a "signed in as" banner, sign everyone out.
-- [~] **M1.12** Removal takes effect at once (RLS checks every call). Test it; the app says "you're no longer on this team" and clears cached data.
+- [x] **M1.12** Removal takes effect at once (RLS checks every call). Test it; the app says "you're no longer on this team" and clears cached data. *(053: removal and pausing; db:verify scene 23 proves a paused person can do nothing; the app re-checks and closes the venue.)*
 - [ ] **M1.14** Minimal onboarding: first run is sign in → name, kind, country → in. A short "next steps" card list (location, verify, first perk, menu, invite the team) that disappears as each is done; nothing blocks service on day one.
 - [x] **M1.13** Capability-aware UI: screens and buttons appear only for roles that can use them; the server refuses the rest anyway.
 
@@ -464,12 +469,12 @@ That is the lawful version of the question (M12.6).
 ### M10 — Staff operations
 
 - [ ] **M10.1** Rota: a weekly grid by role and area, publish, availability, time-off requests and approvals, shift swaps with approval, templates, a labour budget.
-- [ ] **M10.2** Time clock: in/out and breaks; corrections as append-only events with a reason; timesheet export for payroll. If the venue turns it on, location is checked only at the moment of clocking in, never tracked.
+- [~] **M10.2** Time clock: in/out and breaks; corrections as append-only events with a reason; timesheet export for payroll. If the venue turns it on, location is checked only at the moment of clocking in, never tracked. *(053: clock in/out; a manager clocks out someone who forgot (logged); hours per person since a date, in name order, never ranked. Breaks, corrections and the export are next.)*
 - [ ] **M10.3** Tips: from payments; pooling rules (hours, points or role) and tip-outs to the bar and kitchen. Each person sees their own statement; no ranking.
 - [ ] **M10.4** Certificates: responsible-service and food-safety certificates with expiry reminders; an onboarding checklist.
 - [ ] **M10.5** Messages: pre-shift notes, announcements with read receipts, handover notes, the 86 list.
 - [ ] **M10.6** Kudos as today (M2.11); never per person for managers.
-- [ ] **M10.7** Offboarding: removing someone ends their access; the records they made stay.
+- [x] **M10.7** Offboarding: removing someone ends their access; the records they made stay. *(053: removal or a pause ends access at once; the team's history keeps who did what.)*
 - [ ] **M10.8** Minimum age to serve alcohol by jurisdiction (research): warn before putting an under-age staff member on the bar.
 
 ### M11 — Bookings, waitlist, door
@@ -557,8 +562,8 @@ That is the lawful version of the question (M12.6).
 
 - [ ] **M18.1** RLS on every new table. Ledgers (order events, payments, stock movements, time-clock corrections, audit log, refusals) get no client write policy; server functions only.
 - [ ] **M18.2** Capability checks in every new server function (M1.5, M1.8).
-- [ ] **M18.3** `venue_audit_log`: voids, comps, refunds, reopened tabs, price changes, role changes, stock adjustments, drawer variances, settings. Append-only; managers read it.
-- [ ] **M18.4** db:audit invariants for everything new: no client write on ledgers; no bar-facing function joins `entries`; no guest-data function takes two venue ids; k-anon still 5; taste shares expire; refusal and incident tables have no guest id; kudos stay a total; no per-staff ranking function; venue fields locked after verification.
+- [~] **M18.3** `venue_audit_log`: voids, comps, refunds, reopened tabs, price changes, role changes, stock adjustments, drawer variances, settings. Append-only; managers read it. *(053: the team's history — every roster change written by a trigger, whichever app made it. The rest is next.)*
+- [~] **M18.4** db:audit invariants for everything new (done through 053; plus `db:contract`, which checks every app call against the schema): no client write on ledgers; no bar-facing function joins `entries`; no guest-data function takes two venue ids; k-anon still 5; taste shares expire; refusal and incident tables have no guest id; kudos stay a total; no per-staff ranking function; venue fields locked after verification.
 - [ ] **M18.5** db:verify plays a whole service night in a rolled-back transaction (open the day → seat → order → send → bump → serve → split → pay → close → spend → perk → Z → stock → variance), plus the refusals: kitchen can't record spend, a guest can't punch their own card, a server can't approve their own void.
 - [ ] **M18.6** Rate limits and abuse: table requests, joining a table, short-lived guest codes, rotated table codes.
 - [ ] **M18.7** Device security: PINs local only with lockout, tokens in secure storage, auto-lock, sign out all devices.
@@ -615,6 +620,10 @@ where the website needs one, and Dart parity tests where the app mirrors logic.
 | `050_shop_counter.sql` | **Done.** The counter: products (MRP), stock ledger, suppliers, `ring_sale()`, retail alcohol rules + dry days (deny-by-default), the excise register |
 | `051_service.sql` | **Done.** Areas, tables and table codes; tabs, lines, stations, bills (staff-recorded payments), the table link (requests, calls), the waitlist, the live board, diet marks and allergens |
 | `052_door.sql` | **Done.** The licensed capacity and the door's headcount: a ledger of taps (counts, never people), `door_tick()` for the door roles, `door_count()` for tonight |
+| `053_staff_access.sql` | **Done.** Staff status (waiting / active / paused); adding an employee with the owner's code; invites wait for a yes; no direct roster inserts; pausing with a reason and who to report to; the team's history (trigger); the time clock; the venue's details for a person |
+
+The rows below are the plan as first written; their numbers shift as files land.
+
 | `052_service_day.sql` | Service days (open/close, auto-opened room), table sessions, `join_table()`, linked guests, guest codes |
 | `053_menu_v2.sql` | Sizes, modifiers, allergens, stations and routing (still no discount column) |
 | `054_orders.sql` | Tabs, order lines, line events, the status view, the tab flag |

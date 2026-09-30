@@ -38,9 +38,10 @@ absent, an RLS flag that never got enabled, a `SECURITY DEFINER` function silent
 wrong jurisdiction's rules. That has happened here. So after ANY migration:
 
 ```bash
-npm run db:audit   # READ-ONLY. Asserts the SHAPE of the live schema + every security invariant.
-npm run db:verify  # Plays a whole night against the real schema IN A TRANSACTION IT ROLLS BACK.
-npm run db:local   # Both, on a THROWAWAY local Postgres built from supabase/ (no secrets needed).
+npm run db:audit    # READ-ONLY. Asserts the SHAPE of the live schema + every security invariant.
+npm run db:verify   # Plays a whole night against the real schema IN A TRANSACTION IT ROLLS BACK.
+npm run db:contract # READ-ONLY. Every .from()/.rpc() call in the three apps, checked against the schema.
+npm run db:local    # All three, on a THROWAWAY local Postgres built from supabase/ (no secrets needed).
 ```
 
 `db:audit` is what caught `perk_policy()` judging every venue on earth by Massachusetts law —
@@ -63,7 +64,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `src/components/` | Feature-grouped UI: `calendar/`, `log/`, `you/`, `together/`, `discover/`, `bartender/`, `share/`, `onboarding/`, `venue/`, `kiosk/`, `profile/`, `ui/`. |
 | `src/lib/` | Framework-free logic — the "brains". See the table below. |
 | `public/` | Static assets: PWA `manifest.webmanifest`, `sw.js`, app icons. |
-| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`052`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
+| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`053`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
 | `ai-db/` | The **separate** AI database schema (pseudonymous Ninkasi corpus; deny-all RLS). |
 | `scripts/` | Dev/ops tooling: `db.mjs` (migration runner), `gen-icons.mjs`, `verify-venue.mjs` (the only path that approves a venue), `ninkasi/` (dataset export, trend sync, AI-DB verify). |
 | `tests/` | Vitest unit tests for `src/lib` (excluded from `next build`). |
@@ -94,6 +95,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `geohash.ts` | On-device geohash. People are kept at 4 letters (~40 km) at most, venues at 6 (~1 km). `subcells()` / `directionFrom()` are the area heat map's grid (048), twinned in `packages/brewdiary_core/lib/geo.dart` with the same tests. The map itself shows only groups of 5+ people who said yes, across 3+ venues, rounded to 5s (`docs/13`). |
 | `signals.ts` | **Outside signals** (049): public facts about places (events, openings, dry days, prices) from scrapers and feeds. `cleanSignal()` is the only way in (the `/api/signals/import` route and `npm run signals:import`): places and happenings, never people — contact details redacted, person-records refused, coordinates turned into a geohash. The table has no client policy; staff read via `venue_area_signals()`. |
 | `jurisdiction.ts` | **Where you are decides what the app may lawfully do.** Deny-by-default: an unresearched country gets the STRICTEST setting, never the most permissive. Mirrors `public.jurisdiction_policy` — **the DATABASE is the authority**; this copy only lets the UI *explain* the rule instead of just failing. |
+| `staffAccess.ts` | The team (053): the words and checks around **adding an employee with the owner's code** (a 6-digit code, hashed, email-bound, 48 h, 5 tries) and a **paused** person — twinned with `mobile-bar/lib/logic/staff.dart` (same test cases). The hooks and calls live in `venues.ts`. Nobody is inserted onto a roster from a client any more: the owner's code or an invite a manager approves. Only ACTIVE staff pass `is_venue_staff`/`venue_role`, so a pause stops everything at once. `docs/17`. |
 | `kudos.ts` | Thanking staff. A manager sees ONE total for the team — a per-person league table is impossible, and not just hidden: the RLS policy makes it unreadable even via direct SQL. |
 | `guestbook.ts` | The venue **guest book** — a **first-party** CRM (migration 040). A venue keeps notes/tags on guests it has actually served, and sees history IT generated (visits, tabs, perks). Hard rule enforced in the DB: **no join to `entries`** (a guest's diary never reaches a venue) and **no cross-venue read**. Notes are staff-written only; the guest can see every note kept on them and delete it (`my_venue_books`, You → Settings). This is the deliberate first-party revision of the older "never a per-guest list" line — we still refuse a churn list of strangers or anyone's activity elsewhere. |
 | `menus.ts` | Table **menus** (migration 042), opened by an NFC tag / QR holding `bwdy.site/m/<slug>`. A menu is NOT an offer (no discount column), is reached from the table and **never from Discover**, only verified venues are served, and "you'd probably like" (`menuPicks`) is computed on the guest's device — the venue never learns who looked. |

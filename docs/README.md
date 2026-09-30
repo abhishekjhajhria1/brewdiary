@@ -48,6 +48,10 @@ If you can read a recipe, you can read this.
 16. **[16 — Service and ordering](16-service-and-ordering.md)** — the floor, tabs, the bar and kitchen
     screens, the bill (staff decide how it's paid), the host's waitlist, the live board, and the table's
     own QR: the menu with the veg mark and allergens, ordering from the table, "call staff / bill please".
+17. **[17 — The team: adding employees, the owner's code, pausing access](17-staff-access.md)** — how an
+    owner adds an employee (their email plus a 6-digit code the owner gives them), shared invite codes
+    that wait for a yes, pausing someone's access with a reason and who to report to, the team's
+    history, and the time clock (for pay, never a ranking).
 
 ## The one-paragraph version
 brewdiary is a **drink diary**. You open it, tap tonight's date on a calendar, and jot down what you

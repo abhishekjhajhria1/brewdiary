@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { useAuth } from "./profile";
 import { alcoholIsChoice, parseVenueKind, sellsAlcohol, type VenueKind } from "./venueKinds";
+import { parseClaimError, parseStaffStatus, type ClaimError, type StaffStatus } from "./staffAccess";
 
 // The roles (045). What each may do is data in public.role_capabilities; see roles.ts.
 export type StaffRole = "owner" | "manager" | "supervisor" | "bartender" | "server" | "host" | "kitchen";
@@ -51,8 +52,16 @@ export interface Venue {
 export interface VenueStaff {
   id: string;
   handle: string;
+  /** What the venue calls them (the details the owner entered), else their profile name. */
   name: string;
   role: StaffRole;
+  /** 053: waiting for a manager's yes, working, or paused. */
+  status: StaffStatus;
+  /** Owners/managers and the person themself only (team_roster decides). */
+  phone?: string;
+  lockReason?: string;
+  reportTo?: string;
+  onShiftSince?: string;
 }
 export type VerificationStatus = "pending" | "approved" | "rejected";
 export interface VerificationRequest {
@@ -77,6 +86,11 @@ export function slugify(name: string): string {
 }
 export function isValidSlug(slug: string): boolean {
   return SLUG_RE.test(slug);
+}
+
+/** The database hasn't had a migration this code relies on (a function or column missing). */
+function behind(e: { code?: string } | null | undefined): boolean {
+  return !!e && ["PGRST202", "PGRST204", "42883", "42703", "42P01"].includes(e.code ?? "");
 }
 
 // ── shared refresh signal ────────────────────────────────────────────────────
@@ -113,15 +127,17 @@ export function useMyVenues(): { venues: Venue[]; loading: boolean } {
     }
     let active = true;
     (async () => {
-      const { data } = await supabase!
-        .from("venue_staff")
-        // venues(*): tolerant of a schema a migration behind (a missing column is just absent).
-        .select("role, venue:venues(*)")
-        .eq("user_id", me);
+      // venues(*): tolerant of a schema a migration behind (a missing column is just absent).
+      const now = await supabase!.from("venue_staff").select("role, status, venue:venues(*)").eq("user_id", me);
+      const res = behind(now.error)
+        ? await supabase!.from("venue_staff").select("role, venue:venues(*)").eq("user_id", me) // before 053
+        : now;
       if (!active) return;
       setVenues(
-        (data ?? [])
+        ((res.data ?? []) as Record<string, unknown>[])
           .map((r: Record<string, unknown>): Venue | null => {
+            // Waiting for a yes, or paused (053): not a venue you can work — see useStaffAccess.
+            if (parseStaffStatus(r.status) !== "active") return null;
             const vv = r.venue as Record<string, unknown> | null;
             if (!vv) return null;
             return {
@@ -169,21 +185,41 @@ export function useVenueStaff(venueId: string | null): { staff: VenueStaff[]; lo
     let active = true;
     setLoading(true);
     (async () => {
-      const { data } = await supabase!
-        .from("venue_staff")
-        .select("role, member:profiles(id, handle, display_name)")
-        .eq("venue_id", venueId);
-      if (!active) return;
       const ROLE_RANK: Record<StaffRole, number> = {
         owner: 0, manager: 1, supervisor: 2, bartender: 3, server: 3, host: 3, kitchen: 3,
       };
+      const STATUS_RANK: Record<StaffStatus, number> = { pending: 0, active: 1, locked: 2 };
+      // 053: the roster function — managers also get who's waiting and who's paused.
+      const roster = await supabase!.rpc("team_roster", { vid: venueId });
+      let list: VenueStaff[];
+      if (!roster.error) {
+        list = ((roster.data ?? []) as Record<string, unknown>[]).map((r) => ({
+          id: r.user_id as string,
+          handle: (r.handle as string) ?? "",
+          name: ((r.staff_name as string) || (r.display_name as string) || (r.handle as string)) ?? "someone",
+          role: r.role as StaffRole,
+          status: parseStaffStatus(r.status),
+          phone: (r.phone as string) ?? undefined,
+          lockReason: (r.lock_reason as string) ?? undefined,
+          reportTo: (r.report_to as string) ?? undefined,
+          onShiftSince: (r.on_shift_since as string) ?? undefined,
+        }));
+      } else {
+        // Before 053: the plain roster read.
+        const { data } = await supabase!
+          .from("venue_staff")
+          .select("role, member:profiles(id, handle, display_name)")
+          .eq("venue_id", venueId);
+        list = ((data ?? []) as Record<string, unknown>[]).map((r) => {
+          const p = r.member as { id: string; handle: string; display_name: string | null };
+          return { id: p.id, handle: p.handle, name: p.display_name ?? p.handle, role: r.role as StaffRole, status: "active" as const };
+        });
+      }
+      if (!active) return;
       setStaff(
-        (data ?? [])
-          .map((r: Record<string, unknown>) => {
-            const p = r.member as { id: string; handle: string; display_name: string | null };
-            return { id: p.id, handle: p.handle, name: p.display_name ?? p.handle, role: r.role as StaffRole };
-          })
-          .sort((a, b) => ROLE_RANK[a.role] - ROLE_RANK[b.role] || a.name.localeCompare(b.name)),
+        list.sort(
+          (a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || ROLE_RANK[a.role] - ROLE_RANK[b.role] || a.name.localeCompare(b.name),
+        ),
       );
       setLoading(false);
     })();
@@ -455,13 +491,195 @@ export function useVenueInsights(venueId: string | null, days = 30): { data: Ven
   return state;
 }
 
-/** Add a profile to the team. Managers/owner only (RLS enforces it). */
-export async function addStaff(venueId: string, userId: string, role: StaffRole = "bartender"): Promise<string | null> {
-  if (!supabase) return "offline";
-  const { error } = await supabase.from("venue_staff").insert({ venue_id: venueId, user_id: userId, role });
+// ── staff access (053): the owner's code, approvals, pausing someone ────────
+// Nobody is inserted onto a team from a client any more: an owner or manager ADDS an
+// employee (their name, email, phone, role) and gets a 6-digit code, shown once; the
+// employee signs in with that email and types it. See supabase/053_staff_access.sql.
+
+/** A plain sentence from a refused call (the database's own words are already plain). */
+function said(error: { message?: string; code?: string } | null): string | null {
+  if (!error) return null;
+  if (behind(error)) return "This needs the latest database update (migration 053).";
+  const m = (error.message ?? "").trim();
+  if (!m || /row-level security/i.test(m)) return "Your role here can't do that.";
+  return m[0].toUpperCase() + m.slice(1) + (m.endsWith(".") ? "" : ".");
+}
+
+export interface StaffCode {
+  enrolmentId?: string;
+  code: string;
+  expiresAt: string;
+}
+
+/** Add an employee. Returns their code — shown ONCE — or a sentence saying why not. */
+export async function enrolStaff(
+  venueId: string,
+  who: { name: string; email: string; phone?: string; role: StaffRole },
+): Promise<{ code?: StaffCode; error?: string }> {
+  if (!supabase) return { error: "offline" };
+  const { data, error } = await supabase.rpc("enrol_staff", {
+    vid: venueId,
+    full_name: who.name.trim(),
+    email_addr: who.email.trim().toLowerCase(),
+    phone_no: who.phone?.trim() || null,
+    staff_role: who.role,
+  });
   bump();
-  if (error && /duplicate|unique/i.test(error.message)) return null; // already on the team
-  return error ? error.message : null;
+  if (error) return { error: said(error) ?? "Couldn't add them." };
+  const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
+  if (!r) return { error: "Couldn't add them." };
+  return { code: { enrolmentId: r.enrolment_id as string, code: String(r.code), expiresAt: String(r.expires_at) } };
+}
+
+export async function reissueStaffCode(enrolmentId: string): Promise<{ code?: StaffCode; error?: string }> {
+  if (!supabase) return { error: "offline" };
+  const { data, error } = await supabase.rpc("reissue_staff_code", { eid: enrolmentId });
+  bump();
+  if (error) return { error: said(error) ?? "Couldn't make a new code." };
+  const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
+  return r ? { code: { enrolmentId, code: String(r.code), expiresAt: String(r.expires_at) } } : { error: "Couldn't make a new code." };
+}
+
+// Each call is written out in full (not a helper taking the function's name), so
+// `npm run db:contract` can check its name and arguments against the schema.
+async function settled(call: PromiseLike<{ error: { message?: string; code?: string } | null }>): Promise<string | null> {
+  const { error } = await call;
+  bump();
+  return said(error);
+}
+export async function revokeStaffEnrolment(enrolmentId: string): Promise<string | null> {
+  if (!supabase) return "offline";
+  return settled(supabase.rpc("revoke_staff_enrolment", { eid: enrolmentId }));
+}
+export async function approveStaff(venueId: string, userId: string): Promise<string | null> {
+  if (!supabase) return "offline";
+  return settled(supabase.rpc("approve_staff", { vid: venueId, uid: userId }));
+}
+export async function declineStaff(venueId: string, userId: string): Promise<string | null> {
+  if (!supabase) return "offline";
+  return settled(supabase.rpc("decline_staff", { vid: venueId, uid: userId }));
+}
+/** Pause someone's access at once, with a reason and an owner/manager to report to. */
+export async function lockStaff(venueId: string, userId: string, reason: string | null, reportTo: string | null): Promise<string | null> {
+  if (!supabase) return "offline";
+  return settled(supabase.rpc("lock_staff", { vid: venueId, uid: userId, reason: reason?.trim() || null, report_to_id: reportTo }));
+}
+export async function unlockStaff(venueId: string, userId: string): Promise<string | null> {
+  if (!supabase) return "offline";
+  return settled(supabase.rpc("unlock_staff", { vid: venueId, uid: userId }));
+}
+
+export interface OpenEnrolment {
+  id: string;
+  name: string;
+  email: string;
+  role: StaffRole;
+  expiresAt: string;
+  attempts: number;
+}
+/** People added who haven't typed their code yet (owners/managers). */
+export function useOpenEnrolments(venueId: string | null, enabled: boolean): OpenEnrolment[] {
+  const v = useVersion();
+  const [list, setList] = useState<OpenEnrolment[]>([]);
+  useEffect(() => {
+    if (!supabase || !venueId || !enabled) {
+      setList([]);
+      return;
+    }
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase!.rpc("staff_enrolments_open", { vid: venueId });
+      if (!active) return;
+      setList(
+        error
+          ? []
+          : ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+              id: r.id as string,
+              name: (r.staff_name as string) ?? "",
+              email: (r.email as string) ?? "",
+              role: r.role as StaffRole,
+              expiresAt: String(r.expires_at),
+              attempts: Number(r.attempts ?? 0),
+            })),
+      );
+    })();
+    return () => {
+      active = false;
+    };
+  }, [venueId, enabled, v]);
+  return list;
+}
+
+export interface MyStaffCode {
+  id: string;
+  venueName: string;
+  role: StaffRole;
+  addedBy?: string;
+  expiresAt: string;
+  triesLeft: number;
+}
+export interface MyStaffAccess {
+  venueId: string;
+  venueName: string;
+  role: StaffRole;
+  status: StaffStatus;
+  lockReason?: string;
+  reportTo?: string;
+  reportToRole?: string;
+}
+/** Where I stand beyond the venues I work: codes to type, and where I'm waiting or paused. */
+export function useStaffAccess(): { codes: MyStaffCode[]; access: MyStaffAccess[] } {
+  const me = useAuth().profile?.id;
+  const v = useVersion();
+  const [state, setState] = useState<{ codes: MyStaffCode[]; access: MyStaffAccess[] }>({ codes: [], access: [] });
+  useEffect(() => {
+    if (!supabase || !me) {
+      setState({ codes: [], access: [] });
+      return;
+    }
+    let active = true;
+    (async () => {
+      const [codes, access] = await Promise.all([supabase!.rpc("my_staff_enrolments"), supabase!.rpc("my_staff_status")]);
+      if (!active) return;
+      setState({
+        codes: ((codes.error ? [] : codes.data ?? []) as Record<string, unknown>[]).map((r) => ({
+          id: r.id as string,
+          venueName: (r.venue_name as string) ?? "a venue",
+          role: r.role as StaffRole,
+          addedBy: (r.added_by as string) ?? undefined,
+          expiresAt: String(r.expires_at),
+          triesLeft: Number(r.tries_left ?? 5),
+        })),
+        access: ((access.error ? [] : access.data ?? []) as Record<string, unknown>[]).map((r) => ({
+          venueId: r.venue_id as string,
+          venueName: (r.venue_name as string) ?? "a venue",
+          role: r.role as StaffRole,
+          status: parseStaffStatus(r.status),
+          lockReason: (r.lock_reason as string) ?? undefined,
+          reportTo: (r.report_to as string) ?? undefined,
+          reportToRole: (r.report_to_role as string) ?? undefined,
+        })),
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [me, v]);
+  return state;
+}
+
+/** Type the owner's code. A wrong code is an answer, not an error: it says the tries left. */
+export async function claimStaffCode(
+  enrolmentId: string,
+  code: string,
+): Promise<{ ok: true; venueName: string; role: StaffRole } | { ok: false; error: ClaimError; left?: number; message?: string }> {
+  if (!supabase) return { ok: false, error: "not_found", message: "offline" };
+  const { data, error } = await supabase.rpc("claim_staff_enrolment", { eid: enrolmentId, code: code.trim() });
+  if (error) return { ok: false, error: "not_found", message: said(error) ?? undefined };
+  const j = (data ?? {}) as Record<string, unknown>;
+  bump();
+  if (j.ok === true) return { ok: true, venueName: String(j.venue ?? ""), role: j.role as StaffRole };
+  return { ok: false, error: parseClaimError(j.error), left: j.left == null ? undefined : Number(j.left) };
 }
 
 export async function removeStaff(venueId: string, userId: string) {
