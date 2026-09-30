@@ -1082,6 +1082,12 @@ try {
     const venueName = (await as(cook, `select public.accept_staff_invite($1) n`, [code])).rows[0].n;
     ok("accepting an invite joins the team at the invite's role",
       venueName === "Verify Tap Room" && (await roleOf(cook)) === "kitchen");
+    if ((await db.query(`select to_regprocedure('public.approve_staff(uuid,uuid)') f`)).rows[0].f) {
+      // 053: an invite code puts them on the list as WAITING; a manager's yes comes first.
+      ok("…as WAITING, until a manager says yes (053)",
+        (await db.query(`select status from public.venue_staff where venue_id=$1 and user_id=$2`, [vid, cook])).rows[0].status === "pending");
+      await as(mgr, `select public.approve_staff($1,$2)`, [vid, cook]);
+    }
     ok("an invite works once", await refused(() => as(hostP, `select public.accept_staff_invite($1)`, [code])));
 
     ok("the KITCHEN can't record a guest's tab",
@@ -1569,6 +1575,140 @@ try {
     ok("a tap is 1 to 12 people", await refused(() => as(doorman, `select public.door_tick($1, 40)`, [club])));
     ok("a guest can't work the door", await refused(() => as(anita, `select public.door_tick($1, 1)`, [club])));
     ok("nobody writes the ledger directly", await refused(() => as(owner, `insert into public.door_events (venue_id, delta) values ($1, 1)`, [club])));
+  }
+
+  // ── 23. staff access (053): the owner's code, approvals, lock-out, history, the clock ──
+  if ((await db.query(`select to_regprocedure('public.enrol_staff(uuid,text,text,text,text)') f`)).rows[0].f) {
+    console.log("\n── 23. staff access: the owner's code, approvals, lock-out, history, the clock (053) ──");
+    const t = Date.now();
+    const bar = randomUUID();
+    const hs = { boss: `vf-boss-${t}`, priya: `vf-priya-${t}`, rahul: `vf-rahul-${t}`, sam: `vf-sam-${t}`, other: `vf-other-${t}`, joiner: `vf-joiner-${t}`, late: `vf-late-${t}`, mgr2: `vf-mgr2-${t}` };
+    const boss = await mkUser("Boss", hs.boss);
+    const priya = await mkUser("Priya", hs.priya);
+    const rahul = await mkUser("Rahul", hs.rahul);
+    const sam = await mkUser("Sam", hs.sam);
+    const other = await mkUser("Other", hs.other);
+    const joiner = await mkUser("Joiner", hs.joiner);
+    const late = await mkUser("Late", hs.late);
+    const mgr2 = await mkUser("Second Manager", hs.mgr2);
+    const mail = (h) => `${h}@verify.local`;
+    await as(boss, `insert into public.venues (id, name, slug, created_by, kind, country) values ($1,'Verify Staff Bar',$2,$3,'bar','IN')`, [bar, `vf-staff-${t}`, boss]);
+    await as(boss, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [bar, boss]);
+    await as(boss, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'manager')`, [bar, priya]);
+    await as(boss, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'manager')`, [bar, mgr2]);
+    await as(priya, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'bartender')`, [bar, sam]);
+    const can = async (who, cap) => (await as(who, `select public.venue_can($1, auth.uid(), $2) c`, [bar, cap])).rows[0].c === true;
+    const claim = async (who, eid, code) => (await as(who, `select public.claim_staff_enrolment($1,$2) r`, [eid, code])).rows[0].r;
+    const notIt = (code) => (code === "000000" ? "111111" : "000000");
+    const statusOf = async (uid) => (await db.query(`select status from public.venue_staff where venue_id=$1 and user_id=$2`, [bar, uid])).rows[0]?.status;
+
+    // adding an employee: details + the owner's code
+    const en = (await as(priya, `select * from public.enrol_staff($1,'Rahul S.',$2,'+91 98765 43210','server')`, [bar, mail(hs.rahul)])).rows[0];
+    ok("a manager adds an employee and sees a 6-digit code, once", /^\d{6}$/.test(en.code));
+    const stored = (await db.query(`select code_hash from public.staff_enrolments where id=$1`, [en.enrolment_id])).rows[0];
+    ok("the code is stored hashed, never in the clear", stored && stored.code_hash !== en.code && stored.code_hash.length === 64);
+    ok("nobody reads the enrolments table directly", (await as(priya, `select * from public.staff_enrolments`)).rows.length === 0);
+    ok("a manager CANNOT add a manager", await refused(() => as(priya, `select * from public.enrol_staff($1,'X',$2,null,'manager')`, [bar, `x-${t}@verify.local`])));
+    ok("a bartender CANNOT add anyone", await refused(() => as(sam, `select * from public.enrol_staff($1,'X',$2,null,'server')`, [bar, `y-${t}@verify.local`])));
+    ok("someone already on the team can't be added twice", await refused(() => as(boss, `select * from public.enrol_staff($1,'Sam',$2,null,'server')`, [bar, mail(hs.sam)])));
+    ok("a manager sees who's added but not in yet", (await as(priya, `select * from public.staff_enrolments_open($1)`, [bar])).rows.some((r) => r.email === mail(hs.rahul) && r.role === "server"));
+
+    const mine = (await as(rahul, `select * from public.my_staff_enrolments()`)).rows;
+    ok("the employee, signed in with that email, sees where and as what — never the code",
+      mine.length === 1 && mine[0].venue_name === "Verify Staff Bar" && mine[0].role === "server" && mine[0].tries_left === 5 && !("code" in mine[0]));
+    ok("anyone else signed in sees nothing", (await as(other, `select * from public.my_staff_enrolments()`)).rows.length === 0);
+    ok("the right code on the wrong account does nothing", (await claim(other, en.enrolment_id, en.code)).error === "not_found");
+    ok("before the code, no powers at all", !(await can(rahul, "floor.view")));
+    const w1 = await claim(rahul, en.enrolment_id, notIt(en.code));
+    ok("a wrong code is refused, with the tries left", w1.ok === false && w1.error === "wrong_code" && w1.left === 4);
+    ok("…and the wrong try is COUNTED, not rolled back",
+      (await db.query(`select attempts from public.staff_enrolments where id=$1`, [en.enrolment_id])).rows[0].attempts === 1);
+    const good = await claim(rahul, en.enrolment_id, en.code);
+    ok("the right code joins the team at the role the manager chose", good.ok === true && good.role === "server" && good.venue === "Verify Staff Bar");
+    ok("…with powers now", await can(rahul, "floor.view"));
+    ok("…and the venue keeps their name and phone", (await as(priya, `select phone from public.staff_details where venue_id=$1 and user_id=$2`, [bar, rahul])).rows[0]?.phone === "+91 98765 43210");
+    ok("a code works once", (await claim(rahul, en.enrolment_id, en.code)).error === "closed");
+    ok("a colleague can't read Rahul's phone", (await as(sam, `select * from public.staff_details where venue_id=$1 and user_id=$2`, [bar, rahul])).rows.length === 0);
+    ok("…nor see it on the roster", (await as(sam, `select * from public.team_roster($1)`, [bar])).rows.some((r) => r.user_id === rahul && r.phone === null));
+
+    const en2 = (await as(boss, `select * from public.enrol_staff($1,'Other P',$2,null,'kitchen')`, [bar, mail(hs.other)])).rows[0];
+    for (let i = 0; i < 4; i++) await claim(other, en2.enrolment_id, notIt(en2.code));
+    ok("five wrong tries close the code", (await claim(other, en2.enrolment_id, notIt(en2.code))).error === "too_many");
+    ok("…even for the right code after that", (await claim(other, en2.enrolment_id, en2.code)).error === "too_many");
+    const re = (await as(boss, `select * from public.reissue_staff_code($1)`, [en2.enrolment_id])).rows[0];
+    ok("a new code resets the tries and works", (await claim(other, en2.enrolment_id, re.code)).ok === true);
+
+    const en3 = (await as(boss, `select * from public.enrol_staff($1,'Late L',$2,null,'host')`, [bar, mail(hs.late)])).rows[0];
+    await db.query(`update public.staff_enrolments set expires_at = now() - interval '1 minute' where id=$1`, [en3.enrolment_id]);
+    ok("an expired code is refused", (await claim(late, en3.enrolment_id, en3.code)).error === "expired");
+    await as(boss, `select public.revoke_staff_enrolment($1)`, [en3.enrolment_id]);
+    ok("a cancelled code is closed", (await claim(late, en3.enrolment_id, en3.code)).error === "closed");
+
+    // invite codes wait for a yes
+    const inv = (await as(priya, `select public.create_staff_invite($1,'bartender') c`, [bar])).rows[0].c;
+    await as(joiner, `select public.accept_staff_invite($1)`, [inv]);
+    ok("an invite code puts the person on the list as WAITING", (await statusOf(joiner)) === "pending");
+    ok("…with no powers until someone says yes", !(await can(joiner, "orders.take")));
+    ok("…and they see where they stand", (await as(joiner, `select * from public.my_staff_status()`)).rows.some((r) => r.venue_name === "Verify Staff Bar" && r.status === "pending"));
+    ok("a colleague can't approve them", await refused(() => as(sam, `select public.approve_staff($1,$2)`, [bar, joiner])));
+    await as(priya, `select public.approve_staff($1,$2)`, [bar, joiner]);
+    ok("a manager's yes makes them active", await can(joiner, "orders.take"));
+    const inv2 = (await as(priya, `select public.create_staff_invite($1,'host') c`, [bar])).rows[0].c;
+    await as(late, `select public.accept_staff_invite($1)`, [inv2]);
+    await as(priya, `select public.decline_staff($1,$2)`, [bar, late]);
+    ok("a manager can decline someone waiting", (await statusOf(late)) === undefined);
+
+    // lock-out
+    ok("a bartender can't lock anyone out", await refused(() => as(sam, `select public.lock_staff($1,$2,'x')`, [bar, joiner])));
+    ok("a manager can't lock out another manager", await refused(() => as(priya, `select public.lock_staff($1,$2,'x')`, [bar, mgr2])));
+    ok("nobody locks the owner out", await refused(() => as(priya, `select public.lock_staff($1,$2)`, [bar, boss])));
+    ok("nobody locks themself out", await refused(() => as(priya, `select public.lock_staff($1,$2)`, [bar, priya])));
+    ok("they report to an owner or a manager, not a colleague", await refused(() => as(priya, `select public.lock_staff($1,$2,'x',$3)`, [bar, joiner, sam])));
+    const since1 = (await as(rahul, `select public.clock_in($1) s`, [bar])).rows[0].s;
+    const since2 = (await as(rahul, `select public.clock_in($1) s`, [bar])).rows[0].s;
+    ok("staff clock in, and a second tap changes nothing", since1 && String(since1) === String(since2));
+    await as(priya, `select public.lock_staff($1,$2,'Cash count is off — come and see me',$3)`, [bar, rahul, boss]);
+    ok("locked: every power stops at once", !(await can(rahul, "floor.view")) && !(await can(rahul, "shift.own")));
+    ok("…they can't even read the venue now", (await as(rahul, `select id from public.venues where id=$1`, [bar])).rows.length === 0);
+    ok("…the clock stopped with the lock", (await db.query(`select count(*)::int n from public.staff_shifts where venue_id=$1 and user_id=$2 and ended_at is null`, [bar, rahul])).rows[0].n === 0);
+    ok("…and they can't clock back in", await refused(() => as(rahul, `select public.clock_in($1)`, [bar])));
+    const st = (await as(rahul, `select * from public.my_staff_status()`)).rows.find((r) => r.venue_name === "Verify Staff Bar");
+    ok("the locked person sees why, and who to report to",
+      st?.status === "locked" && /Cash count/.test(st.lock_reason) && st.report_to === "Boss" && st.report_to_role === "owner");
+    ok("a manager sees the lock and the reason on the roster",
+      (await as(priya, `select * from public.team_roster($1)`, [bar])).rows.some((r) => r.user_id === rahul && r.status === "locked" && /Cash count/.test(r.lock_reason)));
+    ok("colleagues don't see who's paused, or why", !(await as(sam, `select * from public.team_roster($1)`, [bar])).rows.some((r) => r.user_id === rahul));
+    ok("a paused person can't be re-added with a fresh code",
+      await refused(() => as(boss, `select * from public.enrol_staff($1,'Rahul again',$2,null,'server')`, [bar, mail(hs.rahul)])));
+    await as(priya, `select public.unlock_staff($1,$2)`, [bar, rahul]);
+    ok("unlocking gives the powers back", await can(rahul, "floor.view"));
+
+    // the time clock
+    await as(rahul, `select public.clock_in($1)`, [bar]);
+    ok("a manager sees who's on", (await as(priya, `select * from public.shift_hours($1, now() - interval '1 day')`, [bar])).rows.some((r) => r.user_id === rahul && r.on_since));
+    ok("a server sees only their own hours", (await as(rahul, `select * from public.shift_hours($1, now() - interval '1 day')`, [bar])).rows.every((r) => r.user_id === rahul));
+    ok("a server can't clock out a colleague", await refused(() => as(rahul, `select public.end_staff_shift($1,$2)`, [bar, sam])));
+    await as(priya, `select public.end_staff_shift($1,$2)`, [bar, rahul]);
+    ok("a manager clocks out someone who forgot", (await as(rahul, `select public.my_shift($1) s`, [bar])).rows[0].s === null);
+    ok("nobody writes shifts directly", await refused(() => as(rahul, `insert into public.staff_shifts (venue_id, user_id) values ($1,$2)`, [bar, rahul])));
+
+    // details, roles, leaving — and the history of all of it
+    await as(priya, `select public.set_staff_details($1,$2,'Rahul Sharma','+91 90000 00000')`, [bar, rahul]);
+    ok("a manager updates someone's details", (await as(priya, `select staff_name from public.staff_details where venue_id=$1 and user_id=$2`, [bar, rahul])).rows[0]?.staff_name === "Rahul Sharma");
+    ok("a colleague can't", await refused(() => as(sam, `select public.set_staff_details($1,$2,'x',null)`, [bar, rahul])));
+    await as(boss, `select public.set_staff_role($1,$2,'supervisor')`, [bar, rahul]);
+    await as(joiner, `delete from public.venue_staff where venue_id=$1 and user_id=$2`, [bar, joiner]);
+    const hist = (await as(priya, `select kind from public.staff_history($1)`, [bar])).rows.map((r) => r.kind);
+    ok("the team's history has every step",
+      ["enrolled", "code_reissued", "enrolment_revoked", "joined", "requested", "approved", "declined", "locked", "unlocked",
+       "role_changed", "left", "details_changed", "shift_ended_by_manager"].every((k) => hist.includes(k)), `— ${[...new Set(hist)].join(", ")}`);
+    const rh = (await as(rahul, `select kind, detail from public.staff_history($1,$2)`, [bar, rahul])).rows;
+    ok("a person reads their own history, the lock's reason included",
+      rh.some((r) => r.kind === "locked" && /Cash count/.test(r.detail.reason ?? "")));
+    ok("…but not the team's", await refused(() => as(rahul, `select * from public.staff_history($1)`, [bar])));
+    ok("nobody writes the history directly", await refused(() => as(priya, `insert into public.staff_events (venue_id, kind) values ($1,'joined')`, [bar])));
+    ok("nobody edits the roster's status directly (no update policy)",
+      (await as(priya, `update public.venue_staff set status='active' where venue_id=$1 and user_id=$2 returning 1`, [bar, sam])).rows.length === 0);
   }
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);

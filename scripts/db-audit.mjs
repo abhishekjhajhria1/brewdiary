@@ -670,6 +670,48 @@ try {
     ok("door_tick(): the door role (guests.seat), 1 to 12 at a time", dt && /'guests\.seat'/.test(dt.d) && /n < -12 or n > 12/.test(dt.d));
   }
 
+  // ── staff access (053) ──────────────────────────────────────────────────────
+  if (!fns.includes("enrol_staff")) {
+    console.log("  ~ staff access (053) not applied — skipping");
+  } else {
+    console.log("\n── staff access: the owner's code, approvals, lock-out, the clock (053) ──");
+    for (const f of ["enrol_staff", "reissue_staff_code", "revoke_staff_enrolment", "staff_enrolments_open", "my_staff_enrolments",
+                     "claim_staff_enrolment", "approve_staff", "decline_staff", "lock_staff", "unlock_staff", "set_staff_details",
+                     "team_roster", "my_staff_status", "staff_history", "clock_in", "clock_out", "end_staff_shift", "my_shift", "shift_hours"]) {
+      ok(`fn ${f}()`, fns.includes(f), "— MISSING");
+    }
+    const sc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'venue_staff_status_check'`);
+    ok("venue_staff.status is pending | active | locked", sc && /pending/.test(sc.d) && /active/.test(sc.d) && /locked/.test(sc.d));
+    for (const f of ["is_venue_staff(uuid,uuid)", "is_venue_manager(uuid,uuid)", "venue_role(uuid,uuid)"]) {
+      const d = await one(`select pg_get_functiondef('public.${f}'::regprocedure) d`);
+      ok(`${f.split("(")[0]}(): only ACTIVE staff count, so a lock-out stops everything`, d && /status = 'active'/.test(d.d));
+    }
+    const enPol = await all(`select policyname from pg_policies where schemaname='public' and tablename='staff_enrolments'`);
+    ok("staff_enrolments: no policies at all (a code's hash never leaves the database)", enPol.length === 0);
+    const enCols = (await all(`select column_name c from information_schema.columns where table_schema='public' and table_name='staff_enrolments'`)).map((r) => r.c);
+    ok("staff_enrolments: the code is kept only as a hash", enCols.includes("code_hash") && !enCols.includes("code"));
+    for (const tb of ["staff_events", "staff_shifts", "staff_details"]) {
+      const w = await all(`select policyname from pg_policies where schemaname='public' and tablename=$1 and cmd <> 'SELECT'`, [tb]);
+      ok(`${tb}: no client write policy (functions and the trigger only)`, w.length === 0);
+    }
+    const cr = await one(`select pg_get_function_result('public.claim_staff_enrolment(uuid,text)'::regprocedure) r`);
+    ok("claim_staff_enrolment() returns a result, so a wrong try is counted, not rolled back", cr && cr.r === "jsonb");
+    ok("every roster change is written to the history by a trigger",
+      !!(await one(`select 1 from pg_trigger where tgname = 'venue_staff_log' and not tgisinternal`)));
+    const ai = await one(`select pg_get_functiondef('public.accept_staff_invite(text)'::regprocedure) d`);
+    ok("accept_staff_invite(): joins as PENDING, a manager's yes comes first", ai && /'pending'/.test(ai.d));
+    const rd = await one(`select qual from pg_policies where schemaname='public' and tablename='venue_staff' and policyname='venue_staff_read'`);
+    ok("venue_staff: a paused or waiting person can read their own row", rd && /user_id = auth\.uid\(\)/.test(rd.qual));
+    const vu = await all(`select policyname from pg_policies where schemaname='public' and tablename='venue_staff' and cmd = 'UPDATE'`);
+    ok("venue_staff: still no update policy (status and role change through functions)", vu.length === 0);
+    for (const f of ["room_staff(uuid)", "thank_staff(uuid,uuid,text)"]) {
+      const d = await one(`select pg_get_functiondef('public.${f}'::regprocedure) d`);
+      ok(`${f.split("(")[0]}(): thanks go to active staff only`, d && /status = 'active'/.test(d.d));
+    }
+    const sh = await one(`select pg_get_functiondef('public.shift_hours(uuid,timestamptz)'::regprocedure) d`);
+    ok("shift_hours(): listed by name, never ranked by hours", sh && /order by 2/.test(sh.d) && !/order by[^;]*minutes/i.test(sh.d));
+  }
+
   // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
   // pinned to search_path=public that calls one unqualified works on a laptop and fails
   // in production. None may.
