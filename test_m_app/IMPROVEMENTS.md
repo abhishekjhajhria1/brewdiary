@@ -12,6 +12,10 @@ The goals behind the order:
 4. **Works the same on iPhone and Android.**
 5. **Easier to change safely** — tests where the risk is.
 
+**Reviewed 30 September 2026:** every item below was checked against the code and is real. Which phase
+each lands in, and the two that wait on outside things (#10 needs a Mac, #12 needs SMTP), is in
+[`docs/18-the-track.md`](../docs/18-the-track.md).
+
 Tick an item off here when it lands, and add a line to [`CHANGELOG.md`](CHANGELOG.md).
 
 ---

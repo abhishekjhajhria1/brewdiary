@@ -52,6 +52,9 @@ If you can read a recipe, you can read this.
     owner adds an employee (their email plus a 6-digit code the owner gives them), shared invite codes
     that wait for a yes, pausing someone's access with a reason and who to report to, the team's
     history, and the time clock (for pay, never a ranking).
+18. **[18 — The track](18-the-track.md)** — the one ordered list from here to a real night at a real
+    venue: switch the server on, the privacy fixes, a diary that survives no signal, the guest and the
+    venue meeting live, iPhone, the pilot. Each phase ends with a gate you can check by hand.
 
 ## The one-paragraph version
 brewdiary is a **drink diary**. You open it, tap tonight's date on a calendar, and jot down what you

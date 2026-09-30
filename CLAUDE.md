@@ -168,4 +168,5 @@ verification requests, house perks for verified venues), the public kiosk board,
 **Blocked on keys/resources (not code):** live Discover venues (Google Places), payments (Stripe), the
 actual model fine-tune (GPU/managed + ~500 corpus). See `docs/08-founder-playbook.md`.
 
-**Next milestone:** deploy to Vercel (`docs/10-deploy.md`) → then Android via Capacitor (`docs/09-…`).
+**Next milestone:** follow [`docs/18-the-track.md`](docs/18-the-track.md) — the ordered plan for both apps and the
+website, phase by phase, each with a gate. Phase 0 is switching the real server on (`docs/10`, `docs/14`).
