@@ -448,7 +448,7 @@ class _GuestCardState extends State<_GuestCard> {
       PassportPaper(
         padding: const EdgeInsets.symmetric(vertical: S.xl, horizontal: S.l),
         child: Column(children: [
-          Text('GUEST CARD', style: TextStyle(fontFamily: T.sansFamily, fontSize: 9, letterSpacing: 2.4, fontWeight: FontWeight.w700, color: bd.faint)),
+          Text('GUEST CARD', style: TextStyle(fontFamily: T.sansFamily, fontFamilyFallback: T.fallback, fontSize: 9, letterSpacing: 2.4, fontWeight: FontWeight.w700, color: bd.faint)),
           const SizedBox(height: S.m),
           if (c == null)
             Text(_error ?? '······', style: TextStyle(fontFamily: T.serifFamily, fontSize: _error == null ? 44 : 15, color: bd.ink))
@@ -456,10 +456,10 @@ class _GuestCardState extends State<_GuestCard> {
             Semantics(
               label: 'Code ${c.code.split('').join(' ')}',
               excludeSemantics: true,
-              child: Text(c.code, style: TextStyle(fontFamily: T.sansFamily, fontSize: 46, letterSpacing: 10, fontWeight: FontWeight.w700, color: bd.accentText, fontFeatures: const [FontFeature.tabularFigures()])),
+              child: Text(c.code, style: TextStyle(fontFamily: T.sansFamily, fontFamilyFallback: T.fallback, fontSize: 46, letterSpacing: 10, fontWeight: FontWeight.w700, color: bd.accentText, fontFeatures: const [FontFeature.tabularFigures()])),
             ),
           const SizedBox(height: S.s),
-          if (c != null) Text('Good until ${TimeOfDay.fromDateTime(c.expiresAt).format(context)}', style: TextStyle(fontFamily: T.sansFamily, fontSize: 12, color: bd.muted)),
+          if (c != null) Text('Good until ${TimeOfDay.fromDateTime(c.expiresAt).format(context)}', style: TextStyle(fontFamily: T.sansFamily, fontFamilyFallback: T.fallback, fontSize: 12, color: bd.muted)),
         ]),
       ),
       const SizedBox(height: S.m),

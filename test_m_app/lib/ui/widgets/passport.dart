@@ -43,7 +43,7 @@ String _shortDate(String key) {
 }
 
 TextStyle _sans(double size, Color color, {FontWeight weight = FontWeight.w700, double spacing = 1}) =>
-    TextStyle(fontFamily: T.sansFamily, fontSize: size, color: color, fontWeight: weight, letterSpacing: spacing, height: 1.15);
+    TextStyle(fontFamily: T.sansFamily, fontFamilyFallback: T.fallback, fontSize: size, color: color, fontWeight: weight, letterSpacing: spacing, height: 1.15);
 TextStyle _serif(double size, Color color, {bool italic = false, double height = 1.1}) =>
     TextStyle(fontFamily: T.serifFamily, fontSize: size, color: color, fontStyle: italic ? FontStyle.italic : FontStyle.normal, height: height);
 

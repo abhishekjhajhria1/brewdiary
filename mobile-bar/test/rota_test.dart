@@ -237,8 +237,8 @@ void main() {
       await tapText(t, 'paid');
       await tapText(t, 'Make it unpaid');
 
-      // …and correct that night's end, with a reason.
-      await t.tap(find.textContaining('15 min break').first);
+      // …and correct another night's end (one not corrected yet), with a reason.
+      await t.tap(find.textContaining('15 min paid break').first);
       await t.pumpAndSettle();
       await tapText(t, 'Correct the times');
       await tapText(t, 'End +30 min');
@@ -247,6 +247,7 @@ void main() {
       await t.enterText(find.byType(TextField).last, 'Stayed to close');
       await tapText(t, 'Save the correction');
       expect(find.text('Save the correction'), findsNothing, reason: 'the sheet closed');
+      // the night just corrected is tagged; the one corrected earlier sits further up
       expect(find.text('corrected'), findsNWidgets(2));
     });
 
