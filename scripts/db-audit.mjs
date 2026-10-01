@@ -450,6 +450,8 @@ try {
     const st = await one(`select pg_get_functiondef('public.share_taste(text,jsonb)'::regprocedure) d`);
     ok("share_taste(): cleans what's shared and expires it", st && /clean_taste/.test(st.d) && /interval '8 hours'/.test(st.d));
     ok("share_taste(): records no visit and no perk (a guest can't write their own reward)", st && !/venue_checkins|perk_redemptions|spend_events|record_visit/.test(st.d));
+    const sta = await one(`select pg_get_functiondef('public.share_taste_at(text,jsonb)'::regprocedure) d`);
+    ok("share_taste_at(): verified venues only, cleaned, expires, no reward", sta && /verified/.test(sta.d) && /clean_taste/.test(sta.d) && /interval '8 hours'/.test(sta.d) && !/venue_checkins|perk_redemptions|spend_events/.test(sta.d));
     const caps = await all(`select role from public.role_capabilities where capability='guests.taste'`);
     ok("guests.taste: never the host or the kitchen", !caps.some((r) => r.role === "host" || r.role === "kitchen"), `— ${caps.map((r) => r.role).join(", ")}`);
     const gcPol = await all(`select 1 from pg_policies where schemaname='public' and tablename='guest_codes'`);

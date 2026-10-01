@@ -222,6 +222,48 @@ class ProfileHit {
   const ProfileHit({required this.id, required this.handle, required this.name});
 }
 
+/// The taste a guest shared when they opened this venue's table or menu link (056):
+/// the card worked out on their phone. Never their diary, never other venues.
+class GuestTaste {
+  final List<String> into;
+  final List<String> usually;
+  final List<String> moods;
+  final List<String> diet;
+  final List<String> allergies;
+  final bool alcoholFreeOften;
+  final bool dryTonight;
+  const GuestTaste({this.into = const [], this.usually = const [], this.moods = const [], this.diet = const [], this.allergies = const [], this.alcoholFreeOften = false, this.dryTonight = false});
+
+  static List<String> _list(Object? v) => [for (final x in (v is List ? v : const [])) if (x is String && x.trim().isNotEmpty) x.trim()];
+
+  factory GuestTaste.fromJson(Object? raw) {
+    final m = raw is Map ? raw : const {};
+    return GuestTaste(
+      into: _list(m['into']),
+      usually: _list(m['usually']),
+      moods: _list(m['moods']),
+      diet: _list(m['diet']),
+      allergies: _list(m['allergies']),
+      alcoholFreeOften: m['alcohol_free_often'] == true,
+      dryTonight: m['dry_tonight'] == true,
+    );
+  }
+
+  bool get isEmpty => into.isEmpty && usually.isEmpty && moods.isEmpty && diet.isEmpty && allergies.isEmpty && !alcoholFreeOften && !dryTonight;
+}
+
+/// Someone in tonight who shared their taste with this venue.
+class GuestTonight {
+  final String userId;
+  final String name;
+  final String handle;
+  final String? tableLabel;
+  final GuestTaste taste;
+  final DateTime sharedAt;
+  const GuestTonight({required this.userId, required this.name, required this.handle, this.tableLabel, required this.taste, required this.sharedAt});
+  ProfileHit get hit => ProfileHit(id: userId, handle: handle, name: name);
+}
+
 enum VerificationStatus { pending, approved, rejected }
 
 class VerificationRequest {

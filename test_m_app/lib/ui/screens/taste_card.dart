@@ -19,6 +19,7 @@ import 'package:brewdiary_core/derive.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';
+import '../../data/taste_share.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
@@ -46,7 +47,6 @@ class TasteCardScreen extends StatefulWidget {
 class _TasteCardScreenState extends State<TasteCardScreen> {
   static const _hiddenKey = 'brewdiary.tastecard.hidden';
   late final Set<String> _hidden = {...(Prefs.getJson<List<dynamic>>(_hiddenKey) ?? const []).map((e) => '$e')};
-  bool _dryTonight = false;
   bool _showPlaces = true;
   bool _sharing = false;
   late final List<_Page> _pages = _book();
@@ -119,7 +119,7 @@ class _TasteCardScreenState extends State<TasteCardScreen> {
           name: auth.profile?.name,
           passport: passport(entries),
           lines: [for (final l in lines) if (!_hidden.contains(l.$1)) (l.$2, l.$3)],
-          dryTonight: _dryTonight,
+          dryTonight: TasteShareStore.instance.dryTonight,
           showPlaces: _showPlaces,
         ),
       _ => () {
@@ -183,8 +183,11 @@ class _TasteCardScreenState extends State<TasteCardScreen> {
             Group(children: [
               SettingRow(
                 title: 'Nothing with alcohol tonight',
-                hint: 'Says so on your identity page.',
-                trailing: BdToggle(on: _dryTonight, label: 'Nothing with alcohol tonight', onChanged: (v) => setState(() => _dryTonight = v)),
+                hint: 'Says so on your identity page, and to tonight\'s bartender.',
+                trailing: BdToggle(on: TasteShareStore.instance.dryTonight, label: 'Nothing with alcohol tonight', onChanged: (v) async {
+                  await TasteShareStore.instance.setDryTonight(v);
+                  if (mounted) setState(() {});
+                }),
               ),
               SettingRow(
                 title: 'Show place stamps',
@@ -197,9 +200,126 @@ class _TasteCardScreenState extends State<TasteCardScreen> {
                   trailing: BdToggle(on: !_hidden.contains(l.$1), label: 'Show ${l.$2}', onChanged: (_) => _toggle(l.$1)),
                 ),
             ]),
+            if (auth.isAuthed && db != null) ...[
+              const SizedBox(height: S.xl),
+              const TasteShareSettings(),
+              const SizedBox(height: S.m),
+              BdButton('Show my guest card', kind: BtnKind.secondary, icon: Ph.identificationBadge, onTap: () => showGuestCard(context)),
+            ],
           ]),
         ),
       ),
     );
+  }
+}
+
+/// The switch for sharing your taste with a venue's bartender, and tonight's shares.
+class TasteShareSettings extends StatefulWidget {
+  const TasteShareSettings({super.key});
+  @override
+  State<TasteShareSettings> createState() => _TasteShareSettingsState();
+}
+
+class _TasteShareSettingsState extends State<TasteShareSettings> {
+  List<TasteShare> _live = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final l = await TasteShareStore.instance.mine();
+      if (mounted) setState(() => _live = l);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = TasteShareStore.instance;
+    return Group(
+      footer: 'What you\'re into, what you usually have, your mood words, and "nothing with alcohol tonight". Tonight only. Never your diary, never where else you\'ve been.',
+      children: [
+        SettingRow(
+          title: 'Share my taste with the bartender',
+          hint: 'When you open a place\'s menu or table link.',
+          trailing: BdToggle(on: store.consent == true, label: 'Share my taste with the bartender', onChanged: (v) async {
+            await store.setConsent(v);
+            if (mounted) setState(() {});
+          }),
+        ),
+        for (final s in _live)
+          SettingRow(
+            title: s.venueName,
+            hint: 'Has your taste until ${TimeOfDay.fromDateTime(s.expiresAt).format(context)}${s.tableLabel == null ? '' : ' · table ${s.tableLabel}'}',
+            trailing: TextAction('Stop', onTap: () async {
+              await store.stop(s.venueId);
+              await _load();
+            }),
+          ),
+      ],
+    );
+  }
+}
+
+/// My guest card: a 6-letter code staff type at the till to find me — good for
+/// ten minutes, then a new one.
+Future<void> showGuestCard(BuildContext context) => showBdSheet<void>(context, title: 'Your guest card', builder: (_) => const _GuestCard());
+
+class _GuestCard extends StatefulWidget {
+  const _GuestCard();
+  @override
+  State<_GuestCard> createState() => _GuestCardState();
+}
+
+class _GuestCardState extends State<_GuestCard> {
+  ({String code, DateTime expiresAt})? _card;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  Future<void> _fetch() async {
+    setState(() => _error = null);
+    try {
+      final c = await TasteShareStore.instance.guestCode();
+      if (mounted) setState(() => _card = c);
+    } catch (_) {
+      if (mounted) setState(() => _error = "Couldn't get a code — check your connection.");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final c = _card;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text('Show this to the staff when they record a visit or a perk.', style: T.bodyMuted(bd)),
+      const SizedBox(height: S.l),
+      PassportPaper(
+        padding: const EdgeInsets.symmetric(vertical: S.xl, horizontal: S.l),
+        child: Column(children: [
+          Text('GUEST CARD', style: TextStyle(fontFamily: T.sansFamily, fontSize: 9, letterSpacing: 2.4, fontWeight: FontWeight.w700, color: PassportInk.soft)),
+          const SizedBox(height: S.m),
+          if (c == null)
+            Text(_error ?? '······', style: TextStyle(fontFamily: T.serifFamily, fontSize: _error == null ? 44 : 15, color: PassportInk.ink))
+          else
+            Semantics(
+              label: 'Code ${c.code.split('').join(' ')}',
+              excludeSemantics: true,
+              child: Text(c.code, style: const TextStyle(fontFamily: T.sansFamily, fontSize: 46, letterSpacing: 10, fontWeight: FontWeight.w700, color: PassportInk.ink, fontFeatures: [FontFeature.tabularFigures()])),
+            ),
+          const SizedBox(height: S.s),
+          if (c != null) Text('Good until ${TimeOfDay.fromDateTime(c.expiresAt).format(context)}', style: TextStyle(fontFamily: T.sansFamily, fontSize: 12, color: PassportInk.soft)),
+        ]),
+      ),
+      const SizedBox(height: S.m),
+      BdButton('New code', kind: BtnKind.secondary, icon: Ph.arrowsClockwise, onTap: _fetch),
+    ]);
   }
 }

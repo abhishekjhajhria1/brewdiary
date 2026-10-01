@@ -19,6 +19,7 @@ import '../../data/base.dart';
 import '../../data/entries.dart';
 import '../../data/menus.dart';
 import '../../data/table_order.dart';
+import '../../data/taste_share.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
@@ -48,7 +49,7 @@ class MenuScreen extends StatelessWidget {
                 : const EmptyNote("No menu here. The tag may be old, or this place isn't on brewdiary yet — ask for a paper menu.", icon: Ph.notebook),
           );
         }
-        return MenuView(menu: menu);
+        return MenuView(menu: menu, slug: slug);
       },
     );
   }
@@ -83,6 +84,63 @@ class TableMenuScreen extends StatelessWidget {
         }
         return MenuView(menu: data.$2, table: data.$1);
       },
+    );
+  }
+}
+
+/// Ask once: share my taste with the bartender when I open a venue's menu?
+/// Returns null when dismissed (we ask again next time).
+Future<bool?> askTasteShare(BuildContext context, String venueName) => showBdSheet<bool>(context, title: 'Let the bartender know your taste?', builder: (ctx) {
+      final bd = ctx.bd;
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('When you open a place\'s menu on brewdiary, its bartender can see your taste passport — so what they make is something you\'ll like.', style: T.body(bd)),
+        const SizedBox(height: S.m),
+        Group(children: [
+          for (final (icon, line) in const [
+            (Ph.martini, 'What you\'re into, what you usually have, your mood words'),
+            (Ph.leaf, '"Nothing with alcohol tonight", when you\'ve said so'),
+            (Ph.moonStars, 'Tonight only — gone after 8 hours'),
+            (Ph.lock, 'Never your diary, never where else you\'ve been'),
+          ])
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: S.s),
+              child: Row(children: [Icon(icon, size: 18, color: bd.accentText), const SizedBox(width: S.m), Expanded(child: Text(line, style: T.body(bd, color: bd.muted)))]),
+            ),
+        ]),
+        const SizedBox(height: S.l),
+        BdButton('Share with $venueName and places I visit', onTap: () => Navigator.pop(ctx, true)),
+        const SizedBox(height: S.s),
+        BdButton('Not now', kind: BtnKind.secondary, onTap: () => Navigator.pop(ctx, false)),
+        const SizedBox(height: S.s),
+        Text('You can change this in Settings, or stop it at any table.', textAlign: TextAlign.center, style: T.caption(bd)),
+      ]);
+    });
+
+/// "Your taste is with (the venue) tonight · Stop", or an offer to share.
+class _TasteLine extends StatelessWidget {
+  final String venue;
+  final TasteShare? shared;
+  final bool busy;
+  final VoidCallback onShare;
+  final VoidCallback onStop;
+  const _TasteLine({required this.venue, required this.shared, required this.busy, required this.onShare, required this.onStop});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final on = shared != null;
+    return Glass(
+      padding: const EdgeInsets.fromLTRB(S.l, S.s, S.xs, S.s),
+      child: Row(children: [
+        Icon(on ? PhFill.checkCircle : Ph.identificationBadge, size: 20, color: bd.accentText),
+        const SizedBox(width: S.m),
+        Expanded(
+          child: Text(
+            on ? 'Your taste is with $venue tonight — the bartender can make you something you\'ll like.' : (busy ? 'Sharing your taste…' : 'Let the bartender know your taste tonight?'),
+            style: T.body(bd),
+          ),
+        ),
+        TextAction(on ? 'Stop' : 'Share', accent: !on, faint: on, onTap: busy ? null : (on ? onStop : onShare)),
+      ]),
     );
   }
 }
@@ -131,7 +189,10 @@ class MenuView extends StatefulWidget {
 
   /// Set when opened from a table's own link.
   final TableInfo? table;
-  const MenuView({super.key, required this.menu, this.table});
+
+  /// The venue's menu slug, when opened from `bwdy.site/m/<slug>`.
+  final String? slug;
+  const MenuView({super.key, required this.menu, this.table, this.slug});
   @override
   State<MenuView> createState() => MenuViewState();
 }
@@ -145,9 +206,49 @@ class MenuViewState extends State<MenuView> {
 
   bool get _ordering => widget.table?.tableService == true && auth.isAuthed && db != null;
 
+  TasteShare? _shared;
+  bool _sharing = false;
+
+  /// Opening a venue's menu shares your taste with its bartender — after you've
+  /// said yes once (056).
+  Future<void> _maybeShareTaste() async {
+    final store = TasteShareStore.instance;
+    if (!auth.isAuthed || db == null || (widget.table == null && widget.slug == null)) return;
+    var yes = store.consent;
+    if (yes == null) {
+      yes = await askTasteShare(context, widget.menu.venueName);
+      if (yes == null) return; // dismissed: ask again next time
+      await store.setConsent(yes);
+    }
+    if (yes) await _shareNow();
+  }
+
+  Future<void> _shareNow() async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    try {
+      final s = await TasteShareStore.instance.share(code: widget.table?.code, slug: widget.table == null ? widget.slug : null);
+      if (mounted) setState(() => _shared = s);
+    } catch (_) {
+      // the menu still works; the bartender just won't see your taste tonight
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  Future<void> _stopSharing() async {
+    final s = _shared;
+    if (s == null) return;
+    await TasteShareStore.instance.stop(s.venueId);
+    if (mounted) setState(() => _shared = null);
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeShareTaste();
+    });
     if (_ordering) {
       _refreshMine();
       _poll = Timer.periodic(const Duration(seconds: 15), (_) => _refreshMine());
@@ -257,6 +358,10 @@ class MenuViewState extends State<MenuView> {
       child: menu.sections.isEmpty
           ? const EmptyNote("The menu isn't up yet — ask at the bar.", icon: Ph.notebook)
           : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (auth.isAuthed && db != null && (widget.table != null || widget.slug != null)) ...[
+                _TasteLine(venue: menu.venueName, shared: _shared, busy: _sharing, onShare: _shareNow, onStop: _stopSharing),
+                const SizedBox(height: S.l),
+              ],
               if (picks.isNotEmpty && !_noAlcohol) ...[
                 const SectionHeader("You'd probably like", padding: EdgeInsets.only(bottom: S.m)),
                 Group(footer: "From your own diary, worked out on this phone. ${menu.venueName} doesn't see it.", children: [for (final p in picks) row(p)]),

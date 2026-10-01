@@ -10,10 +10,13 @@ import 'package:flutter/material.dart';
 import '../../data/backend.dart';
 import '../../data/models.dart';
 import '../../data/prefs.dart';
+import '../../data/session.dart';
+import '../../logic/roles.dart';
 import '../../logic/service.dart';
 import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
+import '../widgets/guest_finder.dart';
 import '../widgets/page.dart';
 
 class StationScreen extends StatefulWidget {
@@ -50,18 +53,36 @@ class _StationScreenState extends State<StationScreen> {
       maxWidth: kWideMaxWidth,
       onRefresh: () async => floorRev.bump(),
       children: [
-        Loader<List<OrderLine>>(
-          load: () => Backend.i.stationLines(widget.venue.id, widget.station),
+        Loader<(List<OrderLine>, List<GuestTonight>)>(
+          load: () async {
+            final lines = await Backend.i.stationLines(widget.venue.id, widget.station);
+            // The bar sees the taste each table shared, so the drink is one they'll like.
+            final guests = widget.station == 'bar' && Session.instance.can(Cap.tasteShare)
+                ? await Backend.i.guestsTonight(widget.venue.id).catchError((_) => const <GuestTonight>[])
+                : const <GuestTonight>[];
+            return (lines, guests);
+          },
           refresh: floorRev,
           retry: true,
-          builder: (context, lines, loading) {
-            if (lines == null) return const Skeleton(height: 280);
+          builder: (context, data, loading) {
+            if (data == null) return const Skeleton(height: 280);
+            final (lines, guests) = data;
             final all = tickets(lines);
             if (all.isEmpty) return EmptyNote('No ${widget.station} tickets waiting. New orders appear here the moment they\'re sent.');
             return LayoutBuilder(builder: (context, c) {
               final cols = c.maxWidth >= 1000 ? 3 : (c.maxWidth >= 640 ? 2 : 1);
               final w = (c.maxWidth - S.m * (cols - 1)) / cols;
-              return Wrap(spacing: S.m, runSpacing: S.m, children: [for (final t in all) SizedBox(width: w, child: _TicketCard(station: widget.station, ticket: t))]);
+              return Wrap(spacing: S.m, runSpacing: S.m, children: [
+                for (final t in all)
+                  SizedBox(
+                    width: w,
+                    child: _TicketCard(
+                      station: widget.station,
+                      ticket: t,
+                      tastes: [for (final g in guests) if (g.tableLabel != null && g.tableLabel == t.lines.first.tableLabel) g.taste],
+                    ),
+                  ),
+              ]);
             });
           },
         ),
@@ -74,7 +95,10 @@ class _StationScreenState extends State<StationScreen> {
 class _TicketCard extends StatelessWidget {
   final String station;
   final Ticket ticket;
-  const _TicketCard({required this.station, required this.ticket});
+
+  /// What the guests at this table shared tonight (bar only).
+  final List<GuestTaste> tastes;
+  const _TicketCard({required this.station, required this.ticket, this.tastes = const []});
 
   @override
   Widget build(BuildContext context) {
@@ -89,6 +113,10 @@ class _TicketCard extends StatelessWidget {
           Expanded(child: Text(ticket.where, style: T.serif(bd, size: 26))),
           ToneTag('${mins}m${late == 2 ? ' · late' : ''}', tone),
         ]),
+        for (final taste in tastes) ...[
+          const SizedBox(height: S.s),
+          TasteChips(taste, compact: true),
+        ],
         const SizedBox(height: S.s),
         for (final l in ticket.lines)
           Semantics(

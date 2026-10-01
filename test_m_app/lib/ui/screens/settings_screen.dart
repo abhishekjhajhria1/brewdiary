@@ -34,6 +34,7 @@ import '../widgets/common.dart';
 import '../widgets/page.dart';
 import '../widgets/pickers.dart';
 import 'landing_screen.dart' show showAuthSheet;
+import 'taste_card.dart' show TasteShareSettings;
 import 'profile_screen.dart';
 
 /// Settings on a page of its own (kept for links); in the app they live inline at
@@ -72,6 +73,10 @@ class SettingsBody extends StatelessWidget {
           if (cloud) ...[
             const _Header('Together and privacy'),
             const _PrivacyGroup(),
+            if (auth.isAuthed) ...[
+              const _Header('At the bar'),
+              const TasteShareSettings(),
+            ],
           ],
           const _Header('Your data'),
           _DataGroup(cloud: cloud),

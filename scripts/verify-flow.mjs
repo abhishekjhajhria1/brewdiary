@@ -2010,6 +2010,9 @@ try {
     ok("after the night it's gone from staff screens", (await as(pour, `select * from public.venue_guests_tonight($1)`, [bar])).rows.length === 0);
     await as(guest, `select * from public.share_taste($1, '{}'::jsonb)`, [code]);
     await as(guest, `select public.stop_taste_share($1)`, [bar]);
+    const viaMenu = (await as(guest, `select * from public.share_taste_at($1, $2::jsonb)`, [`vf-taste-${t}`, JSON.stringify({ moods: ["bright"] })])).rows[0];
+    ok("opening the venue's menu link shares it too (no table)", viaMenu?.venue_id === bar && (await as(pour, `select * from public.venue_guests_tonight($1)`, [bar])).rows[0]?.table_label === null);
+    await as(guest, `select public.stop_taste_share($1)`, [bar]);
     ok("the guest can stop sharing any time", Number((await db.query(`select count(*) c from public.taste_shares where user_id = $1`, [guest])).rows[0].c) === 0);
 
     const card = (await as(guest, `select * from public.my_guest_code()`)).rows[0];

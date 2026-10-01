@@ -64,10 +64,11 @@ begin
   return out;
 end $$;
 
--- The guest's phone calls this when they open bwdy.site/t/<code>.
+-- The guest's phone calls this when they open bwdy.site/t/<code> (a table's tag).
 create or replace function public.share_taste(in_code text, in_taste jsonb)
-returns table (venue_name text, expires_at timestamptz)
+returns table (venue_id uuid, venue_name text, expires_at timestamptz)
 language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
 declare
   t public.venue_tables;
   v public.venues;
@@ -82,10 +83,32 @@ begin
        values (auth.uid(), v.id, t.id, public.clean_taste(in_taste), now(), until)
   on conflict (user_id, venue_id) do update
      set table_id = excluded.table_id, taste = excluded.taste, shared_at = now(), expires_at = until;
-  return query select v.name, until;
+  return query select v.id, v.name, until;
 end $$;
 revoke all on function public.share_taste(text, jsonb) from public;
 grant execute on function public.share_taste(text, jsonb) to authenticated;
+
+-- …and this when they open bwdy.site/m/<slug> (the venue's menu tag, no table).
+create or replace function public.share_taste_at(in_slug text, in_taste jsonb)
+returns table (venue_id uuid, venue_name text, expires_at timestamptz)
+language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
+declare
+  v public.venues;
+  until timestamptz := now() + interval '8 hours';
+begin
+  if auth.uid() is null then raise exception 'sign in to share your taste' using errcode = '28000'; end if;
+  if octet_length(coalesce(in_taste, '{}'::jsonb)::text) > 4096 then raise exception 'that''s too much to share'; end if;
+  select * into v from public.venues where slug = lower(trim(in_slug)) and verified;
+  if v.id is null then raise exception 'no venue with that menu'; end if;
+  insert into public.taste_shares (user_id, venue_id, table_id, taste, shared_at, expires_at)
+       values (auth.uid(), v.id, null, public.clean_taste(in_taste), now(), until)
+  on conflict (user_id, venue_id) do update
+     set taste = excluded.taste, shared_at = now(), expires_at = until;
+  return query select v.id, v.name, until;
+end $$;
+revoke all on function public.share_taste_at(text, jsonb) from public;
+grant execute on function public.share_taste_at(text, jsonb) to authenticated;
 
 create or replace function public.stop_taste_share(vid uuid)
 returns void language sql security definer set search_path = public as $$
@@ -112,6 +135,7 @@ grant execute on function public.my_taste_shares() to authenticated;
 create or replace function public.venue_guests_tonight(vid uuid)
 returns table (user_id uuid, name text, handle text, table_label text, taste jsonb, shared_at timestamptz)
 language plpgsql stable security definer set search_path = public as $$
+#variable_conflict use_column
 begin
   if not public.venue_can(vid, auth.uid(), 'guests.taste') then
     raise exception 'your role here can''t see guests'' taste' using errcode = '42501';
@@ -139,6 +163,7 @@ alter table public.guest_codes enable row level security;
 create or replace function public.my_guest_code()
 returns table (code text, expires_at timestamptz)
 language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
 declare
   alphabet constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; -- no I, O, 0, 1
   c text;
@@ -169,6 +194,7 @@ grant execute on function public.my_guest_code() to authenticated;
 create or replace function public.venue_find_guest(vid uuid, in_code text)
 returns table (user_id uuid, name text, handle text)
 language plpgsql stable security definer set search_path = public as $$
+#variable_conflict use_column
 begin
   if not public.venue_can(vid, auth.uid(), 'perks.redeem') then
     raise exception 'your role here can''t look up guests' using errcode = '42501';
