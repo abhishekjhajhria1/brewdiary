@@ -172,7 +172,19 @@ class _TasteCardScreenState extends State<TasteCardScreen> {
                 controller: _pc,
                 itemCount: _pages.length,
                 onPageChanged: (i) => setState(() => _at = i),
-                itemBuilder: (_, i) => _pageView(_pages[i], lines),
+                itemBuilder: (_, i) => AnimatedBuilder(
+                  animation: _pc,
+                  child: _pageView(_pages[i], lines),
+                  builder: (_, child) {
+                    // A carousel: the open page sits forward, its neighbours step back.
+                    final pos = _pc.hasClients && _pc.position.haveDimensions ? (_pc.page ?? _at.toDouble()) : _at.toDouble();
+                    final d = (pos - i).abs().clamp(0.0, 1.0);
+                    return Opacity(
+                      opacity: 1 - .6 * d,
+                      child: Transform.scale(scale: 1 - .06 * d, alignment: Alignment.topCenter, child: child),
+                    );
+                  },
+                ),
               ),
             ),
             const SizedBox(height: S.s),
@@ -315,18 +327,18 @@ class _GuestCardState extends State<_GuestCard> {
       PassportPaper(
         padding: const EdgeInsets.symmetric(vertical: S.xl, horizontal: S.l),
         child: Column(children: [
-          Text('GUEST CARD', style: TextStyle(fontFamily: T.sansFamily, fontSize: 9, letterSpacing: 2.4, fontWeight: FontWeight.w700, color: PassportInk.soft)),
+          Text('GUEST CARD', style: TextStyle(fontFamily: T.sansFamily, fontSize: 9, letterSpacing: 2.4, fontWeight: FontWeight.w700, color: bd.faint)),
           const SizedBox(height: S.m),
           if (c == null)
-            Text(_error ?? '······', style: TextStyle(fontFamily: T.serifFamily, fontSize: _error == null ? 44 : 15, color: PassportInk.ink))
+            Text(_error ?? '······', style: TextStyle(fontFamily: T.serifFamily, fontSize: _error == null ? 44 : 15, color: bd.ink))
           else
             Semantics(
               label: 'Code ${c.code.split('').join(' ')}',
               excludeSemantics: true,
-              child: Text(c.code, style: const TextStyle(fontFamily: T.sansFamily, fontSize: 46, letterSpacing: 10, fontWeight: FontWeight.w700, color: PassportInk.ink, fontFeatures: [FontFeature.tabularFigures()])),
+              child: Text(c.code, style: TextStyle(fontFamily: T.sansFamily, fontSize: 46, letterSpacing: 10, fontWeight: FontWeight.w700, color: bd.accentText, fontFeatures: const [FontFeature.tabularFigures()])),
             ),
           const SizedBox(height: S.s),
-          if (c != null) Text('Good until ${TimeOfDay.fromDateTime(c.expiresAt).format(context)}', style: TextStyle(fontFamily: T.sansFamily, fontSize: 12, color: PassportInk.soft)),
+          if (c != null) Text('Good until ${TimeOfDay.fromDateTime(c.expiresAt).format(context)}', style: TextStyle(fontFamily: T.sansFamily, fontSize: 12, color: bd.muted)),
         ]),
       ),
       const SizedBox(height: S.m),
