@@ -340,7 +340,6 @@ class _TrustSheet extends StatelessWidget {
             GroupTile(title: 'Days logged', trailing: Text('${signals.activeDays}', style: T.row(bd, color: bd.muted))),
             GroupTile(title: 'Friends', trailing: Text('${signals.friends}', style: T.row(bd, color: bd.muted))),
             GroupTile(title: 'Friends who vouch for you', trailing: Text('${signals.vouches}', style: T.row(bd, color: bd.muted))),
-            GroupTile(title: 'Photo-ID verification', trailing: Text('Coming soon', style: T.caption(bd))),
           ]),
         ]);
       },

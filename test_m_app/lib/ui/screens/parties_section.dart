@@ -20,10 +20,10 @@ class PartiesSection extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SizedBox(height: S.l),
       RoomIntro('One night, one room — everything guests share lands here.', actions: [
-        TextAction('Host one', onTap: () => showBdSheet(context, title: 'Host a night', builder: (_) => _HostParty(onHosted: (id) => _open(context, id)))),
-        TextAction('Join with code', onTap: () => showBdSheet(context, title: 'Join a party', builder: (_) => _JoinParty(onJoined: (id) => _open(context, id)))),
+        RoomAction('Host one', icon: Ph.confetti, primary: true, onTap: () => showBdSheet(context, title: 'Host a night', builder: (_) => _HostParty(onHosted: (id) => _open(context, id)))),
+        RoomAction('Join with code', icon: Ph.ticket, onTap: () => showBdSheet(context, title: 'Join a party', builder: (_) => _JoinParty(onJoined: (id) => _open(context, id)))),
       ]),
-      const SizedBox(height: S.m),
+      const SizedBox(height: S.xl),
       Loader<List<Party>>(
         retry: true,
         refresh: partiesRev,
@@ -31,7 +31,7 @@ class PartiesSection extends StatelessWidget {
         builder: (context, parties, loading) {
           if (parties == null) return const Skeleton(height: 112);
           if (parties.isEmpty) {
-            return const EmptyNote('Host a night or join one with a code — everyone logs, the party page becomes the recap.');
+            return const EmptyNote('No nights yet. Host one, or join a friend\'s with their code — everyone logs, and the party page becomes the recap.', icon: Ph.confetti);
           }
           final today = todayKey();
           final upcoming = parties.where((p) => p.date.compareTo(today) >= 0).toList();

@@ -70,7 +70,7 @@ class _LandingScreenState extends State<LandingScreen> {
               const SizedBox(height: S.xl),
               Text('Coffee, wine, a midnight kombucha — whatever you poured. Tap a day, log it in a breath, and watch the year quietly fill in.', style: T.bodyMuted(bd)),
               const SizedBox(height: S.m),
-              Text('The squares darken the more you drink, so a month of habits is one glance, not a spreadsheet. Keep it private, or pour with friends.', style: T.bodyMuted(bd)),
+              Text('Every night you log fills a square — dry nights too — so a month is one glance, not a spreadsheet. Keep it private, or pour with friends.', style: T.bodyMuted(bd)),
               const SizedBox(height: S.x3),
               const YearPreview(),
               const SectionHeader('Try it — tap a day'),

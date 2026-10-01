@@ -830,19 +830,25 @@ class EmptyNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: S.x3, horizontal: S.l),
+    return Glass(
+      padding: const EdgeInsets.symmetric(vertical: S.xl, horizontal: S.l),
       child: Column(children: [
-        Text(text, textAlign: TextAlign.center, style: T.sans(bd, size: 14, color: bd.faint, height: 1.6)),
-        if (action != null) ...[const SizedBox(height: S.s), TextAction(action!, accent: true, onTap: onAction)],
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: bd.accent.withValues(alpha: .12)),
+          child: Icon(icon ?? Ph.sparkle, size: 22, color: bd.accentText),
+        ),
+        const SizedBox(height: S.m),
+        Text(text, textAlign: TextAlign.center, style: T.sans(bd, size: 14.5, color: bd.muted, height: 1.55)),
+        if (action != null) ...[const SizedBox(height: S.m), BdButton(action!, kind: BtnKind.secondary, expand: false, height: 40, onTap: onAction)],
       ]),
     );
   }
 }
 
-/// The website's room header: a faint line of what this room is, with quiet text
-/// actions on the right. Wraps under the line when the phone is narrow or the
-/// text is large.
+/// A room's header: a line of what this room is, then its actions as buttons —
+/// the first one primary.
 class RoomIntro extends StatelessWidget {
   final String text;
   final List<Widget> actions;
@@ -850,14 +856,30 @@ class RoomIntro extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    final line = Text(text, style: T.sans(bd, size: 14, color: bd.faint, height: 1.5));
-    final acts = Row(mainAxisSize: MainAxisSize.min, children: actions);
-    return LayoutBuilder(builder: (context, c) {
-      final narrow = c.maxWidth < 340 || MediaQuery.textScalerOf(context).scale(14) > 17;
-      if (narrow) return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [line, Transform.translate(offset: const Offset(-6, 0), child: acts)]);
-      return Row(children: [Expanded(child: line), const SizedBox(width: S.s), acts]);
-    });
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text(text, style: T.sans(bd, size: 14.5, color: bd.muted, height: 1.5)),
+      if (actions.isNotEmpty) ...[
+        const SizedBox(height: S.m),
+        Row(children: [
+          for (var i = 0; i < actions.length; i++) ...[
+            if (i > 0) const SizedBox(width: S.s),
+            Expanded(child: actions[i]),
+          ],
+        ]),
+      ],
+    ]);
   }
+}
+
+/// A room action for [RoomIntro]: the first is filled, the rest outlined.
+class RoomAction extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool primary;
+  const RoomAction(this.label, {super.key, required this.icon, required this.onTap, this.primary = false});
+  @override
+  Widget build(BuildContext context) => BdButton(label, icon: icon, kind: primary ? BtnKind.primary : BtnKind.secondary, height: 44, onTap: onTap);
 }
 
 /// A hairline-divided list (no card).

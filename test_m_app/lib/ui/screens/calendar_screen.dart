@@ -179,7 +179,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         const SizedBox(height: S.m),
       ],
-      StreakStrip(stats: s),
+      StreakStrip(stats: s, nights: loggedDates(entryStore.entries).length),
       if (!month) ...[const SizedBox(height: S.m), const AchievementTile()],
       if (month && ExtrasStore.instance.enabledCounters.isNotEmpty) ...[
         const SectionHeader('Today'),

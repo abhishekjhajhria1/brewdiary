@@ -404,9 +404,12 @@ class RecentMosaic extends StatelessWidget {
 }
 
 // ── streak strip + milestone meter ───────────────────────────────────────────
+/// The streak, the nights you kept the diary (dry ones too) and the kinds you've
+/// tried. The meter counts NIGHTS, never drinks — nothing rewards drinking more.
 class StreakStrip extends StatelessWidget {
   final Stats stats;
-  const StreakStrip({super.key, required this.stats});
+  final int nights;
+  const StreakStrip({super.key, required this.stats, required this.nights});
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
@@ -420,12 +423,12 @@ class StreakStrip extends StatelessWidget {
     return Glass(
       padding: const EdgeInsets.all(20),
       child: Column(children: [
-        Row(children: [stat(stats.current, 'night streak', accent: true), stat(stats.total, 'logged'), stat(stats.kinds, 'kinds')]),
-        if (stats.total > 0) ...[
+        Row(children: [stat(stats.current, 'night streak', accent: true), stat(nights, 'nights kept'), stat(stats.kinds, 'kinds')]),
+        if (nights > 0) ...[
           const SizedBox(height: 16),
           Divider(height: 1, color: bd.line),
           const SizedBox(height: 16),
-          MilestoneMeter(total: stats.total),
+          MilestoneMeter(total: nights),
         ],
       ]),
     );
@@ -439,12 +442,12 @@ class MilestoneMeter extends StatelessWidget {
   Widget build(BuildContext context) {
     final bd = context.bd;
     final p = milestoneProgress(total);
-    if (p.next == null) return Label('All milestones reached — $total logged', color: bd.accent);
+    if (p.next == null) return Label('Every milestone — $total nights kept', color: bd.accent);
     final from = p.reached ?? 0;
     final pct = math.max(.04, (total - from) / (p.next! - from));
     return Column(children: [
       Row(children: [
-        Expanded(child: Label('to ${p.next} logs')),
+        Expanded(child: Label('to ${p.next} nights')),
         Text.rich(TextSpan(children: [
           TextSpan(text: '$total', style: T.sans(bd, size: 14, weight: FontWeight.w500)),
           TextSpan(text: '/${p.next}', style: T.sans(bd, size: 14, color: bd.faint)),

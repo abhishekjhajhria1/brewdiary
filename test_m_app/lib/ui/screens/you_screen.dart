@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/game.dart';
 import 'package:brewdiary_core/drinks.dart';
 import 'package:brewdiary_core/types.dart';
 import '../../data/entries.dart';
@@ -77,7 +78,7 @@ class _YouScreenState extends State<YouScreen> {
           titleNote: '${s.longest} night best',
           onRefresh: entryStore.reload,
           children: [
-            StreakStrip(stats: s),
+            StreakStrip(stats: s, nights: loggedDates(entryStore.entries).length),
             _BalanceCard(entries: entries),
             if (yr.total > 0) ...[
               const SectionHeader('Your year'),
@@ -143,7 +144,10 @@ class _YouScreenState extends State<YouScreen> {
               GroupTile(
                 icon: Ph.identificationBadge,
                 title: 'Your taste passport',
-                subtitle: 'Stamps for everywhere you\'ve been, and what you\'re into.',
+                subtitle: () {
+                  final g = passportGame(entries);
+                  return '${g.rank.title} · ${g.miles} miles · quests ${g.quests.where((q) => q.done).length}/${g.quests.length} this week';
+                }(),
                 chevron: true,
                 onTap: () => showTasteCard(context),
               ),
@@ -424,7 +428,7 @@ class _PantryState extends State<_Pantry> {
               Wrap(spacing: S.s, children: [for (final it in items) BdChip(it, icon: PhBold.x, onTap: () => PantryStore.instance.remove(it))]),
             ],
             const SizedBox(height: S.s),
-            Text('Ninkasi will use this to suggest what you can make at home — coming soon.', style: T.caption(bd)),
+            Text('Ninkasi builds from this when you ask what you can make at home.', style: T.caption(bd)),
           ]),
         );
       },

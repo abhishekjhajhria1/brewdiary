@@ -21,10 +21,10 @@ class CirclesSection extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SizedBox(height: S.l),
       RoomIntro('Private rooms — a few friends, one shared mosaic.', actions: [
-        TextAction('New', onTap: () => showBdSheet(context, title: 'New circle', builder: (_) => const _CircleForm(join: false))),
-        TextAction('Join with code', onTap: () => showBdSheet(context, title: 'Join a circle', builder: (_) => const _CircleForm(join: true))),
+        RoomAction('New circle', icon: Ph.plus, primary: true, onTap: () => showBdSheet(context, title: 'New circle', builder: (_) => const _CircleForm(join: false))),
+        RoomAction('Join with code', icon: Ph.ticket, onTap: () => showBdSheet(context, title: 'Join a circle', builder: (_) => const _CircleForm(join: true))),
       ]),
-      const SizedBox(height: S.m),
+      const SizedBox(height: S.xl),
       Loader<List<Circle>>(
         retry: true,
         refresh: circlesRev,

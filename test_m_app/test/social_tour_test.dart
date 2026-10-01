@@ -110,18 +110,57 @@ void main() {
     await _boot(t);
     await _push(t, const Ambient(child: Scaffold(backgroundColor: Colors.transparent, body: TogetherScreen())));
     await _shot(t, 's1_together_empty');
-    await t.tap(find.text('PLANS'));
+    await t.tap(find.bySemanticsLabel(RegExp(r'^Plan a night')));
     await t.pumpAndSettle();
     await _shot(t, 's2_plans_empty');
-    await t.tap(find.text('CIRCLES'));
+    navigatorKey.currentState!.pop();
+    await t.pumpAndSettle();
+    await t.tap(find.bySemanticsLabel(RegExp(r'^Circles\.')));
     await t.pumpAndSettle();
     await _shot(t, 's3_circles_empty');
-    await t.tap(find.text('PARTIES'));
+    navigatorKey.currentState!.pop();
+    await t.pumpAndSettle();
+    await t.tap(find.bySemanticsLabel(RegExp(r'^Host a night')));
     await t.pumpAndSettle();
     await _shot(t, 's4_parties_empty');
     await t.tap(find.text('Host one'));
     await t.pumpAndSettle();
     await _shot(t, 's5_host_sheet');
+  });
+
+  _tourTest('together with friends (sample data)', (t) async {
+    await _boot(t);
+    final kabir = const SocialProfile(id: 'u4', handle: 'kabir', name: 'Kabir');
+    final feed = [
+      ..._feed(),
+      FeedEntry(id: 'f3', userId: 'u4', author: kabir, date: toKey(addDays(testNow, -1)), createdAt: _iso(20), drink: 'Hazy IPA', mood: 'loose', venue: 'Toit, Indiranagar', cheers: 1, cheered: false, comments: const []),
+      FeedEntry(id: 'f4', userId: 'u2', author: _mira, date: toKey(addDays(testNow, -3)), createdAt: _iso(19), drink: 'Kombucha', mood: 'bright', cheers: 0, cheered: false, comments: const []),
+      FeedEntry(id: 'f5', userId: 'u3', author: _arjun, date: toKey(addDays(testNow, -2)), createdAt: _iso(8), drink: 'Cold Brew', cheers: 0, cheered: false, comments: const []),
+    ];
+    await _push(
+      t,
+      Ambient(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: TogetherScreen(
+            preview: TogetherPreview(
+              friends: [_mira, _arjun, kabir],
+              feed: feed,
+              parties: [Party(id: 'p1', name: 'Friday tasting', hostId: 'u2', venue: 'Bar Termini', date: todayKey(), inviteCode: 'FRI-7KQ2', going: 4)],
+              plans: [MyPlan(id: 'pl2', title: 'Sunday coffee crawl', date: toKey(addDays(testNow, 2)), time: '10:00', city: 'Bandra', drinks: const [], vibeTags: const [], joinPolicy: JoinPolicy.fof, status: PlanStatus.open, going: 2, pending: 1)],
+            ),
+          ),
+        ),
+      ),
+    );
+    await _shot(t, 's20_together');
+    final list = find.byType(Scrollable).first;
+    await t.drag(list, const Offset(0, -560));
+    await t.pumpAndSettle();
+    await _shot(t, 's21_together_week');
+    await t.drag(list, const Offset(0, -600));
+    await t.pumpAndSettle();
+    await _shot(t, 's22_together_feed');
   });
 
   _tourTest('feed + plan cards (sample data)', (t) async {
@@ -197,13 +236,10 @@ void main() {
 
   _tourTest('share cards', (t) async {
     await _boot(t);
-    showShareCard(navigatorKey.currentContext!, entryStore.entries.last);
-    await t.pumpAndSettle();
+    // an entry as a card: the studio, with no photo (the warm backdrop)
+    await _push(t, PhotoStudio(story: NightStory.fromEntry(entryStore.entries.last)));
     await _shot(t, 's17_share_card');
-    await t.tap(find.text('POSTER'));
-    await t.pumpAndSettle();
-    await _shot(t, 's18_share_poster');
-    Navigator.of(navigatorKey.currentContext!).pop();
+    navigatorKey.currentState!.pop();
     await t.pumpAndSettle();
     showScoreCard(navigatorKey.currentContext!, const Score(name: 'you', sparks: 9, vibe: 2, context: 'Friday tasting', rank: 2, of: 3));
     await t.pumpAndSettle();

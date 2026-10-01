@@ -23,7 +23,6 @@ import '../theme.dart';
 import 'common.dart';
 import 'game.dart';
 import '../screens/photo_studio.dart';
-import 'share_card.dart';
 
 Future<void> showLogSheet(
   BuildContext context, {
@@ -559,7 +558,7 @@ class _LogSheetState extends State<LogSheet> {
       SheetAction('Edit', icon: Ph.pencilSimple, onTap: () => _loadForEdit(e)),
       if (signedIn) SheetAction(_shareFor == e.id ? 'Hide sharing' : 'Share with friends…', icon: Ph.usersThree, onTap: () => setState(() => _shareFor = _shareFor == e.id ? null : e.id)),
       SheetAction('Share with a photo', icon: Ph.camera, onTap: () => showPhotoStudio(context, NightStory.fromEntry(e), photo: e.photos?.firstOrNull?.url)),
-      SheetAction('Share as a card', icon: Ph.image, onTap: () => showShareCard(context, e)),
+      SheetAction('Share as a card', icon: Ph.image, onTap: () => showPhotoStudio(context, NightStory.fromEntry(e))),
       SheetAction('Remove', icon: Ph.trash, destructive: true, onTap: () => _requestRemove(e)),
     ]);
   }

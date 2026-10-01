@@ -16,6 +16,28 @@ export interface BartenderContext {
   friendsPouring?: string[];
   /** k-anonymous trends across consenting users — counts only, no names attached */
   trending?: string[];
+  /** what they keep at home (You → Your bar), so Ninkasi can suggest what they can make */
+  homeBar?: string[];
+  /** their palate's top flavour notes ("bitter", "citrus") */
+  palate?: string[];
+}
+
+/** The context arrives from a client: keep only short strings in short lists. */
+export function sanitizeContext(raw: unknown): BartenderContext | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  const list = (v: unknown, n: number) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").map((x) => x.trim().slice(0, 60)).filter(Boolean).slice(0, n) : undefined;
+  const total = typeof r.total === "number" && Number.isFinite(r.total) ? Math.max(0, Math.min(100_000, Math.floor(r.total))) : undefined;
+  return {
+    recentDrinks: list(r.recentDrinks, 8),
+    moods: list(r.moods, 8),
+    total,
+    friendsPouring: list(r.friendsPouring, 8),
+    trending: list(r.trending, 8),
+    homeBar: list(r.homeBar, 24),
+    palate: list(r.palate, 6),
+  };
 }
 
 export interface ChatMessage {
@@ -60,6 +82,9 @@ export function contextBlock(ctx: BartenderContext | undefined): string {
     parts.push(`Their friends have been pouring: ${ctx.friendsPouring.slice(0, 5).join(", ")}.`);
   if (ctx.trending?.length)
     parts.push(`Around the bar lately (anonymous, across many guests): ${ctx.trending.slice(0, 5).join(", ")}.`);
+  if (ctx.palate?.length) parts.push(`Their palate leans ${ctx.palate.slice(0, 4).join(", ")}.`);
+  if (ctx.homeBar?.length)
+    parts.push(`At home they have: ${ctx.homeBar.slice(0, 24).join(", ")} — when they ask what to make, build from these first.`);
   if (parts.length === 0)
     return "\n\nThis guest is new to your bar — they have logged little. Be welcoming and keep your suggestions broad.";
   return `\n\nWhat you know of this guest (let it color what you pour; never recite it back like a list):\n${parts.join(" ")}`;

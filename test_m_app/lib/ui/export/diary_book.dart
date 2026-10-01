@@ -298,7 +298,7 @@ class _Book {
         pw.Spacer(flex: 2),
         pw.Row(
           children: [
-            pw.Expanded(child: stat('${s.total}', 'nights logged')),
+            pw.Expanded(child: stat('${loggedDates(b.entries).length}', 'nights logged')),
             pw.Expanded(child: stat('${s.dry}', 'dry nights')),
             pw.Expanded(child: stat('${s.longest}', 'longest run')),
             pw.Expanded(child: stat('${s.kinds}', 'kinds tried')),
@@ -341,7 +341,7 @@ class _Book {
       section('At a glance', 'The numbers'),
       pw.Row(
         children: [
-          pw.Expanded(child: stat('${s.total}', 'nights logged')),
+          pw.Expanded(child: stat('${loggedDates(b.entries).length}', 'nights logged')),
           pw.Expanded(child: stat('${s.dry}', 'dry nights')),
           pw.Expanded(child: stat('${s.longest}', 'longest run')),
         ],

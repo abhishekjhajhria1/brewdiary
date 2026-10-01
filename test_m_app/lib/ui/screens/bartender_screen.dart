@@ -126,9 +126,11 @@ class _BartenderScreenState extends State<BartenderScreen> {
     final ctx = BartenderContext(
       recentDrinks: recentDrinks(entries, 6),
       moods: recentMoods(entries, 6),
-      total: entries.length,
+      total: loggedDates(entries).length,
       friendsPouring: _friendsPouring,
       trending: _trending,
+      homeBar: PantryStore.instance.items,
+      palate: [for (final n in palate(entries).take(4)) n.note],
     );
     final stream = BartenderApi.ask(history, ctx, collect: TrainingStore.instance.collecting);
     stream.mode.then((m) {
@@ -218,7 +220,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
         const SectionHeader('Try asking', padding: EdgeInsets.only(top: S.x3, bottom: S.m)),
         // The website's starters: glass pills, one tap to ask.
         Wrap(spacing: S.s, runSpacing: S.s, children: [
-          for (final s in starters)
+          for (final s in [if (PantryStore.instance.items.isNotEmpty) 'What can I make with what\'s at home?', ...starters])
             Semantics(
               button: true,
               child: Pressable(

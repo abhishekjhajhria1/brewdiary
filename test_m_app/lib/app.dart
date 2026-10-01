@@ -387,11 +387,16 @@ class _TabBar extends StatelessWidget {
                             ),
                             Positioned.fill(
                               // Text-only, in the website's spaced capitals: the amber mark says where you are.
-                              child: Center(
-                                child: AnimatedDefaultTextStyle(
-                                  duration: Motion.fast,
-                                  style: T.sans(bd, size: 11.5, spacing: 11.5 * .16, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint),
-                                  child: Text(_labels[t]!.toUpperCase(), maxLines: 1),
+                              // Large text: the label shrinks to fit instead of being cut off.
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: AnimatedDefaultTextStyle(
+                                    duration: Motion.fast,
+                                    style: T.sans(bd, size: 11.5, spacing: 11.5 * .16, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint),
+                                    child: Text(_labels[t]!.toUpperCase(), maxLines: 1),
+                                  ),
                                 ),
                               ),
                             ),
