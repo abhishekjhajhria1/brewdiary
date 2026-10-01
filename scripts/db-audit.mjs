@@ -462,6 +462,19 @@ try {
     console.log("  ~ taste at the table (056) not applied — skipping");
   }
 
+  // ── photos kept a year at most (057): server-only helpers ───────────────────
+  const pf = await one(`select to_regprocedure('public.photo_files_older_than(int,int)') f`);
+  if (pf.f) {
+    for (const fn of ["photo_files_older_than(int,int)", "photo_files_of(uuid)"]) {
+      const g = await one(`select has_function_privilege('authenticated', 'public.${fn}', 'execute') a, has_function_privilege('anon', 'public.${fn}', 'execute') n`);
+      ok(`${fn}: the server's key only — no app can list other people's files`, !g.a && !g.n);
+    }
+    const pd = await one(`select pg_get_functiondef('public.photo_files_older_than(int,int)'::regprocedure) d`);
+    ok("photo_files_older_than(): never younger than 30 days, whatever it's asked", /greatest\(days, 30\)/.test(pd.d));
+  } else {
+    console.log("  ~ photo retention (057) not applied — skipping");
+  }
+
   // ── more challenges (043): counts only, inside the circle ─────────────────
   const cb2 = await one(`
     select pg_get_functiondef(p.oid) d from pg_proc p

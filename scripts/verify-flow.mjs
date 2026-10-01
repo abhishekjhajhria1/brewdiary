@@ -2024,6 +2024,24 @@ try {
     await db.query(`update public.guest_codes set expires_at = now() - interval '1 second' where user_id = $1`, [guest]);
     ok("…an old code finds nobody", (await as(pour, `select * from public.venue_find_guest($1,$2)`, [bar, card.code])).rows.length === 0);
   }
+
+  // ── 27. photos kept a year at most (057) ─────────────────────────────────────
+  if ((await db.query(`select to_regprocedure('public.photo_files_older_than(int,int)') f`)).rows[0].f) {
+    console.log("\n── 27. photos are kept for a year, at most (057) ──");
+    const t = Date.now();
+    const pia = await mkUser("Pia", `vf-pia-${t}`);
+    await db.query(`insert into storage.buckets (id, name, public) values ('photos','photos',true) on conflict do nothing`);
+    await db.query(`insert into storage.objects (bucket_id, name, created_at) values ('photos', $1, now() - interval '400 days'), ('photos', $2, now() - interval '10 days')`, [`${pia}/e1/old`, `${pia}/e2/new`]);
+    await db.query("set local role service_role");
+    const old = (await db.query(`select name from public.photo_files_older_than(365, 500)`)).rows.map((r) => r.name);
+    const mine = (await db.query(`select name from public.photo_files_of($1)`, [pia])).rows.map((r) => r.name);
+    const floor = (await db.query(`select name from public.photo_files_older_than(1, 500)`)).rows.map((r) => r.name);
+    await db.query("reset role");
+    ok("a photo older than a year is due to go; a recent one isn't", old.includes(`${pia}/e1/old`) && !old.includes(`${pia}/e2/new`));
+    ok("account deletion finds every file, however deep", mine.length === 2);
+    ok("…asked for 1 day, it still keeps 30", !floor.includes(`${pia}/e2/new`));
+    ok("an app can't list photo files", await refused(() => as(pia, `select * from public.photo_files_of($1)`, [pia])));
+  }
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

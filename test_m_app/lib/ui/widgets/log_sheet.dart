@@ -407,7 +407,11 @@ class _LogSheetState extends State<LogSheet> {
                 const SizedBox(height: S.s),
                 GlassField(controller: _note, hint: 'A line about the moment…', maxLines: 3),
                 const SizedBox(height: S.xl),
-                const Label('Photos'),
+                Row(children: [
+                  const Label('Photos'),
+                  const Spacer(),
+                  if (auth.isAuthed && db != null) Text('kept for a year', style: T.caption(context.bd)),
+                ]),
                 const SizedBox(height: S.s),
                 Wrap(spacing: S.s, runSpacing: S.s, children: [
                   for (final p in _photos) _photoTile(p),
