@@ -193,7 +193,7 @@ class _AuthSheetState extends State<_AuthSheet> {
   bool _confirm = false;
   bool _resetSent = false;
   // Email-code sign-in (cloud builds): no password, a 6-digit code instead.
-  bool _useCode = false;
+  bool _useCode = Config.cloud; // the emailed code first; a password is the other way
   bool _codeSent = false;
   final _code = TextEditingController();
 
@@ -314,7 +314,8 @@ class _AuthSheetState extends State<_AuthSheet> {
     }
     final n = entryStore.entries.length;
     final kicker = _signup ? (n > 0 ? (n > 1 ? '$n nights logged' : 'First night logged') : 'New diary') : 'Welcome back';
-    final ready = _email.text.trim().isNotEmpty && _password.text.length >= 6;
+    // New passwords need 8 characters; older ones of 6 still sign in.
+    final ready = _email.text.trim().isNotEmpty && _password.text.length >= (_signup ? 8 : 6);
     return AutofillGroup(
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const SizedBox(height: S.xs),
@@ -322,11 +323,11 @@ class _AuthSheetState extends State<_AuthSheet> {
         const SizedBox(height: S.s),
         Text(_signup ? 'Keep your diary.' : 'Sign in.', style: T.title(bd)),
         const SizedBox(height: S.s),
-        Text(_signup ? "Save what you logged and start a streak. Email and a password — that's it." : 'Pick up where you left off.', style: T.bodyMuted(bd)),
+        Text(_signup ? (_useCode ? "Save what you logged and start a streak. Your email and the code we send — that's it." : "Save what you logged and start a streak. Email and a password — that's it.") : 'Pick up where you left off.', style: T.bodyMuted(bd)),
         const SizedBox(height: S.xl),
         if (Config.cloud) ...[
           Segmented<bool>(
-            options: const [(false, 'Password'), (true, 'Email me a code')],
+            options: const [(true, 'Email me a code'), (false, 'Password')],
             value: _useCode,
             onChanged: (v) => setState(() {
               _useCode = v;
@@ -379,7 +380,7 @@ class _AuthSheetState extends State<_AuthSheet> {
           LineField(
             controller: _password,
             label: 'Password',
-            hint: _signup ? 'At least 6 characters' : 'Your password',
+            hint: _signup ? 'At least 8 characters' : 'Your password',
             obscure: !_showPassword,
             caps: TextCapitalization.none,
             action: TextInputAction.done,

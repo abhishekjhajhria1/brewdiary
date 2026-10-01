@@ -31,6 +31,7 @@ import 'ui/screens/together_intro.dart';
 import 'ui/screens/together_screen.dart';
 import 'ui/screens/you_screen.dart';
 import 'ui/theme.dart';
+import 'ui/widgets/app_lock.dart';
 import 'ui/widgets/common.dart';
 import 'ui/widgets/moments.dart';
 import 'ui/widgets/page.dart';
@@ -63,7 +64,7 @@ class BrewdiaryApp extends StatelessWidget {
             // Honour the person's text size, within the range the layouts are built for.
             child: MediaQuery(
               data: mq.copyWith(textScaler: mq.textScaler.clamp(minScaleFactor: .9, maxScaleFactor: 1.3)),
-              child: KeyboardScope(inset: mq.viewInsets.bottom, child: child!),
+              child: AppLockGate(child: KeyboardScope(inset: mq.viewInsets.bottom, child: child!)),
             ),
           );
         },

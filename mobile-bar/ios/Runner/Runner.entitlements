@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Universal links: https://bar.bwdy.site/... opens this app. The website serves the
+	     matching /.well-known/apple-app-site-association once APPLE_TEAM_ID is set
+	     (src/lib/appLinks.ts). Needs the Associated Domains capability on the App ID. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:bar.bwdy.site</string>
+	</array>
+</dict>
+</plist>

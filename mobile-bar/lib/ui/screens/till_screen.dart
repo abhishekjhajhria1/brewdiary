@@ -14,6 +14,7 @@ import '../../logic/venue_kinds.dart';
 import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
+import '../widgets/next_steps.dart';
 import '../widgets/guest_finder.dart';
 import '../widgets/page.dart';
 import 'guests_screen.dart';
@@ -54,6 +55,7 @@ class _TillScreenState extends State<TillScreen> {
       children: [
         const DemoNote(),
         ShiftCard(venue: v),
+        NextSteps(venue: v),
         if (s.can(Cap.takePayment)) ...[
           BdButton('New sale', icon: Ph.receipt, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckoutScreen(venue: v)))),
           const SizedBox(height: S.xl),

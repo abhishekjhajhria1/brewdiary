@@ -30,6 +30,7 @@ import '../../data/safety.dart';
 import '../../data/settings.dart';
 import '../theme.dart';
 import '../export/diary_book.dart';
+import '../widgets/app_lock.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
 import '../widgets/pickers.dart';
@@ -844,6 +845,41 @@ class _VenueBooksSheetState extends State<_VenueBooksSheet> {
 }
 
 // ── your data ────────────────────────────────────────────────────────────────
+/// "Lock brewdiary": Face ID, a fingerprint or the phone's PIN to open the diary.
+class _LockRow extends StatefulWidget {
+  const _LockRow();
+  @override
+  State<_LockRow> createState() => _LockRowState();
+}
+
+class _LockRowState extends State<_LockRow> {
+  bool? _available;
+
+  @override
+  void initState() {
+    super.initState();
+    AppLockStore.instance.available().then((v) {
+      if (mounted) setState(() => _available = v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppLockStore.instance;
+    if (_available == false) return const SizedBox.shrink();
+    return SettingRow(
+      title: 'Lock brewdiary',
+      hint: 'Face ID, a fingerprint or your phone\'s PIN to open it; hidden in the app switcher.',
+      trailing: BdToggle(on: store.enabled, label: 'Lock brewdiary', onChanged: (v) async {
+        final ok = await store.setEnabled(v);
+        if (!mounted) return;
+        if (!ok) toast(this.context, "Couldn't confirm it's you — the lock stays off.");
+        setState(() {});
+      }),
+    );
+  }
+}
+
 /// Type the emailed code; pops true once it's confirmed.
 class _CodeSheet extends StatefulWidget {
   final String email;
@@ -1003,6 +1039,7 @@ class _DataGroupState extends State<_DataGroup> {
     return Group(
       footer: widget.cloud ? 'Deleting your account is immediate and permanent — the diary, the photos, the points, all of it.' : null,
       children: [
+        const _LockRow(),
         GroupTile(
           icon: Ph.bookOpen,
           title: _busy ? 'Making your book…' : 'Your diary, as a book',
