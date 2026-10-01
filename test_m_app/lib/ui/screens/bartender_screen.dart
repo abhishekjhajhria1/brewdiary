@@ -7,9 +7,11 @@
 import 'package:flutter/material.dart';
 
 import 'package:brewdiary_core/bartender.dart';
+import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
 import '../../data/auth.dart';
 import '../../data/bartender_api.dart';
+import '../../data/chats.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';
 import '../../data/friends.dart';
@@ -49,6 +51,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
   @override
   void initState() {
     super.initState();
+    _messages.addAll(ChatStore.instance.current?.messages ?? const []);
     if (auth.isAuthed && db != null) {
       FriendsApi.feed().then((f) => _friendsPouring = f.map((e) => e.drink).toSet().take(5).toList()).catchError((_) => <String>[]);
       DiscoverApi.tasteTrends().then((t) => _trending = t.where((x) => x.kind == 'drink').map((x) => x.name).take(5).toList()).catchError((_) => <String>[]);
@@ -72,11 +75,37 @@ class _BartenderScreenState extends State<BartenderScreen> {
 
   void _newChat() {
     if (_busy) return;
+    ChatStore.instance.startNew();
     setState(() {
       _messages.clear();
       _offline = false;
       _under = false;
     });
+  }
+
+  void _openChat(Chat c) {
+    ChatStore.instance.open(c.id);
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(c.messages);
+      _offline = false;
+    });
+    _toBottom();
+  }
+
+  /// Every saved conversation: open one, rename it, or delete it.
+  Future<void> _chats() async {
+    if (_busy) return;
+    await showBdSheet<void>(context, title: 'Your chats with $ninkasiName', builder: (ctx) => _ChatList(onOpen: (c) {
+          Navigator.pop(ctx);
+          _openChat(c);
+        }, onNew: () {
+          Navigator.pop(ctx);
+          _newChat();
+        }, onDeletedCurrent: () {
+          if (mounted) setState(_messages.clear);
+        }));
   }
 
   Future<void> _send(String text) async {
@@ -113,6 +142,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
         setState(() => _messages[_messages.length - 1] = ChatMessage(ChatRole.assistant, acc));
       }
       TrainingStore.instance.log(user: content, assistant: acc);
+      await ChatStore.instance.save([...history, ChatMessage(ChatRole.assistant, acc)]);
     } catch (_) {
       if (mounted) setState(() => _messages[_messages.length - 1] = const ChatMessage(ChatRole.assistant, 'The bar went quiet for a moment — ask me again, love.'));
     } finally {
@@ -157,9 +187,11 @@ class _BartenderScreenState extends State<BartenderScreen> {
                     ? const Align(key: ValueKey('w'), alignment: Alignment.centerLeft, child: Wordmark())
                     : Text(ninkasiName, key: const ValueKey('t'), style: T.sans(bd, size: 17, weight: FontWeight.w600)),
               ),
-              actions: _messages.isNotEmpty
-                  ? [IconBtn(Ph.notePencil, tooltip: 'New conversation', onTap: _busy ? null : _newChat)]
-                  : (widget.inShell ? (siteHeaderActions?.call(context) ?? const []) : const []),
+              actions: [
+                if (ChatStore.instance.chats.isNotEmpty) IconBtn(Ph.chatsCircle, tooltip: 'Your chats', onTap: _busy ? null : _chats),
+                if (_messages.isNotEmpty) IconBtn(Ph.notePencil, tooltip: 'New conversation', onTap: _busy ? null : _newChat)
+                else if (widget.inShell) ...(siteHeaderActions?.call(context) ?? const []),
+              ],
             ),
           ),
         ]),
@@ -306,6 +338,83 @@ class _BartenderScreenState extends State<BartenderScreen> {
           ),
         ),
       ]),
+    );
+  }
+}
+
+/// The saved conversations, newest first.
+class _ChatList extends StatelessWidget {
+  final ValueChanged<Chat> onOpen;
+  final VoidCallback onNew;
+  final VoidCallback onDeletedCurrent;
+  const _ChatList({required this.onOpen, required this.onNew, required this.onDeletedCurrent});
+
+  Future<void> _manage(BuildContext context, Chat c) async {
+    final store = ChatStore.instance;
+    await showActions(context, title: c.title, actions: [
+      SheetAction('Rename', icon: Ph.pencilSimple, onTap: () async {
+        final name = TextEditingController(text: c.title);
+        final v = await showBdSheet<String>(context, title: 'Rename chat', builder: (ctx) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              GlassField(controller: name, autofocus: true, maxLength: 60, action: TextInputAction.done, onSubmitted: (t) => Navigator.pop(ctx, t)),
+              const SizedBox(height: S.m),
+              BdButton('Save', onTap: () => Navigator.pop(ctx, name.text)),
+            ]));
+        name.dispose();
+        if (v != null) await store.rename(c.id, v);
+      }),
+      SheetAction('Delete', icon: Ph.trash, destructive: true, onTap: () async {
+        if (!await confirm(context, title: 'Delete this chat?', body: 'It\'s removed from this phone.', yes: 'Delete')) return;
+        final wasCurrent = store.currentId == c.id;
+        await store.delete(c.id);
+        if (wasCurrent) onDeletedCurrent();
+      }),
+    ]);
+  }
+
+  String _when(DateTime d) {
+    final k = toKey(d);
+    if (k == todayKey()) return 'Today, ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    return formatDayLongYear(k);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return ListenableBuilder(
+      listenable: ChatStore.instance,
+      builder: (context, _) {
+        final store = ChatStore.instance;
+        final chats = store.chats;
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          BdButton('New chat', kind: BtnKind.secondary, icon: Ph.notePencil, onTap: onNew),
+          const SizedBox(height: S.m),
+          if (chats.isEmpty) const EmptyNote('No saved chats yet.'),
+          if (chats.isNotEmpty)
+            Group(children: [
+              for (final c in chats)
+                Pressable(
+                  onTap: () => onOpen(c),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: S.s),
+                    child: Row(children: [
+                      Icon(c.id == store.currentId ? PhFill.checkCircle : Ph.chatCircle, size: 20, color: c.id == store.currentId ? bd.accentText : bd.faint),
+                      const SizedBox(width: S.m),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.row(bd)),
+                          const SizedBox(height: 2),
+                          Text('${_when(c.updatedAt)} · ${(c.messages.length / 2).ceil()} ${c.messages.length <= 2 ? 'question' : 'questions'}', style: T.caption(bd)),
+                        ]),
+                      ),
+                      IconBtn(Ph.dotsThree, tooltip: 'Rename or delete ${c.title}', onTap: () => _manage(context, c)),
+                    ]),
+                  ),
+                ),
+            ]),
+          const SizedBox(height: S.s),
+          Text('Kept on this phone. They also go into your diary book.', style: T.caption(bd)),
+        ]);
+      },
     );
   }
 }

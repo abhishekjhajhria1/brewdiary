@@ -401,3 +401,38 @@ Passport passport(List<Entry> entries, [int n = 6]) {
   final stamps = first.values.toList()..sort((a, b) => b.date != a.date ? b.date.compareTo(a.date) : a.place.compareTo(b.place));
   return Passport(stamps: stamps.take(n).toList(), places: stamps.length, kinds: kinds.length, families: families.length, dryNights: dryDates(entries).length, since: since);
 }
+
+// ── visa stamps for a stretch of the calendar ───────────────────────────────
+// What a month (or a year) added to the passport: a place first visited, a drink
+// first tasted, a kind first tried, and each dry night. Variety, never volume —
+// the tenth Negroni earns nothing; the first Paloma does.
+enum StampKind { place, firstTaste, newKind, dry }
+
+class VisaStamp {
+  final StampKind kind;
+  final String label; // the place, the drink family, the kind's name, or 'Dry night'
+  final String date;
+  const VisaStamp(this.kind, this.label, this.date);
+}
+
+List<VisaStamp> stampsBetween(List<Entry> entries, String from, String to) {
+  final sorted = [...entries]..sort((a, b) => a.date != b.date ? a.date.compareTo(b.date) : a.createdAt.compareTo(b.createdAt));
+  final places = <String>{}, families = <String>{}, kinds = <DrinkType>{}, dry = <String>{};
+  final out = <VisaStamp>[];
+  for (final e in sorted) {
+    if (e.date.compareTo(to) > 0) break;
+    final inside = e.date.compareTo(from) >= 0;
+    final place = e.venue?.trim();
+    if (place != null && place.isNotEmpty && places.add(place.toLowerCase()) && inside) out.add(VisaStamp(StampKind.place, place, e.date));
+    if (isDryDay(e)) {
+      if (dry.add(e.date) && inside) out.add(VisaStamp(StampKind.dry, 'Dry night', e.date));
+      continue;
+    }
+    final c = canonicalize(e.drink);
+    final t = e.type ?? c.type;
+    if (t != null && t != DrinkType.none && kinds.add(t) && inside) out.add(VisaStamp(StampKind.newKind, t.name, e.date));
+    final fam = c.matched ? c.family : e.drink.trim();
+    if (fam.isNotEmpty && families.add(fam.toLowerCase()) && inside) out.add(VisaStamp(StampKind.firstTaste, fam, e.date));
+  }
+  return out;
+}

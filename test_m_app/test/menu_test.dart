@@ -63,7 +63,7 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.bySemanticsLabel('Nothing with alcohol tonight'));
     await t.pumpAndSettle();
-    expect(find.text('NOTHING WITH ALCOHOL TONIGHT'), findsOneWidget);
+    expect(find.text('Nothing with alcohol'), findsOneWidget, reason: 'the identity page says so');
     expect(find.byType(BdToggle), findsWidgets);
   });
 

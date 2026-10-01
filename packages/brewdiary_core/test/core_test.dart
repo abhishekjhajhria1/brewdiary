@@ -416,4 +416,31 @@ void main() {
       expect([p.stamps, p.places, p.kinds, p.families, p.dryNights, p.since], [isEmpty, 0, 0, 0, 0, null]);
     });
   });
+
+  group('stampsBetween (parity with tests/derive.test.ts)', () {
+    Entry e(String drink, String date, [String? venue, DrinkType? type]) => Entry(id: 's${_seq++}', date: date, createdAt: '${date}T20:00:00Z', drink: drink, venue: venue, type: type);
+    final diary = [
+      e('Negroni', '2026-08-20', 'Soka', DrinkType.cocktail),
+      e('Negroni', '2026-09-02', 'Soka', DrinkType.cocktail),
+      e('Paloma', '2026-09-03', 'Toit', DrinkType.cocktail),
+      e('IPA', '2026-09-04', 'Toit', DrinkType.beer),
+      e('dry day', '2026-09-05', null, DrinkType.none),
+      e('Paloma', '2026-10-01', 'Bastian', DrinkType.cocktail),
+    ];
+
+    test('only firsts inside the stretch: a place, a taste, a kind, each dry night', () {
+      expect(stampsBetween(diary, '2026-09-01', '2026-09-30').map((s) => (s.kind.name, s.label, s.date)), [
+        ('place', 'Toit', '2026-09-03'),
+        ('firstTaste', 'Paloma', '2026-09-03'),
+        ('newKind', 'beer', '2026-09-04'),
+        ('firstTaste', 'IPA', '2026-09-04'),
+        ('dry', 'Dry night', '2026-09-05'),
+      ]);
+    });
+
+    test('the tenth of something earns nothing; an empty stretch is empty', () {
+      expect(stampsBetween(diary, '2026-10-01', '2026-10-31').map((s) => s.label), ['Bastian']);
+      expect(stampsBetween([], '2026-09-01', '2026-09-30'), isEmpty);
+    });
+  });
 }

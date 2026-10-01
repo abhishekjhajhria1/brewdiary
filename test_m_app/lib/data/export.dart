@@ -2,11 +2,13 @@
 // itself, what you did in Together, Split, your to-try list, what venues keep on
 // you, and your conversations with Ninkasi. Gathered on the phone; nothing is
 // sent anywhere, and each cloud read that fails just leaves its section out.
+import 'package:brewdiary_core/bartender.dart';
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/misc.dart';
 import 'package:brewdiary_core/types.dart';
 
 import 'auth.dart';
+import 'chats.dart';
 import 'base.dart';
 import 'circles.dart';
 import 'entries.dart';
@@ -113,10 +115,20 @@ class ExportBundle {
       venueNotes: [for (final b in books) (venue: b.venueName, body: b.body, tags: b.tags)],
       visits: visits,
       perks: [for (final r in perks) (reward: '${r['reward']}', at: '${r['redeemed_at']}')],
-      chats: [
-        for (final s in TrainingStore.instance.samples)
-          (at: DateTime.fromMillisecondsSinceEpoch((s['at'] as num?)?.toInt() ?? 0), user: '${s['user'] ?? ''}', assistant: '${s['assistant'] ?? ''}'),
-      ],
+      chats: () {
+        // Saved conversations, question by answer; the older training copies only
+        // when there are no saved chats yet.
+        final saved = <({DateTime at, String user, String assistant})>[
+          for (final c in ChatStore.instance.chats)
+            for (var i = 0; i + 1 < c.messages.length; i++)
+              if (c.messages[i].role == ChatRole.user && c.messages[i + 1].role == ChatRole.assistant) (at: c.createdAt, user: c.messages[i].content, assistant: c.messages[i + 1].content),
+        ];
+        if (saved.isNotEmpty) return saved;
+        return [
+          for (final s in TrainingStore.instance.samples)
+            (at: DateTime.fromMillisecondsSinceEpoch((s['at'] as num?)?.toInt() ?? 0), user: '${s['user'] ?? ''}', assistant: '${s['assistant'] ?? ''}'),
+        ];
+      }(),
     );
   }
 }

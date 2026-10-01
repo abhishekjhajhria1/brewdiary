@@ -421,3 +421,48 @@ export function passport(entries: Entry[], n = 6): Passport {
     since,
   };
 }
+
+// ── visa stamps for a stretch of the calendar ───────────────────────────────
+// What a month (or a year) added to the passport: a place first visited, a drink
+// first tasted, a kind first tried, and each dry night. Variety, never volume —
+// the tenth Negroni earns nothing; the first Paloma does. Twin: derive.dart.
+export type StampKind = "place" | "firstTaste" | "newKind" | "dry";
+export interface VisaStamp {
+  kind: StampKind;
+  label: string; // the place, the drink family, the kind's name, or "Dry night"
+  date: string;
+}
+
+export function stampsBetween(entries: Entry[], from: string, to: string): VisaStamp[] {
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+  const places = new Set<string>(), families = new Set<string>(), kinds = new Set<DrinkType>(), dry = new Set<string>();
+  const out: VisaStamp[] = [];
+  for (const e of sorted) {
+    if (e.date > to) break;
+    const inside = e.date >= from;
+    const place = e.venue?.trim();
+    if (place && !places.has(place.toLowerCase())) {
+      places.add(place.toLowerCase());
+      if (inside) out.push({ kind: "place", label: place, date: e.date });
+    }
+    if (isDryDay(e)) {
+      if (!dry.has(e.date)) {
+        dry.add(e.date);
+        if (inside) out.push({ kind: "dry", label: "Dry night", date: e.date });
+      }
+      continue;
+    }
+    const c = canonicalize(e.drink);
+    const t = e.type ?? c.type;
+    if (t && t !== "none" && !kinds.has(t)) {
+      kinds.add(t);
+      if (inside) out.push({ kind: "newKind", label: t, date: e.date });
+    }
+    const fam = c.matched ? c.family : e.drink.trim();
+    if (fam && !families.has(fam.toLowerCase())) {
+      families.add(fam.toLowerCase());
+      if (inside) out.push({ kind: "firstTaste", label: fam, date: e.date });
+    }
+  }
+  return out;
+}
