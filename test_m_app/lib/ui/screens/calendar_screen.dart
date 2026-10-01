@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/game.dart';
 import 'package:brewdiary_core/types.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
@@ -17,6 +18,7 @@ import '../widgets/common.dart';
 import '../widgets/moments.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
+import '../widgets/game.dart';
 import '../widgets/passport.dart';
 import 'discover_screen.dart';
 import 'morning_after.dart';
@@ -245,38 +247,38 @@ class _PassportStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bd = context.bd;
     final entries = entryStore.entries;
     final yearView = month0 == null;
     final (from, to) = yearView ? ('$year-01-01', '$year-12-31') : monthRange(year, month0!);
     final stamps = stampsBetween(entries, from, to);
     final id = yearView ? '$year' : from.substring(0, 7);
     final title = yearView ? '$year' : '${monthNames[month0!]} $year';
+    void open() => showTasteCard(context, open: id);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      SectionHeader('Passport', action: 'Open', onAction: () => showTasteCard(context, open: id)),
-      Semantics(
-        button: true,
-        label: 'Open the taste passport at $title, ${stamps.length} stamps',
-        child: Pressable(
-          onTap: () => showTasteCard(context, open: id),
-          child: VisaPage(
-            title: title,
-            stamps: stamps,
-            scale: .72,
-            max: yearView ? 8 : 5,
-            empty: yearView ? 'A year of stamps starts with one night.' : 'No stamps this month yet — a new place, a first taste or a dry night earns one.',
-          ),
-        ),
+      SectionHeader('Passport', action: 'Open', onAction: open),
+      PassportMini(
+        game: passportGame(entries),
+        period: title,
+        stampCount: stamps.length,
+        onTap: open,
+        stamps: stamps.isEmpty
+            ? Text(
+                entries.isEmpty ? 'Your first log is your first stamp.' : 'Somewhere new, something you have never had, or a dry night — each one is a stamp.',
+                style: T.rawSans(12.5, cardMuted),
+              )
+            : SizedBox(
+                height: 64,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: stamps.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 6),
+                  itemBuilder: (_, i) => Center(child: VisaStampMark(stamps[stamps.length - 1 - i], scale: .62)),
+                ),
+              ),
       ),
-      const SizedBox(height: S.m),
-      StampTally(stamps),
       if (yearView) ...[
-        const SizedBox(height: S.m),
+        const SizedBox(height: S.l),
         _YearStrip(year: year, entries: entries),
-      ],
-      if (stamps.isEmpty && entries.isNotEmpty) ...[
-        const SizedBox(height: S.s),
-        Text('Try somewhere new or something you have never had — or keep a night dry.', style: T.caption(bd)),
       ],
     ]);
   }
