@@ -89,6 +89,10 @@ Can start now, in parallel with Phase 0 — it's proven on the local database fi
 - [x] **Ninkasi training** (#7): stays on by default (maintainer's call); the label now says what happens.
 - [x] **Export everything** (#8): "Your diary, as a book" — a minimal PDF in the users app; JSON kept as
       a second option.
+- [x] **A diary is never deleted** (maintainer, 1 Oct): put away instead (055); clearing it takes an
+      emailed code checked by the database; import adds and never overwrites.
+- [x] **Photos a year at most** (057): a daily cron removes older files; account deletion finds every
+      file, however deep.
 - [x] **Photo overlays**: twelve share designs (receipt, lineup, stats, menu, the haul, ticket, cheers,
       polaroid, film, postcard, stamp, mosaic) built from the night's logs and accepted table orders,
       with optional prices and a bill total the person types.
@@ -116,12 +120,16 @@ network on — the diary on the website matches exactly.
 This is the part that makes brewdiary feel like magic instead of two apps: tap a table, and the venue
 and the guest are in the same night, live — with the guest in control of what's shared.
 
-- [ ] **My card** (venue plan M7.2 / M17.5): the users app shows a short-lived QR; the venue app scans it
-      to link the guest at the bar or punch a store card. Replaces searching people.
+- [x] **My card** (M7.2 / M17.5): a 6-letter guest code (10 minutes) the staff type at the till or in the
+      guest book (056). Searching everyone is gone from the venue app.
+- [x] **Taste at the table** (maintainer, 1 Oct): opening a venue's table or menu link shares the taste
+      card with its drink-makers for 8 hours, after a one-time yes; bar tickets show the table's taste;
+      the venue sees who's in tonight (056).
 - [ ] **Join this table** (M7.1 / M17.2): the table link asks "Join table 7 at <venue>?"; yes joins
       tonight's room and the table session; "Leave" any time.
-- [ ] **Taste for tonight** (M7.5 / M17.4): from the taste passport, the guest picks lines to share
-      (alcohol-free first, allergies, diet); expires by morning; revocable; staff read-only.
+- [x] **Taste for tonight** (M7.5 / M17.4): hide any line on the passport; "nothing with alcohol tonight"
+      goes first; 8 hours; stop any time. (Diet and allergies fields: the database takes them; the
+      passport's inputs for them are still to add.)
 - [ ] **My tab and receipts** (M17.7): the guest sees only their own lines; a receipt offers "add these to
       my diary" — the guest writes their own entries; "send to Split".
 - [ ] **Live, not polled** (M4.9): Supabase Realtime for new tickets, table requests and "ready", with
@@ -137,11 +145,12 @@ no diary.
 
 ## Phase 4 — iPhone parity and first-run polish (~1 week, partly on a Mac)
 
-- [ ] Associated Domains + the Apple team id on the website (#9); build and install both apps on an iPhone.
+- [x] Associated Domains entitlements in both apps (#9). Still needed: APPLE_TEAM_ID on the website and
+      the capability on the App IDs; then build both apps on an iPhone.
 - [ ] iPhone widgets — mosaic, quick log, lock screen (#10, on the Mac).
-- [ ] Optional app lock (#11).
-- [ ] Code sign-in as the default, 8-character passwords in the apps and in Supabase (#12).
-- [ ] Venue first run: sign in → name, kind, country → in; next-step cards (M1.14).
+- [x] Optional app lock (#11).
+- [x] Code sign-in as the default; 8-character new passwords in the apps (#12). Set the same in Supabase.
+- [x] Venue next-step cards (M1.14).
 - [ ] Crash reporting with no personal data, both apps (M0.10).
 
 **Gate:** a person who has never seen brewdiary installs both apps from TestFlight / Play internal

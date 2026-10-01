@@ -354,7 +354,7 @@ That is the lawful version of the question (M12.6).
 - [ ] **M1.17** New-device approval: an employee's first sign-in on a new phone waits for a manager's OK (needs a device id on each call; changes the website's sign-in too).
 - [ ] **M1.11** Shared-device mode (D2): add a person to this device, PIN switch, auto-lock when idle, a "signed in as" banner, sign everyone out.
 - [x] **M1.12** Removal takes effect at once (RLS checks every call). Test it; the app says "you're no longer on this team" and clears cached data. *(053: removal and pausing; db:verify scene 23 proves a paused person can do nothing; the app re-checks and closes the venue.)*
-- [ ] **M1.14** Minimal onboarding: first run is sign in → name, kind, country → in. A short "next steps" card list (location, verify, first perk, menu, invite the team) that disappears as each is done; nothing blocks service on day one.
+- [x] **M1.14** Minimal onboarding: first run is sign in → name, kind, country → in. A short "next steps" card list (location, verify, first perk, menu, invite the team) that disappears as each is done; nothing blocks service on day one.
 - [x] **M1.13** Capability-aware UI: screens and buttons appear only for roles that can use them; the server refuses the rest anyway.
 
 ### M2 — Everything the web dashboard does, on the phone
@@ -426,10 +426,10 @@ That is the lawful version of the question (M12.6).
 ### M7 — Guests at the table
 
 - [ ] **M7.1** A guest joins a table (D4): they tap the table tag, the user app or website asks "Join table 7 at <venue>?", and yes joins tonight's room and links them to the table session (`join_table(code)`). They can leave any time.
-- [ ] **M7.2** Guest code: the user app shows a short-lived QR ("my card") that staff scan to link a guest at the bar or punch a store card. This replaces searching everyone (1.4 #4).
+- [x] **M7.2** Guest code: the user app shows a short-lived QR ("my card") that staff scan to link a guest at the bar or punch a store card. This replaces searching everyone (1.4 #4). *(056: a 6-letter code, 10 minutes, typed at the till or in the guest book; In tonight lists who opened the menu. Name search is gone from the app.)*
 - [ ] **M7.3** Staff see linked guests at their tables by name and open the guest card (first-party visits, last seen, perk tiers, notes and tags).
 - [ ] **M7.4** "Usuals here" (D5): drinks this guest had at this venue, names only, never counts.
-- [ ] **M7.5** Taste share for tonight (D5): a summary the guest pushes, "alcohol-free tonight" first, optional allergies and diet. It expires at close or the next morning, and the guest can revoke it. Staff can only read it.
+- [~] **M7.5** Taste share for tonight (D5): a summary the guest pushes, "alcohol-free tonight" first, optional allergies and diet. It expires at close or the next morning, and the guest can revoke it. Staff can only read it.
 - [ ] **M7.6** Table requests: call staff, bill please, water. Only linked guests can send them; rate-limited; they go to the assigned server (falling back to the area) and staff acknowledge them.
 - [ ] **M7.7** Perks at the table: tiers, quiet-night weighting, claim (`redeem_perk`).
 - [ ] **M7.8** Vibe and thanks as today (`staff_award`, `thank_staff`).
@@ -550,8 +550,8 @@ That is the lawful version of the question (M12.6).
 - [~] **M17.1** Per-table links: website route `/m/<slug>/t/<code>`, user-app deep-link parsing (`menuSlugFrom`), and the `assetlinks.json` / `apple-app-site-association` paths. *(The two app-link files are served for both apps from env (`src/lib/appLinks.ts`, docs/14 §6); per-table routes still to do.)*
 - [~] **M17.2** "Join this table" with plain consent wording, and "Leave". *(Ordering from the table: a request the staff accept onto the tab or decline with a reason; signed-in, rate-limited; the venue switches it on.)*
 - [x] **M17.3** The menu and tonight's room in one tap (docs/12 §7.1). *(The table link opens the menu with the table known.)*
-- [ ] **M17.4** Taste share for tonight from the taste card (M7.5): pick the lines, alcohol-free first, allergies; see and revoke it.
-- [ ] **M17.5** Guest code / "my card" QR (M7.2).
+- [~] **M17.4** Taste share for tonight from the taste card (M7.5): pick the lines, alcohol-free first, allergies; see and revoke it.
+- [x] **M17.5** Guest code / "my card" QR (M7.2).
 - [x] **M17.6** Table requests: call staff, bill please, water. *(Call staff, bill please, water — once however often it's tapped.)*
 - [ ] **M17.7** "My tab" (your own lines only), a receipts inbox with "add to diary", send a split to Split.
 - [ ] **M17.8** Book a table from the venue's page. Discover stays a directory, never an offer.
