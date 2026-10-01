@@ -1,5 +1,8 @@
 # 18 — The track: from here to a real night at a real venue
 
+**Decided 1 October 2026:** the guest website will be retired once both apps work — only the bar portal
+(`bar.bwdy.site`) stays. Website-only items below drop away; the apps carry them.
+
 Written 30 September 2026, right after the venue app (PR #2) was merged into `main`. This is the one list
 everyone works from — the maintainer, Pankaj, and any AI session. Work top to bottom; each phase ends
 with a **gate**, a thing you can do by hand that proves the phase is done. Don't start a phase's code
@@ -36,12 +39,12 @@ real. Not all of them should be done now.
 | --- | --- | --- | --- |
 | 1 | Offline launch looks signed out, empty diary | **Do — Phase 2** | Confirmed (`auth.dart` `_applySession` catch → anon). Cache profile + entries per user; never "signed out" because a read failed. |
 | 2 | A drink logged with no signal vanishes | **Do — Phase 2** | Confirmed (insert fails → rolled back silently). Outbox on the phone, sent in order. Ids are already client-made, so retries are safe. |
-| 3 | Diary photos are public | **Do — Phase 1, top** | Worse than written: the bucket is `public: true`, so anyone with a URL can open a photo **without signing in**. Affects the website too. Private bucket + signed links + owner/friend read rule; old rows may hold full public URLs, so the migration normalises them to paths. |
-| 4 | Photos keep GPS in EXIF | **Do — Phase 1** | `pickMultiImage` re-encodes on Android but iOS can keep metadata. Re-encode without EXIF on both; the website strips via canvas. |
+| 3 | Diary photos are public | **Parked by the maintainer** | The guest website is being retired once both apps work (only the bar portal stays). Note: the bucket itself is `public: true`, so a photo's URL opens without signing in from any app — retiring the site doesn't change that. Revisit before the public launch: private bucket + signed links. |
+| 4 | Photos keep GPS in EXIF | **Not doing — maintainer's call** | Photo metadata stays: it's needed to validate a person's profile. Shared overlay images are re-drawn as new PNGs, so they carry none. |
 | 5 | Deleted photos stay online | **Do — Phase 1** | Confirmed twice: deleting an entry leaves the files, and account deletion lists only `user/` while files live at `user/entry/photo`. Legal gap (GDPR Art. 17, DPDP). |
 | 6 | Import can wipe the cloud diary | **Do — Phase 1** | Confirmed (delete-then-insert). Upsert first, then delete what's not in the import. Same fix on the website. |
-| 7 | "Help train Ninkasi" on by default, wrong label | **Do — Phase 1** | Confirmed on **both** apps and the website. Off by default, honest label, one plain question in the Ninkasi tab. DPDP needs a real yes. |
-| 8 | Export leaves most things out | **Do — Phase 1** | Confirmed: 8 tables on both. One `export_my_data()` SQL function both apps call, plus a db:audit check that every table holding a person's rows is in it. |
+| 7 | "Help train Ninkasi" on by default, wrong label | **Done (label) — stays on** | The maintainer keeps it on by default. The label now says what happens: kept on the phone for your book, and sent without your name to the training set. |
+| 8 | Export leaves most things out | **Done — as a book** | "Your diary, as a book": a minimal PDF of every entry, the numbers, places, Together, Split, to-try, what venues keep on you and the Ninkasi chats (`lib/data/export.dart`, `lib/ui/export/diary_book.dart`). A machine-readable JSON copy stays as a quiet second option (data portability). |
 | 9 | iPhone ignores bwdy.site links | **Do — Phase 4** | Needs the Apple team id and a paid developer account from the maintainer; the entitlements file can be added now. |
 | 10 | No iPhone widgets | **Later — Phase 4, on a Mac** | A WidgetKit extension can't be built or tested without Xcode. Written and tested on the maintainer's Mac. |
 | 11 | Optional app lock | **Do — Phase 4** | Small (`local_auth`). Blurring in the app switcher only when the lock is on, so screenshots of the mosaic still work for everyone else. |
@@ -77,24 +80,24 @@ app; a venue created on the venue app shows on `bar.bwdy.site`.
 
 Can start now, in parallel with Phase 0 — it's proven on the local database first.
 
-- [ ] **Private photos** (review #3): migration `055_private_photos.sql` — bucket private, read = owner,
-      or a friend when the entry is friends-visible (through `entry_photos` → `entries`), paths
-      normalised; signed links on the website and the users app (entries, feed, circles, party room,
-      share cards); storage checks in `db:audit`.
+- [ ] ~~**Private photos** (review #3)~~ — parked by the maintainer (the guest website is being retired);
+      revisit before the public launch, because the bucket is public to any URL holder.
 - [ ] **Photos leave with their entry** (#5): delete files with the entry and on reset; account deletion
       walks every folder.
-- [ ] **No location in photos** (#4): re-encode without metadata on both apps and the website.
+- [x] ~~No location in photos (#4)~~ — not doing: metadata validates profiles (maintainer's call).
 - [ ] **Import can't wipe** (#6): upsert-then-prune on both.
-- [ ] **Ninkasi training is a real yes** (#7): off by default everywhere; honest label; one question.
-- [ ] **Export everything** (#8, venue plan M17.9): `export_my_data()` in migration `056`, used by both
-      apps; db:audit lists every table with a person's rows and fails if one is missing.
+- [x] **Ninkasi training** (#7): stays on by default (maintainer's call); the label now says what happens.
+- [x] **Export everything** (#8): "Your diary, as a book" — a minimal PDF in the users app; JSON kept as
+      a second option.
+- [x] **Photo overlays**: twelve share designs (receipt, lineup, stats, menu, the haul, ticket, cheers,
+      polaroid, film, postcard, stamp, mosaic) built from the night's logs and accepted table orders,
+      with optional prices and a bill total the person types.
 - [ ] **Stop searching everyone at the till** (venue plan 1.4 #4): the venue app's punch/visit flow
       identifies a guest by a short-lived code the guest shows (see Phase 3 "my card"); until that lands,
       `search_users` from the venue app is limited to people who have been in this venue's rooms.
 
-**Gate:** `npm run db:local` green with the new storage checks; a photo URL copied from a private entry
-returns 400 in a private browser window; an export file contains comments, cheers, circles, parties,
-plans and photos.
+**Gate:** `npm run db:local` green; the book opens on a phone with every section filled from a real
+account; an imported diary can't be wiped by a failed upload.
 
 ## Phase 2 — Never lose a diary (users app; ~1–2 weeks)
 

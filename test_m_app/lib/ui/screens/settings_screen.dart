@@ -23,11 +23,13 @@ import 'package:brewdiary_core/types.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';
+import '../../data/export.dart';
 import '../../data/friends.dart';
 import '../../data/reminder.dart';
 import '../../data/safety.dart';
 import '../../data/settings.dart';
 import '../theme.dart';
+import '../export/diary_book.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
 import '../widgets/pickers.dart';
@@ -604,7 +606,7 @@ class _NinkasiGroup extends StatelessWidget {
       builder: (context, _) => Group(children: [
         SettingRow(
           title: 'Help train Ninkasi',
-          hint: 'Keep your chats with Ninkasi on this phone to teach her your taste${t.count > 0 ? ' · ${t.count} saved' : ''}.',
+          hint: 'Your chats help her learn — kept on this phone for your book, and sent without your name to brewdiary\'s training set${t.count > 0 ? ' · ${t.count} saved' : ''}.',
           trailing: BdToggle(on: t.collecting, label: 'Help train Ninkasi', onChanged: t.setCollecting),
         ),
         if (t.count > 0)
@@ -873,6 +875,22 @@ class _DataGroupState extends State<_DataGroup> {
     }
   }
 
+  /// The diary, Together, Split, venues and the Ninkasi chats, set as a PDF book.
+  Future<void> _exportBook() async {
+    setState(() => _busy = true);
+    try {
+      final bytes = await buildDiaryBook(await ExportBundle.collect(), await BookFonts.load());
+      final dir = await getTemporaryDirectory();
+      final f = File('${dir.path}/brewdiary-diary-${todayKey()}.pdf');
+      await f.writeAsBytes(bytes);
+      await SharePlus.instance.share(ShareParams(files: [XFile(f.path, mimeType: 'application/pdf')], subject: 'My brewdiary'));
+    } catch (_) {
+      if (mounted) toast(context, "Couldn't make the book — try again.");
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _exportEverything() async {
     setState(() => _busy = true);
     final r = await AccountApi.exportEverything();
@@ -903,9 +921,15 @@ class _DataGroupState extends State<_DataGroup> {
     return Group(
       footer: widget.cloud ? 'Deleting your account is immediate and permanent — the diary, the photos, the points, all of it.' : null,
       children: [
-        GroupTile(icon: Ph.export, title: 'Export my diary', subtitle: 'A JSON file of every entry', onTap: _exportDiary),
+        GroupTile(
+          icon: Ph.bookOpen,
+          title: _busy ? 'Making your book…' : 'Your diary, as a book',
+          subtitle: 'A PDF of every night, the people, the places and your talks with Ninkasi',
+          onTap: _busy ? null : _exportBook,
+        ),
+        GroupTile(icon: Ph.export, title: 'Back up my diary', subtitle: 'A file you can import again', onTap: _exportDiary),
         GroupTile(icon: Ph.fileArrowUp, title: 'Import a diary file', onTap: _import),
-        if (widget.cloud) GroupTile(icon: Ph.downloadSimple, title: 'Download everything we hold', onTap: _busy ? null : _exportEverything),
+        if (widget.cloud) GroupTile(icon: Ph.downloadSimple, title: 'Everything as a data file', subtitle: 'Machine-readable (JSON), for moving it elsewhere', onTap: _busy ? null : _exportEverything),
         GroupTile(icon: Ph.arrowsClockwise, title: 'Reseed the demo month', onTap: () async {
           if (await confirm(context, title: 'Reseed the demo?', body: 'Your diary is replaced with a sample month.', yes: 'Reseed')) entryStore.reseed();
         }),

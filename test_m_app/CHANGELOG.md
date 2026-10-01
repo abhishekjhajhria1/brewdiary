@@ -3,6 +3,21 @@
 What changed in `test_m_app/`, newest first, and the goal behind each change. The plan for what comes
 next is [`IMPROVEMENTS.md`](IMPROVEMENTS.md).
 
+## 1 October 2026 — the book, the overlays, the maintainer's calls
+
+**Goal:** give people something beautiful to keep and to share, as decided by the maintainer.
+
+- **Your diary, as a book** — Settings → Your data: a minimal PDF (cover with the year's mosaic, the
+  numbers, every entry month by month, places, Together, Split, to-try, what venues keep on you, the
+  Ninkasi chats). `lib/data/export.dart` gathers it; `lib/ui/export/diary_book.dart` sets it; the
+  `pdf` package. The JSON copy stays as "Everything as a data file".
+- **Twelve photo overlays** (`lib/ui/screens/photo_studio.dart`): receipt, lineup, stats, menu, the
+  haul, ticket, cheers, polaroid, film, postcard, stamp, mosaic. Lines come from the night's logs (and,
+  on the night, accepted table orders); the person can tick lines off, add one, price a line or type
+  the bill. The brand is a small mosaic mark and the wordmark.
+- **Help train Ninkasi** stays on by default; its label now says the chats are kept on the phone and
+  sent, without a name, to the training set.
+
 ## 30 September 2026 — the review, written down (no code changes)
 
 **Goal:** agree what to fix before changing anything.
