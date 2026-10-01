@@ -3,6 +3,16 @@
 What changed in `test_m_app/`, newest first, and the goal behind each change. The plan for what comes
 next is [`IMPROVEMENTS.md`](IMPROVEMENTS.md).
 
+## 1 October 2026 (evening) — a passport you use
+
+- **Palate**: a page in the book with your flavour notes as ink bars ("Leans bitter and citrus"),
+  worked out from what you log, each drink once a night (`palate()` + `FLAVOURS`, web parity).
+- **Your taste**: how sweet, drinks you love, what you'd rather not have, diet, allergies — on the
+  identity page and to tonight's bar (allergies and "rather not" first).
+- **What the bar sees**: a live preview of exactly what's shared.
+- **Next stamps**: families you haven't had that share your notes, always one alcohol-free; one tap
+  puts it on your to-try list (`nextStamps()`, web parity).
+
 ## 1 October 2026 (later) — the passport in the calendar, chats, a diary never deleted, taste at the table
 
 - **Taste passport**: a book you swipe — leather cover, identity page with a machine-readable strip,

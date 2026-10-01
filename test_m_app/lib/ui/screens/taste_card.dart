@@ -16,10 +16,12 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/types.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';
 import '../../data/taste_share.dart';
+import '../../data/wishlist.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
@@ -59,7 +61,7 @@ class _TasteCardScreenState extends State<TasteCardScreen> {
     final now = appNow();
     final thisMonth = '${now.year}-${now.month.toString().padLeft(2, '0')}';
     if (!months.contains(thisMonth)) months.insert(0, thisMonth);
-    final pages = <_Page>[const _Page('cover', 'Cover'), const _Page('id', 'Identity')];
+    final pages = <_Page>[const _Page('cover', 'Cover'), const _Page('id', 'Identity'), const _Page('palate', 'Palate')];
     String? year;
     for (final m in months) {
       final y = m.substring(0, 4);
@@ -122,6 +124,7 @@ class _TasteCardScreenState extends State<TasteCardScreen> {
           dryTonight: TasteShareStore.instance.dryTonight,
           showPlaces: _showPlaces,
         ),
+      'palate' => PassportPalate(notes: palate(entries), sweetness: TasteShareStore.instance.sweetness, avoid: TasteShareStore.instance.avoid),
       _ => () {
           final isYear = page.id.length == 4;
           final from = isYear ? '${page.id}-01-01' : '${page.id}-01';
@@ -146,7 +149,9 @@ class _TasteCardScreenState extends State<TasteCardScreen> {
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    final lines = tasteLines(tasteProfile(entryStore.entries));
+    final store = TasteShareStore.instance;
+    final entries = entryStore.entries;
+    final lines = tasteLines(tasteProfile(entries), notes: palate(entries), loves: store.loves, avoid: store.avoid, sweetness: store.sweetness, diet: store.diet, allergies: store.allergies);
     final page = _pages[_at];
     final isMonth = page.id.length == 7;
     final isYear = page.id.length == 4;
@@ -179,7 +184,13 @@ class _TasteCardScreenState extends State<TasteCardScreen> {
             if (from != null) ...[const SizedBox(height: S.m), StampTally(stamps)],
             const SizedBox(height: S.l),
             BdButton(_sharing ? 'Making it…' : 'Share this page', icon: Ph.shareNetwork, onTap: _share),
-            const SizedBox(height: S.xl),
+            const SectionHeader('What the bar sees'),
+            BarPreview(payload: store.payload()),
+            const SectionHeader('Your taste'),
+            TastePrefsEditor(onChanged: () => setState(() {})),
+            const SectionHeader('Next stamps'),
+            const NextStampsList(),
+            const SectionHeader('On your passport'),
             Group(children: [
               SettingRow(
                 title: 'Nothing with alcohol tonight',
@@ -321,5 +332,204 @@ class _GuestCardState extends State<_GuestCard> {
       const SizedBox(height: S.m),
       BdButton('New code', kind: BtnKind.secondary, icon: Ph.arrowsClockwise, onTap: _fetch),
     ]);
+  }
+}
+
+/// Exactly what a bar would get tonight, drawn the way its staff see it.
+class BarPreview extends StatelessWidget {
+  final Map<String, Object> payload;
+  const BarPreview({super.key, required this.payload});
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    List<String> l(String k) => [for (final x in (payload[k] as List? ?? const [])) '$x'];
+    Widget chip(String text, {bool strong = false}) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: strong ? bd.accent.withValues(alpha: .18) : bd.glass,
+            borderRadius: BorderRadius.circular(rCtl),
+            border: Border.all(color: strong ? bd.accent.withValues(alpha: .5) : bd.line, width: .8),
+          ),
+          child: Text(text, style: T.sans(bd, size: 13, weight: strong ? FontWeight.w600 : FontWeight.w500, color: strong ? bd.accentText : bd.ink)),
+        );
+    final sweet = payload['sweetness'] as String?;
+    final chips = <Widget>[
+      if (payload['dry_tonight'] == true) chip('Nothing with alcohol tonight', strong: true),
+      if (l('allergies').isNotEmpty) chip('Allergic: ${l('allergies').join(', ')}', strong: true),
+      if (l('avoid').isNotEmpty) chip('Not: ${l('avoid').join(', ')}', strong: true),
+      for (final d in l('diet')) chip(d),
+      for (final x in l('into')) chip(x),
+      if (l('flavours').isNotEmpty) chip('likes ${l('flavours').join(', ')}'),
+      if (sweet != null) chip(switch (sweet) { 'dry' => 'not sweet', 'sweet' => 'on the sweet side', _ => 'balanced sweetness' }),
+      for (final u in l('usually')) chip('usually $u'),
+      for (final m in l('moods')) chip(m),
+      if (payload['alcohol_free_often'] == true && payload['dry_tonight'] != true) chip('often alcohol-free'),
+    ];
+    return Glass(
+      padding: const EdgeInsets.all(S.l),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (chips.isEmpty) Text('Nothing to share yet — log a few drinks or add what you like below.', style: T.bodyMuted(bd)) else Wrap(spacing: 6, runSpacing: 6, children: chips),
+        const SizedBox(height: S.m),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Ph.lock, size: 14, color: bd.faint)),
+          const SizedBox(width: S.s),
+          Expanded(child: Text('Only after you\'ve said yes, only with the place whose menu you open, for 8 hours. Never your diary, never where else you\'ve been.', style: T.caption(bd))),
+        ]),
+      ]),
+    );
+  }
+}
+
+/// Sweetness, loves, avoid, diet and allergies — kept on this phone, shared only
+/// with tonight's bar.
+class TastePrefsEditor extends StatelessWidget {
+  final VoidCallback onChanged;
+  const TastePrefsEditor({super.key, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final store = TasteShareStore.instance;
+    final bd = context.bd;
+    Future<void> toggle(List<String> current, String v, Future<void> Function(List<String>) save) async {
+      await save(current.contains(v) ? (current.where((x) => x != v).toList()) : [...current, v]);
+      onChanged();
+    }
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const Label('How sweet'),
+      const SizedBox(height: S.s),
+      Segmented<String>(
+        options: const [('', 'Any'), ('dry', 'Dry'), ('balanced', 'Balanced'), ('sweet', 'Sweet')],
+        value: store.sweetness ?? '',
+        onChanged: (v) async {
+          await store.setSweetness(v.isEmpty ? null : v);
+          onChanged();
+        },
+      ),
+      const SizedBox(height: S.l),
+      _WordList(
+        label: 'Love',
+        hint: 'A drink you love — "mezcal", "cold brew"',
+        words: store.loves,
+        onChanged: (v) async {
+          await store.setLoves(v);
+          onChanged();
+        },
+      ),
+      const SizedBox(height: S.l),
+      _WordList(
+        label: 'Rather not',
+        hint: 'Something to leave out — "gin", "coconut"',
+        words: store.avoid,
+        onChanged: (v) async {
+          await store.setAvoid(v);
+          onChanged();
+        },
+      ),
+      const SizedBox(height: S.l),
+      const Label('Diet'),
+      const SizedBox(height: S.s),
+      Wrap(spacing: S.s, runSpacing: S.s, children: [
+        for (final d in TasteShareStore.dietOptions) BdChip(d, active: store.diet.contains(d), onTap: () => toggle(store.diet, d, store.setDiet)),
+      ]),
+      const SizedBox(height: S.l),
+      const Label('Allergies'),
+      const SizedBox(height: S.s),
+      Wrap(spacing: S.s, runSpacing: S.s, children: [
+        for (final a in TasteShareStore.allergyOptions) BdChip(a, active: store.allergies.contains(a), onTap: () => toggle(store.allergies, a, store.setAllergies)),
+      ]),
+      const SizedBox(height: S.s),
+      Text('Allergies go first on what the bar sees. Always tell your server too.', style: T.caption(bd)),
+    ]);
+  }
+}
+
+/// A few words as removable chips, with a field to add one.
+class _WordList extends StatefulWidget {
+  final String label;
+  final String hint;
+  final List<String> words;
+  final ValueChanged<List<String>> onChanged;
+  const _WordList({required this.label, required this.hint, required this.words, required this.onChanged});
+  @override
+  State<_WordList> createState() => _WordListState();
+}
+
+class _WordListState extends State<_WordList> {
+  final _c = TextEditingController();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _add() {
+    final w = _c.text.trim();
+    if (w.isEmpty || widget.words.length >= 8 || widget.words.any((x) => x.toLowerCase() == w.toLowerCase())) return;
+    widget.onChanged([...widget.words, w.length > 40 ? w.substring(0, 40) : w]);
+    _c.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Label(widget.label),
+      const SizedBox(height: S.s),
+      if (widget.words.isNotEmpty) ...[
+        Wrap(spacing: S.s, runSpacing: S.s, children: [
+          for (final w in widget.words) BdChip(w, active: true, icon: Ph.x, onTap: () => widget.onChanged(widget.words.where((x) => x != w).toList())),
+        ]),
+        const SizedBox(height: S.s),
+      ],
+      GlassField(controller: _c, hint: widget.hint, action: TextInputAction.done, onSubmitted: (_) => _add(), icon: Ph.plus),
+    ]);
+  }
+}
+
+/// Things you haven't had that you might like — add one to your to-try list.
+class NextStampsList extends StatelessWidget {
+  const NextStampsList({super.key});
+
+  static const _icons = {
+    DrinkType.coffee: Ph.coffee,
+    DrinkType.tea: Ph.leaf,
+    DrinkType.soft: Ph.drop,
+    DrinkType.beer: Ph.beerBottle,
+    DrinkType.wine: Ph.wine,
+    DrinkType.cocktail: Ph.martini,
+    DrinkType.spirit: Ph.brandy,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return ListenableBuilder(
+      listenable: WishlistStore.instance,
+      builder: (context, _) {
+        final wish = {for (final w in WishlistStore.instance.items) w.drink.toLowerCase()};
+        final next = nextStamps(entryStore.entries);
+        if (next.isEmpty) return Text('You\'ve met every family we know. Impressive.', style: T.bodyMuted(bd));
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Group(children: [
+            for (final n in next)
+              GroupTile(
+                icon: _icons[n.type] ?? Ph.sparkle,
+                title: n.family,
+                subtitle: n.why,
+                trailing: wish.contains(n.family.toLowerCase())
+                    ? Text('On your list', style: T.caption(bd))
+                    : TextAction('To try', accent: true, onTap: () {
+                        WishlistStore.instance.add(n.family);
+                        toast(context, '${n.family} is on your to-try list.');
+                      }),
+              ),
+          ]),
+          const SizedBox(height: S.s),
+          Text('Each one would be a first-taste stamp. There\'s always something alcohol-free.', style: T.caption(bd)),
+        ]);
+      },
+    );
   }
 }

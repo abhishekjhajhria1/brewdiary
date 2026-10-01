@@ -1908,7 +1908,7 @@ class DemoBackend implements Backend {
         name: 'Anita',
         handle: 'anita',
         tableLabel: 'T2',
-        taste: const GuestTaste(into: ['Negroni', 'Mezcal'], usually: ['Cocktails', 'Wine'], moods: ['smoky', 'slow']),
+        taste: const GuestTaste(into: ['Negroni', 'Mezcal'], usually: ['Cocktails', 'Wine'], moods: ['slow'], flavours: ['bitter', 'smoky', 'citrus'], avoid: ['gin'], sweetness: 'dry'),
         sharedAt: now.subtract(const Duration(minutes: 40)),
       ),
       GuestTonight(

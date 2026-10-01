@@ -13,6 +13,8 @@ import {
   tasteProfile,
   passport,
   stampsBetween,
+  palate,
+  nextStamps,
   friendPicks,
 } from "@/lib/derive";
 
@@ -281,5 +283,33 @@ describe("stampsBetween (a month's visa stamps; twin of the Dart parity test)", 
   it("the tenth of something earns nothing; an empty stretch is empty", () => {
     expect(stampsBetween(diary, "2026-10-01", "2026-10-31").map((s) => s.label)).toEqual(["Bastian"]);
     expect(stampsBetween([], "2026-09-01", "2026-09-30")).toEqual([]);
+  });
+});
+
+describe("palate and next stamps (twin of the Dart parity test)", () => {
+  const d = (n: number) => toKey(addDays(parseKey(todayKey()), -n));
+  const e = (drink: string, date: string, type?: Entry["type"]): Entry => ({ id: Math.random().toString(36), date, createdAt: `${date}T20:00:00Z`, drink, type });
+  const diary = [e("Negroni", d(1)), e("negroni", d(1)), e("Negroni", d(3)), e("IPA", d(2)), e("Flat white", d(5)), e("dry day", d(6), "none")];
+
+  it("counts a family once a night and lends it its flavour notes", () => {
+    expect(palate(diary)).toEqual([
+      { note: "bitter", share: 1 },
+      { note: "citrus", share: 1 },
+      { note: "herbal", share: 0.67 },
+      { note: "creamy", share: 0.33 },
+      { note: "fruity", share: 0.33 },
+      { note: "roasty", share: 0.33 },
+    ]);
+    expect(palate([])).toEqual([]);
+  });
+
+  it("suggests untried families that share your notes, always one alcohol-free", () => {
+    expect(nextStamps(diary).map((s) => [s.family, s.why])).toEqual([
+      ["Mojito", "herbal and citrus, like what you enjoy"],
+      ["Pale Ale", "bitter and citrus, like what you enjoy"],
+      ["Spritz", "bitter and citrus, like what you enjoy"],
+      ["Black Tea", "bitter, like what you enjoy"],
+    ]);
+    expect(nextStamps([]).map((s) => s.family)).toEqual(["Americano", "Black Tea", "Brandy", "Cappuccino"]);
   });
 });

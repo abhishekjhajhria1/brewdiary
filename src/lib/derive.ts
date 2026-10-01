@@ -1,7 +1,7 @@
 // Everything visual is DERIVED from entries here — so it can never drift from the truth.
 import type { DrinkType, Entry } from "./types";
 import { addDays, MONTH_NAMES, parseKey, toKey, todayKey } from "./date";
-import { canonicalize } from "./drinks";
+import { canonicalize, DRINKS, FLAVOURS } from "./drinks";
 
 // ── the balance side (gentle limits) ─────────────────────────────────────────
 // The app is an ALL-drinks diary, so a limit has to know a negroni from a latte.
@@ -463,6 +463,78 @@ export function stampsBetween(entries: Entry[], from: string, to: string): VisaS
       families.add(fam.toLowerCase());
       if (inside) out.push({ kind: "firstTaste", label: fam, date: e.date });
     }
+  }
+  return out;
+}
+
+// ── the palate: what you lean towards, in flavour words ─────────────────────
+// Each family you had counts once per night (a long night doesn't tilt it), and
+// lends its notes (FLAVOURS). Top six, as a share of the strongest. Twin: derive.dart.
+export interface PalateNote {
+  note: string;
+  share: number; // 0..1, relative to your strongest note
+}
+
+export function palate(entries: Entry[], days = 365): PalateNote[] {
+  const cutoff = toKey(addDays(parseKey(todayKey()), -days));
+  const seen = new Set<string>();
+  const counts = new Map<string, number>();
+  for (const e of entries) {
+    if (isDryDay(e) || e.date < cutoff) continue;
+    const c = canonicalize(e.drink);
+    if (!c.matched) continue;
+    const k = `${e.date}|${c.family}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    for (const n of FLAVOURS[c.family] ?? []) counts.set(n, (counts.get(n) ?? 0) + 1);
+  }
+  const top = Math.max(0, ...counts.values());
+  if (!top) return [];
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 6)
+    .map(([note, n]) => ({ note, share: Math.round((n / top) * 100) / 100 }));
+}
+
+// ── next stamps: something you haven't had that you might like ──────────────
+// Families you've never logged, ranked by the flavour notes they share with your
+// palate, with a nudge for a kind you've never tried. Always at least one
+// alcohol-free pick. Variety, never volume. Twin: derive.dart.
+export interface NextStamp {
+  family: string;
+  type: DrinkType;
+  why: string;
+}
+
+const NO_ALCOHOL_KINDS: DrinkType[] = ["coffee", "tea", "soft"];
+
+export function nextStamps(entries: Entry[], n = 4): NextStamp[] {
+  const triedFam = new Set<string>();
+  const triedKind = new Set<DrinkType>();
+  for (const e of entries) {
+    if (isDryDay(e)) continue;
+    const c = canonicalize(e.drink);
+    if (c.matched) triedFam.add(c.family);
+    const t = e.type ?? c.type;
+    if (t) triedKind.add(t);
+  }
+  const notes = palate(entries).slice(0, 3).map((p) => p.note);
+  const families = new Map<string, DrinkType>();
+  for (const d of DRINKS) if (!families.has(d.family)) families.set(d.family, d.type);
+  const scored: { s: NextStamp; score: number }[] = [];
+  for (const [family, type] of families) {
+    if (triedFam.has(family) || family === "Water") continue;
+    const shared = (FLAVOURS[family] ?? []).filter((x) => notes.includes(x));
+    const newKind = !triedKind.has(type);
+    const score = shared.length * 2 + (newKind ? 1 : 0);
+    const why = shared.length ? `${shared.join(" and ")}, like what you enjoy` : newKind ? "a new kind for your passport" : "something new";
+    scored.push({ s: { family, type, why }, score });
+  }
+  scored.sort((a, b) => b.score - a.score || a.s.family.localeCompare(b.s.family));
+  const out = scored.slice(0, n).map((x) => x.s);
+  if (out.length && !out.some((x) => NO_ALCOHOL_KINDS.includes(x.type))) {
+    const free = scored.find((x) => NO_ALCOHOL_KINDS.includes(x.s.type));
+    if (free) out[out.length - 1] = free.s;
   }
   return out;
 }

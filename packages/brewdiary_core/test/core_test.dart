@@ -443,4 +443,25 @@ void main() {
       expect(stampsBetween([], '2026-09-01', '2026-09-30'), isEmpty);
     });
   });
+
+  group('palate and next stamps (parity with tests/derive.test.ts)', () {
+    String d(int n) => toKey(addDays(parseKey(todayKey()), -n));
+    Entry e(String drink, String date, [DrinkType? type]) => Entry(id: 'q${_seq++}', date: date, createdAt: '${date}T20:00:00Z', drink: drink, type: type);
+    final diary = [e('Negroni', d(1)), e('negroni', d(1)), e('Negroni', d(3)), e('IPA', d(2)), e('Flat white', d(5)), e('dry day', d(6), DrinkType.none)];
+
+    test('counts a family once a night and lends it its flavour notes', () {
+      expect(palate(diary).map((p) => (p.note, p.share)), [('bitter', 1.0), ('citrus', 1.0), ('herbal', .67), ('creamy', .33), ('fruity', .33), ('roasty', .33)]);
+      expect(palate([]), isEmpty);
+    });
+
+    test('suggests untried families that share your notes, always one alcohol-free', () {
+      expect(nextStamps(diary).map((s) => (s.family, s.why)), [
+        ('Mojito', 'herbal and citrus, like what you enjoy'),
+        ('Pale Ale', 'bitter and citrus, like what you enjoy'),
+        ('Spritz', 'bitter and citrus, like what you enjoy'),
+        ('Black Tea', 'bitter, like what you enjoy'),
+      ]);
+      expect(nextStamps([]).map((s) => s.family), ['Americano', 'Black Tea', 'Brandy', 'Cappuccino']);
+    });
+  });
 }

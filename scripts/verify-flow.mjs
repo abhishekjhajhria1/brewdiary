@@ -1993,10 +1993,10 @@ try {
     await db.query(`update public.venues set verified = true where id = $1`, [bar]);
     const code = (await db.query(`insert into public.venue_tables (venue_id, label) values ($1,'7') returning code`, [bar])).rows[0].code;
 
-    const shared = (await as(guest, `select * from public.share_taste($1, $2::jsonb)`, [code, JSON.stringify({ into: ["Negroni", "Paloma"], usually: ["Cocktails"], alcohol_free_often: false, diary: ["everything"], where_else: "Soka" })])).rows[0];
+    const shared = (await as(guest, `select * from public.share_taste($1, $2::jsonb)`, [code, JSON.stringify({ into: ["Negroni", "Paloma"], usually: ["Cocktails"], alcohol_free_often: false, sweetness: "dry", avoid: ["gin"], diary: ["everything"], where_else: "Soka" })])).rows[0];
     ok("opening a table link shares the taste with that venue", shared?.venue_name === "Taste Bar");
     const stored = (await db.query(`select taste from public.taste_shares where user_id = $1`, [guest])).rows[0].taste;
-    ok("…only the taste card's own keys are kept", JSON.stringify(Object.keys(stored).sort()) === JSON.stringify(["alcohol_free_often", "into", "usually"]));
+    ok("…only the taste card's own keys are kept", JSON.stringify(Object.keys(stored).sort()) === JSON.stringify(["alcohol_free_often", "avoid", "into", "sweetness", "usually"]));
     ok("a made-up table code is refused", await refused(() => as(guest, `select * from public.share_taste('zzzzzzzz', '{}'::jsonb)`)));
     ok("nobody writes taste_shares directly", await refused(() => as(guest, `insert into public.taste_shares (user_id, venue_id, taste, expires_at) values ($1,$2,'{}',now())`, [guest, bar])));
     const tonight = (await as(pour, `select * from public.venue_guests_tonight($1)`, [bar])).rows;

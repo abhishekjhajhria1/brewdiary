@@ -462,13 +462,96 @@ class PassportIdentity extends StatelessWidget {
   }
 }
 
-/// The lines of the identity page, from the taste profile.
-List<(String key, String label, String value)> tasteLines(TasteProfile p) => [
-      if (p.favourites.isNotEmpty) ('into', 'Into', p.favourites.join(', ')),
-      if (p.kinds.isNotEmpty) ('usually', 'Usually', p.kinds.map((k) => kindWords[k.name] ?? k.name).join(' · ')),
-      if (p.moods.isNotEmpty) ('mood', 'In the mood for', p.moods.join(', ')),
-      if (p.noAlcoholShare >= .4) ('free', 'Often', 'alcohol-free — happy with a good non-alcoholic pour'),
-    ];
+/// The lines of the identity page: the taste profile, the palate, and what the
+/// person has told us (loves, avoid, sweetness, diet, allergies).
+List<(String key, String label, String value)> tasteLines(TasteProfile p, {List<PalateNote> notes = const [], List<String> loves = const [], List<String> avoid = const [], String? sweetness, List<String> diet = const [], List<String> allergies = const []}) {
+  final into = <String>[];
+  for (final x in [...loves, ...p.favourites]) {
+    if (!into.any((y) => y.toLowerCase() == x.toLowerCase())) into.add(x);
+  }
+  return [
+    if (into.isNotEmpty) ('into', 'Into', into.take(6).join(', ')),
+    if (notes.isNotEmpty) ('palate', 'Palate', notes.take(3).map((n) => n.note).join(' · ')),
+    if (p.kinds.isNotEmpty) ('usually', 'Usually', p.kinds.map((k) => kindWords[k.name] ?? k.name).join(' · ')),
+    if (sweetness != null) ('sweet', 'Sweetness', switch (sweetness) { 'dry' => 'dry — not sweet', 'sweet' => 'on the sweet side', _ => 'balanced' }),
+    if (avoid.isNotEmpty) ('avoid', 'Rather not', avoid.join(', ')),
+    if (diet.isNotEmpty) ('diet', 'Diet', diet.join(', ')),
+    if (allergies.isNotEmpty) ('allergies', 'Allergic to', allergies.join(', ')),
+    if (p.moods.isNotEmpty) ('mood', 'In the mood for', p.moods.join(', ')),
+    if (p.noAlcoholShare >= .4) ('free', 'Often', 'alcohol-free — happy with a good non-alcoholic pour'),
+  ];
+}
+
+/// The palate page: what you lean towards, as ink bars on passport paper.
+class PassportPalate extends StatelessWidget {
+  final List<PalateNote> notes;
+  final String? sweetness;
+  final List<String> avoid;
+  const PassportPalate({super.key, required this.notes, this.sweetness, this.avoid = const []});
+
+  static const _inks = [PassportInk.taste, PassportInk.place, PassportInk.kind, PassportInk.dry];
+
+  @override
+  Widget build(BuildContext context) {
+    final lean = notes.where((n) => n.share >= .99).map((n) => n.note).toList();
+    final summary = notes.isEmpty
+        ? null
+        : 'Leans ${(lean.isEmpty ? [notes.first.note] : lean).take(3).join(lean.length == 2 ? ' and ' : ', ')}.';
+    return PassportPaper(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Text('PALATE', style: _sans(8, PassportInk.soft, spacing: 2.4)),
+          const Spacer(),
+          Text('brewdiary', style: _serif(13, PassportInk.place, italic: true)),
+        ]),
+        const SizedBox(height: 6),
+        Container(height: .8, color: PassportInk.paperEdge),
+        const SizedBox(height: 14),
+        if (notes.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text('Log a few drinks and your palate draws itself here — smoky, citrus, creamy, whatever you lean towards.', textAlign: TextAlign.center, style: _serif(14, PassportInk.soft, italic: true, height: 1.35)),
+          )
+        else ...[
+          Text(summary!, style: _serif(24, PassportInk.ink)),
+          const SizedBox(height: 14),
+          for (var i = 0; i < notes.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(children: [
+                SizedBox(width: 78, child: Text(notes[i].note, style: _serif(16, PassportInk.ink, italic: true))),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (_, c) => Stack(children: [
+                      Container(height: 10, decoration: BoxDecoration(color: PassportInk.paperEdge.withValues(alpha: .7), borderRadius: BorderRadius.circular(5))),
+                      Container(
+                        height: 10,
+                        width: c.maxWidth * notes[i].share.clamp(.06, 1.0),
+                        decoration: BoxDecoration(color: _inks[i % _inks.length].withValues(alpha: .82), borderRadius: BorderRadius.circular(5)),
+                      ),
+                    ]),
+                  ),
+                ),
+              ]),
+            ),
+        ],
+        if (sweetness != null || avoid.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Container(height: .8, color: PassportInk.paperEdge),
+          const SizedBox(height: 10),
+          if (sweetness != null) Text('SWEETNESS · ${sweetness!.toUpperCase()}', style: _sans(8, PassportInk.soft, weight: FontWeight.w600, spacing: 1.4)),
+          if (avoid.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('RATHER NOT · ${avoid.join(', ').toUpperCase()}', style: _sans(8, PassportInk.taste, weight: FontWeight.w600, spacing: 1.4)),
+          ],
+        ],
+        const SizedBox(height: 8),
+        Text('Worked out from what you log — each drink counts once a night.', style: _sans(8, PassportInk.soft, weight: FontWeight.w500, spacing: .3)),
+      ]),
+    );
+  }
+}
 
 /// The month's first and last day keys.
 (String, String) monthRange(int year, int month0) => (toKey(DateTime(year, month0 + 1, 1)), toKey(DateTime(year, month0 + 2, 0)));

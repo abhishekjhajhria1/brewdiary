@@ -11,7 +11,8 @@
 --     open a venue's menu"); after that it shares on its own, with a visible
 --     "shared with <venue> tonight · stop" line. Off any time.
 --   • TASTE, NOT A DIARY. What's shared is the taste card worked out on the phone
---     (what you're into, the kinds you usually have, the mood words, alcohol-free
+--     (what you're into, the kinds you usually have, the mood words, your palate's
+--     flavour notes, what you'd rather avoid, how sweet you like it, alcohol-free
 --     often, "nothing with alcohol tonight", diet and allergies if you add them).
 --     No entries, no dates, no counts, no places — never where else you've been.
 --   • TONIGHT ONLY. A share lasts 8 hours, then it's gone from every staff screen.
@@ -51,7 +52,7 @@ declare
   arr jsonb;
 begin
   if t is null or jsonb_typeof(t) <> 'object' then return out; end if;
-  foreach k in array array['into', 'usually', 'moods', 'diet', 'allergies'] loop
+  foreach k in array array['into', 'usually', 'moods', 'flavours', 'avoid', 'diet', 'allergies'] loop
     if jsonb_typeof(t -> k) = 'array' then
       select coalesce(jsonb_agg(left(trim(x #>> '{}'), 40)), '[]'::jsonb) into arr
         from (select x from jsonb_array_elements(t -> k) x where jsonb_typeof(x) = 'string' limit 8) s;
@@ -61,6 +62,7 @@ begin
   foreach k in array array['alcohol_free_often', 'dry_tonight'] loop
     if jsonb_typeof(t -> k) = 'boolean' then out := out || jsonb_build_object(k, t -> k); end if;
   end loop;
+  if t ->> 'sweetness' in ('dry', 'balanced', 'sweet') then out := out || jsonb_build_object('sweetness', t ->> 'sweetness'); end if;
   return out;
 end $$;
 

@@ -436,3 +436,77 @@ List<VisaStamp> stampsBetween(List<Entry> entries, String from, String to) {
   }
   return out;
 }
+
+// ── the palate: what you lean towards, in flavour words ─────────────────────
+// Each family you had counts once per night (a long night doesn't tilt it), and
+// lends its notes (flavours). Top six, as a share of the strongest. Twin: derive.ts.
+class PalateNote {
+  final String note;
+  final double share; // 0..1, relative to your strongest note
+  const PalateNote(this.note, this.share);
+}
+
+List<PalateNote> palate(List<Entry> entries, [int days = 365]) {
+  final cutoff = toKey(addDays(parseKey(todayKey()), -days));
+  final seen = <String>{};
+  final counts = <String, int>{};
+  for (final e in entries) {
+    if (isDryDay(e) || e.date.compareTo(cutoff) < 0) continue;
+    final c = canonicalize(e.drink);
+    if (!c.matched) continue;
+    if (!seen.add('${e.date}|${c.family}')) continue;
+    for (final n in flavours[c.family] ?? const <String>[]) {
+      counts[n] = (counts[n] ?? 0) + 1;
+    }
+  }
+  if (counts.isEmpty) return const [];
+  final top = counts.values.reduce((a, b) => a > b ? a : b);
+  final list = counts.entries.toList()..sort((a, b) => b.value != a.value ? b.value.compareTo(a.value) : a.key.compareTo(b.key));
+  return [for (final x in list.take(6)) PalateNote(x.key, (x.value / top * 100).round() / 100)];
+}
+
+// ── next stamps: something you haven't had that you might like ──────────────
+// Families you've never logged, ranked by the flavour notes they share with your
+// palate, with a nudge for a kind you've never tried. Always at least one
+// alcohol-free pick. Variety, never volume. Twin: derive.ts.
+class NextStamp {
+  final String family;
+  final DrinkType type;
+  final String why;
+  const NextStamp(this.family, this.type, this.why);
+}
+
+const _noAlcoholKinds = {DrinkType.coffee, DrinkType.tea, DrinkType.soft};
+
+List<NextStamp> nextStamps(List<Entry> entries, [int n = 4]) {
+  final triedFam = <String>{};
+  final triedKind = <DrinkType>{};
+  for (final e in entries) {
+    if (isDryDay(e)) continue;
+    final c = canonicalize(e.drink);
+    if (c.matched) triedFam.add(c.family);
+    final t = e.type ?? c.type;
+    if (t != null) triedKind.add(t);
+  }
+  final notes = palate(entries).take(3).map((p) => p.note).toList();
+  final families = <String, DrinkType>{};
+  for (final d in drinks) {
+    families.putIfAbsent(d.family, () => d.type);
+  }
+  final scored = <(NextStamp, int)>[];
+  for (final f in families.entries) {
+    if (triedFam.contains(f.key) || f.key == 'Water') continue;
+    final shared = (flavours[f.key] ?? const <String>[]).where(notes.contains).toList();
+    final newKind = !triedKind.contains(f.value);
+    final score = shared.length * 2 + (newKind ? 1 : 0);
+    final why = shared.isNotEmpty ? '${shared.join(' and ')}, like what you enjoy' : (newKind ? 'a new kind for your passport' : 'something new');
+    scored.add((NextStamp(f.key, f.value, why), score));
+  }
+  scored.sort((a, b) => b.$2 != a.$2 ? b.$2.compareTo(a.$2) : a.$1.family.compareTo(b.$1.family));
+  final out = scored.take(n).map((x) => x.$1).toList();
+  if (out.isNotEmpty && !out.any((x) => _noAlcoholKinds.contains(x.type))) {
+    final free = scored.where((x) => _noAlcoholKinds.contains(x.$1.type)).firstOrNull;
+    if (free != null) out[out.length - 1] = free.$1;
+  }
+  return out;
+}

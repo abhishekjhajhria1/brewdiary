@@ -54,14 +54,58 @@ class TasteShareStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// What a bar is sent: the taste card, minus any line you've hidden.
+  // ── what you've told us (kept on this phone, shared with tonight's bar) ──
+  static const dietOptions = ['Vegetarian', 'Vegan', 'Jain', 'Eggetarian', 'Halal', 'No beef', 'No pork'];
+  static const allergyOptions = ['gluten', 'crustaceans', 'eggs', 'fish', 'peanuts', 'soy', 'milk', 'tree nuts', 'celery', 'mustard', 'sesame', 'sulphites', 'lupin', 'molluscs'];
+  static const sweetnessOptions = ['dry', 'balanced', 'sweet'];
+
+  List<String> _list(String k) => [...(Prefs.getJson<List<dynamic>>(k) ?? const []).map((e) => '$e')];
+  Future<void> _setList(String k, List<String> v) async {
+    await Prefs.setJson(k, v);
+    notifyListeners();
+  }
+
+  /// Drinks you love, in your own words — they lead "into".
+  List<String> get loves => _list('brewdiary.taste.loves');
+  Future<void> setLoves(List<String> v) => _setList('brewdiary.taste.loves', v);
+
+  /// What you'd rather not have ("gin", "coconut", "anything too sweet").
+  List<String> get avoid => _list('brewdiary.taste.avoid');
+  Future<void> setAvoid(List<String> v) => _setList('brewdiary.taste.avoid', v);
+
+  List<String> get diet => _list('brewdiary.taste.diet');
+  Future<void> setDiet(List<String> v) => _setList('brewdiary.taste.diet', v);
+
+  List<String> get allergies => _list('brewdiary.taste.allergies');
+  Future<void> setAllergies(List<String> v) => _setList('brewdiary.taste.allergies', v);
+
+  /// 'dry' | 'balanced' | 'sweet', or null for "no preference".
+  String? get sweetness => Prefs.getString('brewdiary.taste.sweetness');
+  Future<void> setSweetness(String? v) async {
+    v == null ? await Prefs.remove('brewdiary.taste.sweetness') : await Prefs.setString('brewdiary.taste.sweetness', v);
+    notifyListeners();
+  }
+
+  /// What a bar is sent: the taste card (minus any line you've hidden), your
+  /// palate's top notes, and what you've told us. Never an entry, a date or a place.
   Map<String, Object> payload() {
-    final p = tasteProfile(entryStore.entries);
+    final entries = entryStore.entries;
+    final p = tasteProfile(entries);
     final hidden = {...(Prefs.getJson<List<dynamic>>(hiddenKey) ?? const []).map((e) => '$e')};
+    final into = <String>[];
+    for (final x in [...loves, if (!hidden.contains('into')) ...p.favourites]) {
+      if (!into.any((y) => y.toLowerCase() == x.toLowerCase())) into.add(x);
+    }
+    final notes = palate(entries).take(4).map((n) => n.note).toList();
     return {
-      if (!hidden.contains('into') && p.favourites.isNotEmpty) 'into': p.favourites,
+      if (into.isNotEmpty) 'into': into.take(8).toList(),
       if (!hidden.contains('usually') && p.kinds.isNotEmpty) 'usually': [for (final k in p.kinds) _kindWords[k.name] ?? k.name],
       if (!hidden.contains('mood') && p.moods.isNotEmpty) 'moods': p.moods,
+      if (!hidden.contains('palate') && notes.isNotEmpty) 'flavours': notes,
+      if (avoid.isNotEmpty) 'avoid': avoid,
+      if (diet.isNotEmpty) 'diet': diet,
+      if (allergies.isNotEmpty) 'allergies': allergies,
+      'sweetness': ?sweetness,
       if (!hidden.contains('free')) 'alcohol_free_often': p.noAlcoholShare >= .4,
       'dry_tonight': dryTonight,
     };

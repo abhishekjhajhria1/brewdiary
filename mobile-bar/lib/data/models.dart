@@ -228,11 +228,14 @@ class GuestTaste {
   final List<String> into;
   final List<String> usually;
   final List<String> moods;
+  final List<String> flavours; // the palate's top notes: smoky, citrus, bitter…
+  final List<String> avoid;
+  final String? sweetness; // dry | balanced | sweet
   final List<String> diet;
   final List<String> allergies;
   final bool alcoholFreeOften;
   final bool dryTonight;
-  const GuestTaste({this.into = const [], this.usually = const [], this.moods = const [], this.diet = const [], this.allergies = const [], this.alcoholFreeOften = false, this.dryTonight = false});
+  const GuestTaste({this.into = const [], this.usually = const [], this.moods = const [], this.flavours = const [], this.avoid = const [], this.sweetness, this.diet = const [], this.allergies = const [], this.alcoholFreeOften = false, this.dryTonight = false});
 
   static List<String> _list(Object? v) => [for (final x in (v is List ? v : const [])) if (x is String && x.trim().isNotEmpty) x.trim()];
 
@@ -242,6 +245,9 @@ class GuestTaste {
       into: _list(m['into']),
       usually: _list(m['usually']),
       moods: _list(m['moods']),
+      flavours: _list(m['flavours']),
+      avoid: _list(m['avoid']),
+      sweetness: const {'dry', 'balanced', 'sweet'}.contains(m['sweetness']) ? m['sweetness'] as String : null,
       diet: _list(m['diet']),
       allergies: _list(m['allergies']),
       alcoholFreeOften: m['alcohol_free_often'] == true,
@@ -249,7 +255,7 @@ class GuestTaste {
     );
   }
 
-  bool get isEmpty => into.isEmpty && usually.isEmpty && moods.isEmpty && diet.isEmpty && allergies.isEmpty && !alcoholFreeOften && !dryTonight;
+  bool get isEmpty => into.isEmpty && usually.isEmpty && moods.isEmpty && flavours.isEmpty && avoid.isEmpty && sweetness == null && diet.isEmpty && allergies.isEmpty && !alcoholFreeOften && !dryTonight;
 }
 
 /// Someone in tonight who shared their taste with this venue.

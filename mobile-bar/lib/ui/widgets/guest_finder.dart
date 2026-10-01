@@ -33,8 +33,11 @@ class TasteChips extends StatelessWidget {
     return Wrap(spacing: 6, runSpacing: 6, children: [
       if (taste.dryTonight) chip('Nothing with alcohol tonight', strong: true),
       if (taste.allergies.isNotEmpty) chip('Allergic: ${taste.allergies.join(', ')}', strong: true),
+      if (taste.avoid.isNotEmpty) chip('Not: ${taste.avoid.join(', ')}', strong: true),
       for (final d in taste.diet) chip(d),
       for (final x in taste.into) chip(x),
+      if (taste.flavours.isNotEmpty) chip('likes ${taste.flavours.join(', ')}'),
+      if (taste.sweetness != null) chip(switch (taste.sweetness) { 'dry' => 'not sweet', 'sweet' => 'on the sweet side', _ => 'balanced sweetness' }),
       for (final u in taste.usually) chip('usually $u'),
       for (final m in taste.moods) chip(m),
       if (taste.alcoholFreeOften && !taste.dryTonight) chip('often alcohol-free'),
