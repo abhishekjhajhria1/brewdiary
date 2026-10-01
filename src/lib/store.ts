@@ -209,7 +209,7 @@ export interface NewEntry {
 
 function uuid(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
+    ? uuid()
     : `e_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
@@ -295,17 +295,23 @@ async function reconcilePhotos(entryId: string, photos: NonNullable<Entry["photo
 export function deleteEntry(id: string) {
   setCache(cache.filter((e) => e.id !== id)); // optimistic
   if (mode === "remote" && currentUser && supabase) {
-    void supabase.from("entries").delete().eq("id", id); // cascade removes photos rows
+    // Put away, never destroyed (055). If it didn't go, show it again.
+    void supabase.rpc("archive_entry", { eid: id }).then(({ error }) => {
+      if (error) void loadRemote();
+    });
   } else {
     writeLocal(cache);
   }
 }
 
+/** A fresh diary. In the cloud the database puts everything away (055) — and only
+ *  for a session signed in with an emailed code in the last 10 minutes; otherwise
+ *  it refuses and the diary stays as it was. The apps run that flow. */
 export function resetAll() {
   if (mode === "remote" && currentUser && supabase) {
-    const userId = currentUser;
-    setCache(EMPTY);
-    void supabase.from("entries").delete().eq("user_id", userId);
+    void supabase.rpc("archive_my_diary").then(({ error }) => {
+      if (!error) setCache(EMPTY);
+    });
   } else {
     setCache(EMPTY);
     writeLocal(EMPTY);
@@ -315,20 +321,13 @@ export function resetAll() {
 /** Wipe and re-seed the demo history (for the current diary). */
 export function reseed() {
   const seeded = seedEntries();
-  if (mode === "remote" && currentUser && supabase) {
-    const userId = currentUser;
-    setCache(seeded);
-    void (async () => {
-      await supabase!.from("entries").delete().eq("user_id", userId);
-      await supabase!.from("entries").insert(seeded.map((e) => entryToRow(e, userId)));
-    })();
-  } else {
-    setCache(seeded);
-    writeLocal(seeded);
-  }
+  if (mode === "remote") return; // the demo month is for signed-out diaries only
+  setCache(seeded);
+  writeLocal(seeded);
 }
 
-/** Replace the whole diary (used by import). Drops malformed rows — a bad file
+/** Add a diary file's entries (used by import) — nothing is removed (055): an entry
+ *  already here is skipped, the rest come in under fresh ids. Drops malformed rows — a bad file
  *  must never crash the app later (day sorts call `createdAt.localeCompare`) or
  *  corrupt the mosaic with non-day keys. */
 export function replaceAll(entries: Entry[]) {
@@ -346,16 +345,18 @@ export function replaceAll(entries: Entry[]) {
           (e.whoWith === undefined || Array.isArray(e.whoWith)),
       ),
   );
+  const have = new Set(cache.map((e) => e.id));
+  const fresh = clean.filter((e) => !have.has(e.id)).map((e) => ({ ...e, id: uuid() }));
+  if (!fresh.length) return;
   if (mode === "remote" && currentUser && supabase) {
     const userId = currentUser;
-    setCache(clean);
-    void (async () => {
-      await supabase!.from("entries").delete().eq("user_id", userId);
-      if (clean.length) await supabase!.from("entries").insert(clean.map((e) => entryToRow(e, userId)));
-    })();
+    setCache([...cache, ...fresh]);
+    void supabase.from("entries").insert(fresh.map((e) => entryToRow(e, userId))).then(({ error }) => {
+      if (error) void loadRemote();
+    });
   } else {
-    setCache(clean);
-    writeLocal(clean);
+    setCache([...cache, ...fresh]);
+    writeLocal(cache);
   }
 }
 

@@ -839,6 +839,54 @@ class _VenueBooksSheetState extends State<_VenueBooksSheet> {
 }
 
 // ── your data ────────────────────────────────────────────────────────────────
+/// Type the emailed code; pops true once it's confirmed.
+class _CodeSheet extends StatefulWidget {
+  final String email;
+  const _CodeSheet({required this.email});
+  @override
+  State<_CodeSheet> createState() => _CodeSheetState();
+}
+
+class _CodeSheetState extends State<_CodeSheet> {
+  final _code = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _go() async {
+    if (_busy || _code.text.trim().length < 6) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final r = await auth.verifyEmailCode(widget.email, _code.text);
+    if (!mounted) return;
+    if (r.ok) return Navigator.pop(context, true);
+    setState(() {
+      _busy = false;
+      _error = r.error;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text('We sent a code to ${widget.email}.', style: T.bodyMuted(bd)),
+      const SizedBox(height: S.m),
+      GlassField(controller: _code, hint: '6-digit code', keyboard: TextInputType.number, autofocus: true, maxLength: 8, action: TextInputAction.done, onSubmitted: (_) => _go(), onChanged: (_) => setState(() {})),
+      if (_error != null) Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_error!, style: T.caption(bd, color: bd.accentText))),
+      const SizedBox(height: S.m),
+      BdButton(_busy ? 'Checking…' : 'Confirm', busy: _busy, onTap: _code.text.trim().length >= 6 ? _go : null),
+    ]);
+  }
+}
+
 /// Export/import, the demo, and the rights: a copy of everything, or deletion.
 class _DataGroup extends StatefulWidget {
   final bool cloud;
@@ -867,12 +915,41 @@ class _DataGroupState extends State<_DataGroup> {
       if (data is! List) throw const FormatException();
       final clean = data.map(Entry.tryParse).whereType<Entry>().toList();
       if (!mounted) return;
-      if (await confirm(context, title: 'Replace your diary?', body: 'This swaps your diary for the ${clean.length} entries in that file.', yes: 'Replace')) {
-        entryStore.replaceAll(clean);
-      }
+      if (!await confirm(context, title: 'Add these entries?', body: 'The ${clean.length} entries in that file join your diary. Nothing in it is removed or changed.', yes: 'Add them')) return;
+      final n = await entryStore.importEntries(clean);
+      if (mounted) toast(context, n == 0 ? 'Those are already in your diary.' : 'Added $n ${n == 1 ? 'entry' : 'entries'}.');
     } catch (_) {
       if (mounted) toast(context, "That file couldn't be read.");
     }
+  }
+
+  /// A fresh diary: everything logged is kept (055), the diary starts empty. In the
+  /// cloud it takes a code emailed to you — the database checks it was just used.
+  Future<void> _freshDiary() async {
+    final email = db?.auth.currentUser?.email;
+    final cloudAccount = widget.cloud && auth.isAuthed && email != null;
+    final kept = await entryStore.archivedCount();
+    if (!mounted) return;
+    final yes = await confirm(
+      context,
+      title: 'Start a fresh diary?',
+      body: cloudAccount
+          ? "Everything you've logged stays safely with your account${kept > 0 ? ', with the $kept entries already put away' : ''} — you'll just see an empty diary. To be sure it's you, we'll email a code to $email."
+          : "Everything you've logged is kept on this phone — you'll just see an empty diary.",
+      yes: cloudAccount ? 'Email me a code' : 'Start fresh',
+      no: 'Keep my diary',
+    );
+    if (!yes || !mounted) return;
+    if (cloudAccount) {
+      final sent = await auth.sendEmailCode(email);
+      if (!mounted) return;
+      if (!sent.ok) return toast(context, sent.error ?? "Couldn't send the code — try again.");
+      final ok = await showBdSheet<bool>(context, title: 'Enter the code', builder: (_) => _CodeSheet(email: email));
+      if (ok != true || !mounted) return;
+    }
+    final err = await entryStore.clearDiary();
+    if (!mounted) return;
+    toast(context, err ?? 'A fresh diary. Everything before is kept.');
   }
 
   /// The diary, Together, Split, venues and the Ninkasi chats, set as a PDF book.
@@ -930,12 +1007,11 @@ class _DataGroupState extends State<_DataGroup> {
         GroupTile(icon: Ph.export, title: 'Back up my diary', subtitle: 'A file you can import again', onTap: _exportDiary),
         GroupTile(icon: Ph.fileArrowUp, title: 'Import a diary file', onTap: _import),
         if (widget.cloud) GroupTile(icon: Ph.downloadSimple, title: 'Everything as a data file', subtitle: 'Machine-readable (JSON), for moving it elsewhere', onTap: _busy ? null : _exportEverything),
-        GroupTile(icon: Ph.arrowsClockwise, title: 'Reseed the demo month', onTap: () async {
-          if (await confirm(context, title: 'Reseed the demo?', body: 'Your diary is replaced with a sample month.', yes: 'Reseed')) entryStore.reseed();
-        }),
-        GroupTile(icon: Ph.eraser, title: 'Reset diary', destructive: true, onTap: () async {
-          if (await confirm(context, title: 'Reset your diary?', body: 'Every entry is removed. This cannot be undone.', yes: 'Reset')) entryStore.resetAll();
-        }),
+        if (!widget.cloud)
+          GroupTile(icon: Ph.arrowsClockwise, title: 'Reseed the demo month', onTap: () async {
+            if (await confirm(context, title: 'Reseed the demo?', body: 'A sample month replaces what you see; your own entries are kept on this phone.', yes: 'Reseed')) entryStore.reseed();
+          }),
+        GroupTile(icon: Ph.eraser, title: 'Start a fresh diary', subtitle: 'Everything is kept — you just see an empty diary', onTap: _busy ? null : _freshDiary),
         if (widget.cloud) GroupTile(icon: Ph.trash, title: 'Delete my account', destructive: true, onTap: _busy ? null : _deleteAccount),
       ],
     );
