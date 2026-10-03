@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/game.dart';
+import 'package:brewdiary_core/types.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';
@@ -16,8 +18,11 @@ import '../widgets/common.dart';
 import '../widgets/moments.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
+import '../widgets/game.dart';
+import '../widgets/passport.dart';
 import 'discover_screen.dart';
 import 'morning_after.dart';
+import 'taste_card.dart';
 import 'tonight_sheet.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -119,7 +124,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         )
       else
         YearMosaic(year: now.year, counts: counts, onSelect: (k) => _open(k, planDays)),
-      if (entries.isEmpty) const EmptyNote('Tap a day to log your first drink — a coffee counts.', icon: Ph.handTap),
+      if (entries.isEmpty) const EmptyNote('Tap a day to log your first drink — a coffee counts.', icon: Ph.handTap) else _Glance(stats: s, nights: loggedDates(entries).length),
+      _PassportStrip(year: month ? _y : now.year, month0: month ? _m : null),
       const SizedBox(height: S.xxl),
       if (morningAfterWorthOffering(now)) ...[
         Glass(
@@ -173,8 +179,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         const SizedBox(height: S.m),
       ],
-      StreakStrip(stats: s),
-      if (!month) ...[const SizedBox(height: S.m), const AchievementTile()],
+      if (!month) ...[const AchievementTile(), const SizedBox(height: S.m)],
       if (month && ExtrasStore.instance.enabledCounters.isNotEmpty) ...[
         const SectionHeader('Today'),
         DayCounters(dateKey: todayKey()),
@@ -229,6 +234,106 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ]),
       ),
     ]);
+  }
+}
+
+/// The taste passport for what you're looking at: this month's visa page under
+/// the month grid, the year's under the mosaic. Tap to open the whole book there.
+/// The glance under the calendar: the streak, the nights you kept, the kinds —
+/// one quiet line instead of a card (the full meter lives in You).
+class _Glance extends StatelessWidget {
+  final Stats stats;
+  final int nights;
+  const _Glance({required this.stats, required this.nights});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    Widget item(int n, String label, {bool accent = false}) => Expanded(
+          child: Column(children: [
+            Text('$n', style: T.serif(bd, size: 24, height: 1, color: accent ? bd.accentText : bd.ink).copyWith(fontFeatures: T.tnum)),
+            const SizedBox(height: 4),
+            Text(label, textAlign: TextAlign.center, style: T.sans(bd, size: 11.5, color: bd.muted)),
+          ]),
+        );
+    Widget rule() => Container(width: .8, height: 26, color: bd.line);
+    return Semantics(
+      label: '${stats.current} night streak, $nights nights kept, ${stats.kinds} kinds',
+      excludeSemantics: true,
+      child: Padding(
+        padding: const EdgeInsets.only(top: S.l, bottom: S.xs),
+        child: Row(children: [
+          item(stats.current, 'night streak', accent: true),
+          rule(),
+          item(nights, 'nights kept'),
+          rule(),
+          item(stats.kinds, 'kinds'),
+        ]),
+      ),
+    );
+  }
+}
+
+class _PassportStrip extends StatelessWidget {
+  final int year;
+  final int? month0; // null = the whole year
+  const _PassportStrip({required this.year, this.month0});
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = entryStore.entries;
+    final yearView = month0 == null;
+    final (from, to) = yearView ? ('$year-01-01', '$year-12-31') : monthRange(year, month0!);
+    final stamps = stampsBetween(entries, from, to);
+    final id = yearView ? '$year' : from.substring(0, 7);
+    final title = yearView ? '$year' : '${monthNames[month0!]} $year';
+    void open() => showTasteCard(context, open: id);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SectionHeader('Passport', action: 'Open', onAction: open),
+      PassportMini(game: passportGame(entries), period: title, stampCount: stamps.length, onTap: open),
+      if (yearView) ...[
+        const SizedBox(height: S.l),
+        _YearStrip(year: year, entries: entries),
+      ],
+    ]);
+  }
+}
+
+/// Twelve little columns: how many stamps each month of the year added.
+class _YearStrip extends StatelessWidget {
+  final int year;
+  final List<Entry> entries;
+  const _YearStrip({required this.year, required this.entries});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final counts = [
+      for (var m = 0; m < 12; m++)
+        () {
+          final (f, t) = monthRange(year, m);
+          return stampsBetween(entries, f, t).length;
+        }(),
+    ];
+    final top = counts.fold<int>(1, (a, b) => b > a ? b : a);
+    return SizedBox(
+      height: 54,
+      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        for (var m = 0; m < 12; m++)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
+                AnimatedContainer(
+                  duration: Motion.med,
+                  height: counts[m] == 0 ? 3 : 4 + 30 * counts[m] / top,
+                  decoration: BoxDecoration(color: counts[m] == 0 ? bd.line : bd.accent.withValues(alpha: .35 + .65 * counts[m] / top), borderRadius: BorderRadius.circular(3)),
+                ),
+                const SizedBox(height: 4),
+                Text(monthNames[m].substring(0, 1), style: T.caption(bd).copyWith(fontSize: 10)),
+              ]),
+            ),
+          ),
+      ]),
+    );
   }
 }
 

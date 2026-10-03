@@ -11,12 +11,20 @@ class BartenderContext {
   final int total;
   final List<String> friendsPouring;
   final List<String> trending;
+
+  /// What they keep at home (You → Your bar), so Ninkasi can suggest what they can make.
+  final List<String> homeBar;
+
+  /// Their palate's top flavour notes.
+  final List<String> palate;
   const BartenderContext({
     this.recentDrinks = const [],
     this.moods = const [],
     this.total = 0,
     this.friendsPouring = const [],
     this.trending = const [],
+    this.homeBar = const [],
+    this.palate = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -25,6 +33,8 @@ class BartenderContext {
         'total': total,
         'friendsPouring': friendsPouring,
         'trending': trending,
+        if (homeBar.isNotEmpty) 'homeBar': homeBar,
+        if (palate.isNotEmpty) 'palate': palate,
       };
 }
 

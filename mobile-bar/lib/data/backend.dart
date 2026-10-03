@@ -275,6 +275,14 @@ abstract class Backend {
   Future<double> ringSale(String venueId, String saleId, List<Map<String, Object>> lines, String paidBy, {bool idChecked = false});
   Future<List<RegisterRow>> exciseRegister(String venueId, DateTime from, DateTime to);
 
+  // ── guests tonight (056) ──────────────────────────────────────────────────
+  /// Who opened this venue's table or menu link tonight and shared their taste.
+  /// Needs guests.taste (owner, manager, supervisor, bartender, server).
+  Future<List<GuestTonight>> guestsTonight(String venueId);
+
+  /// The guest showing their 6-letter card code (good for 10 minutes), or null.
+  Future<ProfileHit?> findGuestByCode(String venueId, String code);
+
   // ── guest book ────────────────────────────────────────────────────────────
   Future<GuestCard?> guestCard(String venueId, String guestId);
   Future<void> setGuestNote(String venueId, String guestId, String body, List<String> tags);

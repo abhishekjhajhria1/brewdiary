@@ -15,7 +15,10 @@ class InviteCodeCard extends StatelessWidget {
   final String label;
   final String code;
   final String? shareText;
-  const InviteCodeCard({super.key, this.label = 'Invite code', required this.code, this.shareText});
+
+  /// The invite as a link (the website's "Copy link").
+  final String? link;
+  const InviteCodeCard({super.key, this.label = 'Invite code', required this.code, this.shareText, this.link});
 
   @override
   Widget build(BuildContext context) {
@@ -36,39 +39,120 @@ class InviteCodeCard extends StatelessWidget {
           Clipboard.setData(ClipboardData(text: code));
           toast(context, 'Code copied');
         }),
+        if (link != null)
+          IconBtn(Ph.linkSimple, tooltip: 'Copy the link', color: bd.muted, onTap: () {
+            Clipboard.setData(ClipboardData(text: link!));
+            toast(context, 'Link copied');
+          }),
         if (shareText != null) IconBtn(Ph.shareNetwork, tooltip: 'Share the invite', color: bd.muted, onTap: () => SharePlus.instance.share(ShareParams(text: shareText!))),
       ]),
     );
   }
 }
 
-/// One line of a points board: rank · name · sparks (+ vibe) · an optional action.
+/// One line of a points board: rank · face · name · sparks (+ vibe) · an optional
+/// action, with a thin bar against the leader when [top] is given.
 class PointsRow extends StatelessWidget {
   final int rank;
   final String name;
   final int sparks;
   final int vibe;
   final bool leads;
+  final int? top;
   final Widget? trailing;
-  const PointsRow({super.key, required this.rank, required this.name, required this.sparks, required this.vibe, this.leads = false, this.trailing});
+  const PointsRow({super.key, required this.rank, required this.name, required this.sparks, required this.vibe, this.leads = false, this.top, this.trailing});
 
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
+    final t = top;
     return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 52),
+      constraints: const BoxConstraints(minHeight: 56),
       child: Row(children: [
-        SizedBox(width: 28, child: Text('$rank', style: T.sans(bd, size: 13, weight: FontWeight.w600, color: leads ? bd.accentText : bd.faint).copyWith(fontFeatures: T.tnum))),
-        Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.row(bd))),
-        Text.rich(TextSpan(children: [
-          TextSpan(text: '$sparks', style: T.sans(bd, size: 15, weight: FontWeight.w600, color: leads ? bd.accentText : bd.ink).copyWith(fontFeatures: T.tnum)),
-          TextSpan(text: ' sparks', style: T.caption(bd)),
-          if (vibe > 0) ...[
-            TextSpan(text: '   $vibe', style: T.sans(bd, size: 15, weight: FontWeight.w600, color: bd.muted).copyWith(fontFeatures: T.tnum)),
-            TextSpan(text: ' vibe', style: T.caption(bd)),
-          ],
-        ])),
+        SizedBox(width: 24, child: Text('$rank', style: T.sans(bd, size: 13, weight: FontWeight.w600, color: leads ? bd.accentText : bd.faint).copyWith(fontFeatures: T.tnum))),
+        Initial(name.isEmpty ? '?' : name.characters.first.toUpperCase(), size: 30),
+        const SizedBox(width: S.m),
+        Expanded(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.row(bd))),
+              Text.rich(TextSpan(children: [
+                TextSpan(text: '$sparks', style: T.sans(bd, size: 15, weight: FontWeight.w600, color: leads ? bd.accentText : bd.ink).copyWith(fontFeatures: T.tnum)),
+                TextSpan(text: ' sparks', style: T.caption(bd)),
+                if (vibe > 0) ...[
+                  TextSpan(text: '   $vibe', style: T.sans(bd, size: 15, weight: FontWeight.w600, color: bd.muted).copyWith(fontFeatures: T.tnum)),
+                  TextSpan(text: ' vibe', style: T.caption(bd)),
+                ],
+              ])),
+            ]),
+            if (t != null) ...[
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 3,
+                child: LayoutBuilder(
+                  builder: (context, c) => Stack(children: [
+                    Container(decoration: BoxDecoration(color: bd.line, borderRadius: BorderRadius.circular(2))),
+                    Container(
+                      width: t == 0 ? 0 : (c.maxWidth * sparks / t).clamp(sparks > 0 ? 3.0 : 0.0, c.maxWidth),
+                      decoration: BoxDecoration(color: leads ? bd.accent : bd.accent.withValues(alpha: .45), borderRadius: BorderRadius.circular(2)),
+                    ),
+                  ]),
+                ),
+              ),
+            ],
+          ]),
+        ),
         if (trailing != null) ...[const SizedBox(width: S.xs), trailing!],
+      ]),
+    );
+  }
+}
+
+/// One pour in a shared room: a face, the drink in serif with its mood, then who
+/// and when.
+class PourRow extends StatelessWidget {
+  final String author;
+  final String drink;
+  final String? mood;
+  final String meta;
+  const PourRow({super.key, required this.author, required this.drink, this.mood, required this.meta});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: S.m),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Initial(author.isEmpty ? '?' : author.characters.first.toUpperCase(), size: 30),
+        const SizedBox(width: S.m),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text.rich(TextSpan(children: [
+              TextSpan(text: drink, style: T.serif(bd, size: 19, height: 1.2)),
+              if (mood != null) TextSpan(text: ' · $mood', style: T.serif(bd, size: 16, italic: true, color: bd.muted, height: 1.2)),
+            ])),
+            const SizedBox(height: 2),
+            Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.caption(bd)),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+/// A list of pours in one glass card, hairlines between.
+class PourList extends StatelessWidget {
+  final List<PourRow> rows;
+  const PourList(this.rows, {super.key});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Glass(
+      padding: const EdgeInsets.symmetric(horizontal: S.l, vertical: S.xs),
+      child: Column(children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) Container(height: .8, color: bd.line),
+          rows[i],
+        ],
       ]),
     );
   }

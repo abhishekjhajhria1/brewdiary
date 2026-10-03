@@ -30,6 +30,8 @@
 	<string>To find places near you, and — only if you opt in — to set a rough ~40 km area for local taste trends. Your exact location never leaves your phone.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>To add a photo to a diary entry.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Face ID unlocks your diary, if you switch the lock on.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>To take a photo for a diary entry.</string>
 	<key>NSMotionUsageDescription</key>

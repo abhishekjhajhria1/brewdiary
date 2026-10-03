@@ -5,14 +5,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
+import '../../config.dart';
 import '../../data/auth.dart';
+import '../../data/circles.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';
 import '../../data/friends.dart';
 import '../../data/parties.dart';
+import '../../data/plans.dart';
 import '../../data/safety.dart';
 import '../../data/wishlist.dart';
 import '../theme.dart';
@@ -27,17 +31,41 @@ import 'party_screens.dart';
 import 'plans_section.dart';
 import 'split_screen.dart';
 
-enum _Room { feed, plans, circles, parties, board }
-
-const _roomLabel = {_Room.feed: 'Feed', _Room.plans: 'Plans', _Room.circles: 'Circles', _Room.parties: 'Parties', _Room.board: 'Board'};
-
 Future<void> showAddFriend(BuildContext context) => showBdSheet(context, title: 'Add a friend', builder: (_) => const FriendSearch(autofocus: true));
 
+/// Ready data for previews and tests — the screen draws it instead of asking the
+/// server.
+class TogetherPreview {
+  final List<SocialProfile> friends;
+  final List<FeedEntry> feed;
+  final List<Party> parties;
+  final List<MyPlan> plans;
+  final bool compete;
+  final List<Circle>? circles;
+  final CirclePreview? circle;
+  final List<PointRow>? board;
+  const TogetherPreview({this.friends = const [], this.feed = const [], this.parties = const [], this.plans = const [], this.compete = false, this.circles, this.circle, this.board});
+}
+
+class _Data {
+  final List<SocialProfile> friends;
+  final bool compete;
+  final List<FeedEntry> feed;
+  final List<Party> parties;
+  final List<MyPlan> plans;
+  const _Data(this.friends, this.compete, this.feed, this.parties, this.plans);
+}
+
 class TogetherScreen extends StatefulWidget {
-  const TogetherScreen({super.key});
+  final TogetherPreview? preview;
+  const TogetherScreen({super.key, this.preview});
   @override
   State<TogetherScreen> createState() => _TogetherScreenState();
 }
+
+enum _Room { feed, plans, circles, parties, board }
+
+const _roomLabel = {_Room.feed: 'Feed', _Room.plans: 'Plans', _Room.circles: 'Circles', _Room.parties: 'Parties', _Room.board: 'Board'};
 
 class _TogetherScreenState extends State<TogetherScreen> {
   _Room _room = _Room.feed;
@@ -62,178 +90,415 @@ class _TogetherScreenState extends State<TogetherScreen> {
     }
   }
 
-  void _openSplit() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SplitScreen()));
+  Future<_Data> _load() async {
+    final r = await Future.wait<Object>([
+      FriendsApi.friends(),
+      PointsApi.competeVisible(),
+      FriendsApi.feed(),
+      PartiesApi.mine().catchError((_) => <Party>[]),
+      PlansApi.mine().catchError((_) => <MyPlan>[]),
+    ]);
+    return _Data(r[0] as List<SocialProfile>, r[1] as bool, r[2] as List<FeedEntry>, r[3] as List<Party>, r[4] as List<MyPlan>);
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Laid out like the website's Together: the title with the friend count, the
-    // rooms as tabs, and Split as a quiet link at the foot.
-    return Loader<(List<SocialProfile>, bool)>(
+    final p = widget.preview;
+    if (p != null) return _page(_Data(p.friends, p.compete, p.feed, p.parties, p.plans), loading: false);
+    return Loader<_Data>(
       retry: true,
-      refresh: Listenable.merge([friendsRev, profileRev]),
-      load: () async {
-        final r = await Future.wait<Object>([FriendsApi.friends(), PointsApi.competeVisible()]);
-        return (r[0] as List<SocialProfile>, r[1] as bool);
-      },
+      refresh: Listenable.merge([friendsRev, profileRev, partiesRev, plansRev]),
+      load: _load,
       failed: (context, retry) => ScrollPage(title: 'Together', children: [LoadError(onRetry: retry)]),
-      builder: (context, data, loading) {
-        final bd = context.bd;
-        final friends = data?.$1 ?? const <SocialProfile>[];
-        final compete = data?.$2 ?? false;
-        final rooms = [_Room.feed, _Room.plans, _Room.circles, _Room.parties, if (compete) _Room.board];
-        final room = rooms.contains(_room) ? _room : _Room.feed;
-        return ScrollPage(
-          title: 'Together',
-          titleNote: data == null ? null : '${friends.length} ${friends.length == 1 ? 'friend' : 'friends'}',
-          subtitle: 'Your calendar stays yours and quiet. This is the other room — what friends are pouring.',
-          onRefresh: _refresh,
-          children: [
-            Segmented<_Room>(
-              options: [for (final r in rooms) (r, _roomLabel[r]!)],
-              value: room,
-              onChanged: (r) => setState(() => _room = r),
-            ),
-            const SizedBox(height: S.xs),
-            switch (room) {
-              _Room.feed => _Feed(friends: friends, loadingFriends: data == null),
-              _Room.plans => const PlansSection(),
-              _Room.circles => const CirclesSection(),
-              _Room.parties => const PartiesSection(),
-              _Room.board => const _FriendsBoard(),
-            },
-            const SizedBox(height: S.x3),
-            // The website's foot: a hairline, a sentence, and "Split →".
-            Semantics(
-              button: true,
-              label: 'Split a tab or a round with friends',
-              excludeSemantics: true,
-              child: Pressable(
-                onTap: _openSplit,
-                child: Container(
-                  padding: const EdgeInsets.only(top: S.l, bottom: S.m),
-                  decoration: BoxDecoration(border: Border(top: BorderSide(color: bd.line, width: .8))),
-                  child: Row(children: [
-                    Expanded(child: Text('Split a tab or a round with friends', style: T.body(bd, color: bd.muted))),
-                    Text('Split →', style: T.sans(bd, size: 14, weight: FontWeight.w600, color: bd.accentText)),
-                  ]),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+      builder: (context, data, loading) => _page(data, loading: data == null),
     );
+  }
+
+  // Laid out like the website's Together: the title with the friend count, the
+  // rooms as tabs (Feed · Plans · Circles · Parties, and Board for people who
+  // switched the leaderboard on), and Split as a quiet link at the foot.
+  Widget _page(_Data? data, {required bool loading}) {
+    final bd = context.bd;
+    final friends = data?.friends ?? const <SocialProfile>[];
+    final feed = data?.feed ?? const <FeedEntry>[];
+    final rooms = [_Room.feed, _Room.plans, _Room.circles, _Room.parties, if (data?.compete ?? false) _Room.board];
+    final room = rooms.contains(_room) ? _room : _Room.feed;
+    return ScrollPage(
+      title: 'Together',
+      titleNote: data == null ? null : '${friends.length} ${friends.length == 1 ? 'friend' : 'friends'}',
+      subtitle: 'Your calendar stays yours and quiet. This is the other room — what friends are pouring.',
+      onRefresh: _refresh,
+      children: [
+        Segmented<_Room>(
+          options: [for (final r in rooms) (r, _roomLabel[r]!)],
+          value: room,
+          onChanged: (r) => setState(() => _room = r),
+        ),
+        const SizedBox(height: S.xs),
+        switch (room) {
+          _Room.feed => _feedRoom(data, friends, feed, loading: loading),
+          _Room.plans => const PlansSection(),
+          _Room.circles => CirclesSection(preview: widget.preview?.circles, previewDetail: widget.preview?.circle),
+          _Room.parties => PartiesSection(preview: widget.preview?.parties),
+          _Room.board => _FriendsBoard(preview: widget.preview?.board),
+        },
+        const SizedBox(height: S.x3),
+        // The website's foot: a hairline, a sentence, and "Split →".
+        Semantics(
+          button: true,
+          label: 'Split a tab or a round with friends',
+          excludeSemantics: true,
+          child: Pressable(
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SplitScreen())),
+            child: Container(
+              padding: const EdgeInsets.only(top: S.l, bottom: S.m),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: bd.line, width: .8))),
+              child: Row(children: [
+                Expanded(child: Text('Split a tab or a round with friends', style: T.body(bd, color: bd.muted))),
+                Text('Split →', style: T.sans(bd, size: 14, weight: FontWeight.w600, color: bd.accentText)),
+              ]),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The feed room: requests, your people (a ring on anyone who shared today),
+  /// an invite until you have three, what's coming up, their week, picks to try,
+  /// then the feed itself.
+  Widget _feedRoom(_Data? data, List<SocialProfile> friends, List<FeedEntry> feed, {required bool loading}) {
+    final bd = context.bd;
+    final today = todayKey();
+    final out = {for (final f in feed) if (f.date == today) f.userId};
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const SizedBox(height: S.l),
+      if (widget.preview == null) const _Requests(),
+      _FriendsRail(friends: friends, outTonight: out, loading: loading, feed: feed),
+      if (!loading && friends.length < 3) ...[const SizedBox(height: S.l), _InviteCard(friends: friends.length)],
+      if (data != null) _Happening(parties: data.parties, plans: data.plans),
+      if (friends.isNotEmpty) ...[
+        SectionHeader('Their week', trailing: Text('what friends shared', style: T.caption(bd))),
+        _FriendsWeek(friends: friends, feed: feed),
+      ],
+      _FriendPicks(feed: feed),
+      SectionHeader('Feed', trailing: feed.isEmpty ? null : Text('${feed.length} ${feed.length == 1 ? 'pour' : 'pours'}', style: T.caption(bd))),
+      if (loading)
+        const Column(children: [Skeleton(height: 132), SizedBox(height: S.m), Skeleton(height: 132)])
+      else if (feed.isEmpty)
+        _QuietFeed(hasFriends: friends.isNotEmpty)
+      else
+        for (var i = 0; i < feed.length; i++) ...[
+          if (i > 0) const SizedBox(height: S.m),
+          FeedCard(item: feed[i]),
+        ],
+    ]);
   }
 }
 
-// ── the feed ─────────────────────────────────────────────────────────────────
-class _Feed extends StatelessWidget {
+// ── the people row ──────────────────────────────────────────────────────────
+/// You, then each friend — an amber ring on anyone who shared something today —
+/// then "Add".
+class _FriendsRail extends StatelessWidget {
   final List<SocialProfile> friends;
-  final bool loadingFriends;
-  const _Feed({required this.friends, required this.loadingFriends});
+  final Set<String> outTonight;
+  final List<FeedEntry> feed;
+  final bool loading;
+  const _FriendsRail({required this.friends, required this.outTonight, required this.loading, this.feed = const []});
 
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    return Loader<List<FeedEntry>>(
-      retry: true,
-      refresh: friendsRev,
-      load: FriendsApi.feed,
-      builder: (context, feed, loading) {
-        final items = feed ?? const <FeedEntry>[];
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const SizedBox(height: S.l),
-          _People(friends: friends),
-          _FriendPicks(feed: items),
-          if (loadingFriends || (loading && feed == null))
-            const Padding(padding: EdgeInsets.only(top: S.xxl), child: Column(children: [Skeleton(height: 112), SizedBox(height: S.m), Skeleton(height: 112)]))
-          else if (friends.isEmpty)
-            Padding(padding: const EdgeInsets.only(top: S.x3), child: Text("Add a friend by their handle to see what they're pouring.", textAlign: TextAlign.center, style: T.body(bd, color: bd.faint)))
-          else if (items.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: S.x3),
-              child: Text('Quiet so far — nothing shared to friends yet. Share an entry from your diary and it lands here.', textAlign: TextAlign.center, style: T.body(bd, color: bd.faint)),
-            )
-          else ...[
-            const SizedBox(height: S.xxl),
-            for (var i = 0; i < items.length; i++) ...[
-              if (i > 0) const SizedBox(height: S.m),
-              FeedCard(item: items[i]),
-            ],
-          ],
-        ]);
-      },
-    );
-  }
-}
-
-/// Friend requests, the row of friends ending in "+ Add", and the search —
-/// which, with no friends yet, is simply open (the website's People section).
-class _People extends StatefulWidget {
-  final List<SocialProfile> friends;
-  const _People({required this.friends});
-  @override
-  State<_People> createState() => _PeopleState();
-}
-
-class _PeopleState extends State<_People> {
-  bool _adding = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final bd = context.bd;
-    final friends = widget.friends;
-    final searchOpen = _adding || friends.isEmpty;
-    Widget face({required Widget child, required String name, required VoidCallback onTap, required String semantics, bool accent = false}) => Semantics(
+    final me = auth.profile;
+    Widget face({required String letter, required String name, required VoidCallback onTap, required String semantics, bool ring = false, bool add = false, bool you = false}) => Semantics(
           button: true,
           label: semantics,
           excludeSemantics: true,
           child: Pressable(
             onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.only(right: S.l),
+            child: SizedBox(
+              width: 68,
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Container(
-                  width: 48,
-                  height: 48,
-                  alignment: Alignment.center,
+                  width: 58,
+                  height: 58,
+                  padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [bd.glassTop, bd.glass]),
-                    border: Border.all(color: bd.glassBorder, width: .8),
+                    gradient: ring ? SweepGradient(colors: [bd.accent, bd.accent.withValues(alpha: .4), bd.accent]) : null,
+                    border: ring ? null : Border.all(color: add ? bd.accent.withValues(alpha: .6) : bd.line, width: add ? 1.2 : 1),
                   ),
-                  child: child,
+                  child: Container(
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: add ? bd.accent.withValues(alpha: .12) : (you ? bd.accent.withValues(alpha: .2) : bd.sheet),
+                      border: ring ? Border.all(color: bd.sheet, width: 2) : null,
+                    ),
+                    child: add ? Icon(Ph.plus, size: 22, color: bd.accentText) : Text(letter, style: T.serif(bd, size: 22, color: you ? bd.accentText : bd.ink)),
+                  ),
                 ),
-                const SizedBox(height: S.s),
-                Text(name, maxLines: 1, style: T.caption(bd, color: accent ? bd.accentText : bd.muted)),
+                const SizedBox(height: 6),
+                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 12, color: ring ? bd.accentText : bd.muted, weight: ring ? FontWeight.w600 : FontWeight.w400)),
               ]),
             ),
           ),
         );
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const _Requests(),
-      if (friends.isNotEmpty)
-        SizedBox(
-          height: 78,
-          child: ListView(scrollDirection: Axis.horizontal, children: [
-            for (final f in friends)
-              face(
-                child: Text(f.initial, style: T.serif(bd, size: 20)),
-                name: f.name,
-                semantics: '${f.name}, @${f.handle}',
-                onTap: () => showBdSheet(context, builder: (_) => _FriendSheet(friend: f)),
-              ),
-            face(
-              child: Text('+', style: T.sans(bd, size: 20, color: _adding ? bd.accentText : bd.muted)),
-              name: _adding ? 'Close' : 'Add',
-              accent: _adding,
-              semantics: _adding ? 'Close the search' : 'Add a friend',
-              onTap: () => setState(() => _adding = !_adding),
-            ),
-          ]),
+    if (loading) {
+      return SizedBox(height: 86, child: Row(children: [for (var i = 0; i < 4; i++) const Padding(padding: EdgeInsets.only(right: S.m), child: SizedBox(width: 58, child: Skeleton(height: 58)))]));
+    }
+    final sorted = [...friends.where((f) => outTonight.contains(f.id)), ...friends.where((f) => !outTonight.contains(f.id))];
+    return SizedBox(
+      height: 88,
+      child: ListView(scrollDirection: Axis.horizontal, children: [
+        face(
+          letter: (me?.name.isNotEmpty ?? false) ? me!.name[0].toUpperCase() : 'Y',
+          name: 'You',
+          you: true,
+          semantics: 'You — share your invite',
+          onTap: () => shareInvite(context),
         ),
-      if (searchOpen) Padding(padding: const EdgeInsets.only(top: S.m), child: FriendSearch(autofocus: _adding)),
+        for (final f in sorted)
+          face(
+            letter: f.initial,
+            name: f.name,
+            ring: outTonight.contains(f.id),
+            semantics: '${f.name}, @${f.handle}${outTonight.contains(f.id) ? ', shared something today' : ''}',
+            onTap: () => showBdSheet(context, builder: (_) => _FriendSheet(friend: f, lately: feed.where((e) => e.userId == f.id).toList())),
+          ),
+        face(letter: '+', name: 'Add', add: true, semantics: 'Add a friend', onTap: () => showAddFriend(context)),
+      ]),
+    );
+  }
+}
+
+/// Share "add me" with a link to your profile.
+Future<void> shareInvite(BuildContext context) async {
+  final h = auth.profile?.handle ?? '';
+  final link = h.isEmpty ? Config.siteUrl : '${Config.siteUrl}/u/$h';
+  await SharePlus.instance.share(ShareParams(text: h.isEmpty ? 'Keep a drink diary with me on brewdiary — $link' : 'Add me on brewdiary — I\'m @$h. $link'));
+}
+
+/// With fewer than three friends: bring your people in.
+class _InviteCard extends StatelessWidget {
+  final int friends;
+  const _InviteCard({required this.friends});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final h = auth.profile?.handle ?? '';
+    return Glass(
+      padding: const EdgeInsets.all(S.l),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(friends == 0 ? 'Bring your people' : 'A few more', style: T.serif(bd, size: 24, height: 1.1)),
+              const SizedBox(height: 4),
+              Text('Together comes alive at three: a feed, a circle, a night to plan.', style: T.caption(bd)),
+            ]),
+          ),
+          const SizedBox(width: S.m),
+          _Dots3(filled: friends),
+        ]),
+        if (h.isNotEmpty) ...[
+          const SizedBox(height: S.l),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: S.l, vertical: S.m),
+            decoration: BoxDecoration(color: bd.accent.withValues(alpha: .1), borderRadius: BorderRadius.circular(rCtl), border: Border.all(color: bd.accent.withValues(alpha: .35), width: .8)),
+            child: Row(children: [
+              Text('YOUR HANDLE', style: T.label(bd, color: bd.accentText)),
+              const Spacer(),
+              Text('@$h', style: T.serif(bd, size: 20, color: bd.ink)),
+            ]),
+          ),
+        ],
+        const SizedBox(height: S.m),
+        Row(children: [
+          Expanded(child: BdButton('Share invite', icon: Ph.shareNetwork, onTap: () => shareInvite(context))),
+          const SizedBox(width: S.s),
+          Expanded(child: BdButton('Search', kind: BtnKind.secondary, icon: Ph.magnifyingGlass, onTap: () => showAddFriend(context))),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _Dots3 extends StatelessWidget {
+  final int filled;
+  const _Dots3({required this.filled});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Semantics(
+      label: '$filled of 3 friends',
+      excludeSemantics: true,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        for (var i = 0; i < 3; i++)
+          Container(
+            width: 26,
+            height: 26,
+            margin: EdgeInsets.only(left: i == 0 ? 0 : 4),
+            decoration: BoxDecoration(
+              color: i < filled ? bd.accent : null,
+              borderRadius: BorderRadius.circular(7),
+              border: i < filled ? null : Border.all(color: bd.lineStrong, width: 1),
+            ),
+            child: i < filled ? Icon(Ph.check, size: 14, color: bd.accentContrast) : null,
+          ),
+      ]),
+    );
+  }
+}
+
+// ── what's coming up ────────────────────────────────────────────────────────
+class _Happening extends StatelessWidget {
+  final List<Party> parties;
+  final List<MyPlan> plans;
+  const _Happening({required this.parties, required this.plans});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final today = todayKey();
+    final cards = <(String, String, String, IconData, VoidCallback)>[
+      for (final p in parties.where((p) => p.date.compareTo(today) >= 0))
+        (p.date == today ? 'TONIGHT' : _when(p.date), p.name, [?p.venue, '${p.going} going'].join(' · '), Ph.confetti, () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PartyRoomScreen(partyId: p.id)))),
+      for (final p in plans.where((p) => p.date.compareTo(today) >= 0))
+        (p.date == today ? 'TONIGHT' : _when(p.date), p.title, [if (p.time != null) p.time!, ?p.city, '${p.going} going', if (p.pending > 0) '${p.pending} asking'].join(' · '), Ph.calendarPlus, () {}),
+    ]..sort((a, b) => a.$1 == 'TONIGHT' ? -1 : (b.$1 == 'TONIGHT' ? 1 : 0));
+    if (cards.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const SectionHeader('Coming up'),
+      SizedBox(
+        height: 132,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: cards.length,
+          separatorBuilder: (_, _) => const SizedBox(width: S.m),
+          itemBuilder: (_, i) {
+            final c = cards[i];
+            final tonight = c.$1 == 'TONIGHT';
+            return SizedBox(
+              width: 240,
+              child: Glass(
+                onTap: c.$5,
+                semanticLabel: '${c.$2}, ${c.$1.toLowerCase()}, ${c.$3}',
+                padding: const EdgeInsets.all(S.l),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: tonight ? bd.accent : bd.glassTop, borderRadius: BorderRadius.circular(6)),
+                      child: Text(c.$1, style: T.sans(bd, size: 10.5, weight: FontWeight.w700, color: tonight ? bd.accentContrast : bd.muted, spacing: 1)),
+                    ),
+                    const Spacer(),
+                    Icon(c.$4, size: 18, color: bd.accentText),
+                  ]),
+                  const Spacer(),
+                  Text(c.$2, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.serif(bd, size: 22, height: 1.1)),
+                  const SizedBox(height: 4),
+                  Text(c.$3, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.caption(bd)),
+                ]),
+              ),
+            );
+          },
+        ),
+      ),
     ]);
+  }
+
+  static String _when(String key) {
+    final d = parseKey(key);
+    final days = d.difference(parseKey(todayKey())).inDays;
+    if (days == 1) return 'TOMORROW';
+    if (days < 7) return weekdays[mondayIndex(d)].toUpperCase();
+    return shortDay(key).toUpperCase();
+  }
+}
+
+// ── the glance: each friend's last seven days ───────────────────────────────
+class _FriendsWeek extends StatelessWidget {
+  final List<SocialProfile> friends;
+  final List<FeedEntry> feed;
+  const _FriendsWeek({required this.friends, required this.feed});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final today = parseKey(todayKey());
+    final days = [for (var i = 6; i >= 0; i--) toKey(addDays(today, -i))];
+    final by = <String, Map<String, int>>{};
+    for (final f in feed) {
+      final m = by.putIfAbsent(f.userId, () => {});
+      m[f.date] = (m[f.date] ?? 0) + 1;
+    }
+    final shown = [...friends]..sort((a, b) => (by[b.id]?.length ?? 0).compareTo(by[a.id]?.length ?? 0));
+    return Glass(
+      padding: const EdgeInsets.fromLTRB(S.l, S.m, S.l, S.m),
+      child: Column(children: [
+        Row(children: [
+          const SizedBox(width: 120),
+          for (final d in days)
+            Expanded(child: Center(child: Text(weekdays[mondayIndex(parseKey(d))].substring(0, 1), style: T.sans(bd, size: 11, color: d == days.last ? bd.accentText : bd.faint, weight: FontWeight.w600)))),
+        ]),
+        const SizedBox(height: 6),
+        for (final f in shown.take(6))
+          Semantics(
+            label: '${f.name}: ${days.where((d) => (by[f.id]?[d] ?? 0) > 0).length} of the last 7 days shared',
+            excludeSemantics: true,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(children: [
+                SizedBox(
+                  width: 120,
+                  child: Row(children: [
+                    Initial(f.initial, size: 28),
+                    const SizedBox(width: S.s),
+                    Expanded(child: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 14))),
+                  ]),
+                ),
+                for (final d in days)
+                  Expanded(
+                    child: Center(
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: (by[f.id]?[d] ?? 0) == 0 ? null : bd.ycell(intensityLevel(by[f.id]![d]!)),
+                          borderRadius: BorderRadius.circular(rCell),
+                          border: (by[f.id]?[d] ?? 0) == 0 ? Border.all(color: bd.line, width: 1) : null,
+                        ),
+                      ),
+                    ),
+                  ),
+              ]),
+            ),
+          ),
+        if (shown.length > 6) Padding(padding: const EdgeInsets.only(top: S.s), child: Text('and ${shown.length - 6} more', style: T.caption(bd))),
+      ]),
+    );
+  }
+}
+
+class _QuietFeed extends StatelessWidget {
+  final bool hasFriends;
+  const _QuietFeed({required this.hasFriends});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Glass(
+      padding: const EdgeInsets.all(S.xl),
+      child: Column(children: [
+        Icon(Ph.cheers, size: 30, color: bd.accentText),
+        const SizedBox(height: S.m),
+        Text(hasFriends ? 'Quiet so far' : 'Your feed lives here', style: T.serif(bd, size: 22)),
+        const SizedBox(height: S.s),
+        Text(
+          hasFriends ? 'Nothing shared to friends yet. Share an entry from your diary — tap a day, then "Share" on the entry — and it lands here.' : 'Add a friend and you\'ll see what they choose to share — never more.',
+          textAlign: TextAlign.center,
+          style: T.bodyMuted(bd),
+        ),
+      ]),
+    );
   }
 }
 
@@ -459,7 +724,7 @@ class _FeedCardState extends State<FeedCard> {
   Widget build(BuildContext context) {
     final bd = context.bd;
     final item = widget.item;
-    Widget action(String text, {bool active = false, VoidCallback? onTap, String? semantics}) => Semantics(
+    Widget action(String text, {IconData? icon, bool active = false, VoidCallback? onTap, String? semantics}) => Semantics(
           button: true,
           label: semantics ?? text,
           excludeSemantics: true,
@@ -472,7 +737,10 @@ class _FeedCardState extends State<FeedCard> {
                 padding: const EdgeInsets.only(right: S.l),
                 child: Center(
                   widthFactor: 1,
-                  child: Text(text, style: T.sans(bd, size: 14, weight: active ? FontWeight.w600 : FontWeight.w400, color: active ? bd.accentText : bd.muted).copyWith(fontFeatures: T.tnum)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (icon != null) ...[Icon(icon, size: 18, color: active ? bd.accentText : bd.muted), const SizedBox(width: 6)],
+                    Text(text, style: T.sans(bd, size: 14, weight: active ? FontWeight.w600 : FontWeight.w400, color: active ? bd.accentText : bd.muted).copyWith(fontFeatures: T.tnum)),
+                  ]),
                 ),
               ),
             ),
@@ -481,21 +749,24 @@ class _FeedCardState extends State<FeedCard> {
     return Glass(
       padding: const EdgeInsets.fromLTRB(S.l, S.l, S.l, S.xs),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-          Expanded(
-            child: Semantics(
-              button: true,
-              label: "${item.author.name}'s mosaic",
-              excludeSemantics: true,
-              child: GestureDetector(
-                onTap: () => showBdSheet(context, builder: (_) => _FriendSheet(friend: item.author)),
-                child: Text(item.author.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 15)),
-              ),
+        Row(children: [
+          Semantics(
+            button: true,
+            label: "${item.author.name}'s mosaic",
+            excludeSemantics: true,
+            child: GestureDetector(
+              onTap: () => showBdSheet(context, builder: (_) => _FriendSheet(friend: item.author)),
+              child: Row(children: [
+                Initial(item.author.initial, size: 34),
+                const SizedBox(width: S.s + 2),
+                ConstrainedBox(constraints: const BoxConstraints(maxWidth: 160), child: Text(item.author.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 15, weight: FontWeight.w600))),
+              ]),
             ),
           ),
-          Text('${timeOfDayLabel(item.createdAt).toLowerCase()} · ${shortDay(item.date)}', style: T.caption(bd).copyWith(fontFeatures: T.tnum)),
+          const Spacer(),
+          Text('${timeOfDayLabel(item.createdAt).toLowerCase()} · ${item.date == todayKey() ? 'today' : shortDay(item.date)}', style: T.caption(bd).copyWith(fontFeatures: T.tnum)),
         ]),
-        const SizedBox(height: 6),
+        const SizedBox(height: S.m),
         Text.rich(TextSpan(children: [
           TextSpan(text: item.drink, style: T.serif(bd, size: 25, height: 1.15)),
           if (item.mood != null) TextSpan(text: ' · ${item.mood}', style: T.serif(bd, size: 20, italic: true, color: bd.muted, height: 1.15)),
@@ -511,22 +782,29 @@ class _FeedCardState extends State<FeedCard> {
               child: GestureDetector(
                 onTap: () => openMaps(item.venue!),
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(item.venue!, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.caption(bd).copyWith(decoration: TextDecoration.underline, decorationColor: bd.line)),
+                  padding: const EdgeInsets.only(top: S.s),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Ph.mapPin, size: 14, color: bd.accentText),
+                    const SizedBox(width: 4),
+                    Flexible(child: Text(item.venue!, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 13, color: bd.muted))),
+                  ]),
                 ),
               ),
             ),
           ),
-        const SizedBox(height: S.xs),
+        const SizedBox(height: S.m),
+        Container(height: .8, color: bd.line),
         Row(children: [
           action(
-            item.cheered ? 'Cheered${item.cheers > 0 ? ' ${item.cheers}' : ''}' : 'Cheers${item.cheers > 0 ? ' ${item.cheers}' : ''}',
+            item.cheers > 0 ? '${item.cheers}' : 'Cheers',
+            icon: item.cheered ? PhFill.cheers : Ph.cheers,
             active: item.cheered,
+            semantics: item.cheered ? 'Cheered, ${item.cheers}' : 'Cheers${item.cheers > 0 ? ', ${item.cheers}' : ''}',
             onTap: () => FriendsApi.toggleCheers(item.id, item.cheered),
           ),
-          action(item.comments.isNotEmpty ? 'Comments ${item.comments.length}' : 'Comment', onTap: () => setState(() => _showComments = !_showComments)),
+          action(item.comments.isNotEmpty ? '${item.comments.length}' : 'Comment', icon: Ph.chatCircle, semantics: item.comments.isNotEmpty ? 'Comments, ${item.comments.length}' : 'Comment', onTap: () => setState(() => _showComments = !_showComments)),
           const Spacer(),
-          action(_saved ? 'On your list ✓' : 'To try', active: false, semantics: _saved ? 'On your to-try list' : 'Save to your to-try list', onTap: _saved
+          action(_saved ? 'On your list' : 'To try', icon: _saved ? Ph.check : Ph.plus, active: _saved, semantics: _saved ? 'On your to-try list' : 'Save to your to-try list', onTap: _saved
               ? null
               : () {
                   wishlist.add(item.drink);
@@ -576,13 +854,24 @@ class _FeedCardState extends State<FeedCard> {
 /// Peeking at a friend's mosaic — never their scores. Plus vouch + safety.
 class _FriendSheet extends StatelessWidget {
   final SocialProfile friend;
-  const _FriendSheet({required this.friend});
+
+  /// What they shared lately (from the feed) — null asks the server.
+  final List<FeedEntry>? lately;
+  const _FriendSheet({required this.friend, this.lately});
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    return Loader<List<String>>(
-      load: () => FriendsApi.friendDates(friend.id),
-      builder: (context, dates, _) {
+    return Loader<(List<String>, List<FeedEntry>)>(
+      load: () async {
+        final r = await Future.wait<Object>([
+          FriendsApi.friendDates(friend.id),
+          lately != null ? Future.value(lately!) : FriendsApi.feed().then((f) => f.where((e) => e.userId == friend.id).toList()),
+        ]);
+        return (r[0] as List<String>, r[1] as List<FeedEntry>);
+      },
+      builder: (context, data, _) {
+        final dates = data?.$1;
+        final recent = (data?.$2 ?? const <FeedEntry>[]).take(4).toList();
         final counts = <String, int>{};
         for (final d in dates ?? const <String>[]) {
           counts[d] = (counts[d] ?? 0) + 1;
@@ -601,6 +890,10 @@ class _FriendSheet extends StatelessWidget {
           ]),
           const SectionHeader('Their last 12 weeks', padding: EdgeInsets.only(top: S.x3, bottom: S.m)),
           Glass(padding: const EdgeInsets.all(S.l), child: RecentMosaic(counts: counts)),
+          if (recent.isNotEmpty) ...[
+            const SectionHeader('Lately', padding: EdgeInsets.only(top: S.xl, bottom: S.m)),
+            _Lately(entries: recent),
+          ],
           _VouchRow(friend: friend),
           const SizedBox(height: S.m),
           Group(children: [
@@ -615,6 +908,51 @@ class _FriendSheet extends StatelessWidget {
           const SizedBox(height: S.m),
           Text("Peeking at a friend's mosaic — never their scores. Together is for the glance, not the scoreboard.", style: T.caption(bd)),
         ]);
+      },
+    );
+  }
+}
+
+/// What a friend shared lately — one tap puts a drink on your to-try list.
+class _Lately extends StatelessWidget {
+  final List<FeedEntry> entries;
+  const _Lately({required this.entries});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Watch(
+      to: [entryStore, wishlist],
+      builder: (context) {
+        final had = {for (final e in entryStore.entries) e.drink.trim().toLowerCase()};
+        final listed = {for (final w in wishlist.items) w.drink.trim().toLowerCase()};
+        return Glass(
+          padding: const EdgeInsets.symmetric(horizontal: S.l, vertical: S.xs),
+          child: Column(children: [
+            for (var i = 0; i < entries.length; i++) ...[
+              if (i > 0) Container(height: .8, color: bd.line),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: S.s + 2),
+                child: Row(children: [
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text.rich(TextSpan(children: [
+                        TextSpan(text: entries[i].drink, style: T.serif(bd, size: 18, height: 1.2)),
+                        if (entries[i].mood != null) TextSpan(text: ' · ${entries[i].mood}', style: T.serif(bd, size: 15, italic: true, color: bd.muted)),
+                      ])),
+                      Text([entries[i].date == todayKey() ? 'today' : shortDay(entries[i].date), ?entries[i].venue].join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis, style: T.caption(bd)),
+                    ]),
+                  ),
+                  () {
+                    final k = entries[i].drink.trim().toLowerCase();
+                    if (had.contains(k)) return Text('had it', style: T.caption(bd));
+                    if (listed.contains(k)) return Text('on your list', style: T.caption(bd, color: bd.accentText));
+                    return TextAction('To try', accent: true, onTap: () => wishlist.add(entries[i].drink));
+                  }(),
+                ]),
+              ),
+            ],
+          ]),
+        );
       },
     );
   }
@@ -654,31 +992,40 @@ class _VouchRow extends StatelessWidget {
 
 // ── the friends leaderboard (opt-in on both sides) ───────────────────────────
 class _FriendsBoard extends StatelessWidget {
-  const _FriendsBoard();
+  final List<PointRow>? preview;
+  const _FriendsBoard({this.preview});
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
     final me = auth.meId;
     return Loader<List<PointRow>>(
       refresh: pointsRev,
-      load: PointsApi.friendsBoard,
+      load: preview != null ? () async => preview! : PointsApi.friendsBoard,
       builder: (context, board, loading) {
         if (board == null) return const Padding(padding: EdgeInsets.only(top: S.xxl), child: Skeleton(height: 160));
-        if (board.isEmpty) return const EmptyNote('Quiet board. Sparks come from showing up; vibe is what your table and the bar hand you.', icon: Ph.trophy);
+        if (board.isEmpty) return const Padding(padding: EdgeInsets.only(top: S.l), child: EmptyNote('Quiet board. Sparks come from showing up; vibe is what your table and the bar hand you.', icon: Ph.trophy));
         final top = board.first.sparks;
         final mine = board.indexWhere((r) => r.userId == me);
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const SectionHeader('You and the friends who opted in'),
-          Group(children: [
-            for (var i = 0; i < board.length; i++)
-              PointsRow(rank: i + 1, name: board[i].userId == me ? 'You' : board[i].name, sparks: board[i].sparks, vibe: board[i].vibe, leads: board[i].sparks > 0 && board[i].sparks == top),
-          ]),
+          Glass(
+            padding: const EdgeInsets.symmetric(horizontal: S.m, vertical: S.s),
+            child: Column(children: [
+              for (var i = 0; i < board.length; i++)
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: S.s),
+                  decoration: BoxDecoration(color: board[i].userId == me ? bd.accent.withValues(alpha: .1) : null, borderRadius: BorderRadius.circular(rCtl)),
+                  child: PointsRow(rank: i + 1, name: board[i].userId == me ? 'You' : board[i].name, sparks: board[i].sparks, vibe: board[i].vibe, leads: board[i].sparks > 0 && board[i].sparks == top, top: top),
+                ),
+            ]),
+          ),
           if (mine >= 0) ...[
             const SizedBox(height: S.l),
             BdButton('Share your score', kind: BtnKind.secondary, icon: Ph.shareNetwork, onTap: () => showScoreCard(context, Score(name: 'you', sparks: board[mine].sparks, vibe: board[mine].vibe, context: 'with friends', rank: mine + 1, of: board.length))),
           ],
           const SizedBox(height: S.m),
-          Text('Nobody is ranked by what they spent. Switch this off any time in You → Settings.', style: T.caption(bd)),
+          Text('Sparks are for variety — a new place, a new drink, a dry day. Nobody is ranked by what they spent. Switch this off any time in You → Settings.', style: T.caption(bd)),
         ]);
       },
     );

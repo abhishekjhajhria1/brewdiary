@@ -31,6 +31,7 @@ import 'ui/screens/together_intro.dart';
 import 'ui/screens/together_screen.dart';
 import 'ui/screens/you_screen.dart';
 import 'ui/theme.dart';
+import 'ui/widgets/app_lock.dart';
 import 'ui/widgets/common.dart';
 import 'ui/widgets/moments.dart';
 import 'ui/widgets/page.dart';
@@ -63,7 +64,7 @@ class BrewdiaryApp extends StatelessWidget {
             // Honour the person's text size, within the range the layouts are built for.
             child: MediaQuery(
               data: mq.copyWith(textScaler: mq.textScaler.clamp(minScaleFactor: .9, maxScaleFactor: 1.3)),
-              child: KeyboardScope(inset: mq.viewInsets.bottom, child: child!),
+              child: AppLockGate(child: KeyboardScope(inset: mq.viewInsets.bottom, child: child!)),
             ),
           );
         },
@@ -386,11 +387,16 @@ class _TabBar extends StatelessWidget {
                             ),
                             Positioned.fill(
                               // Text-only, in the website's spaced capitals: the amber mark says where you are.
-                              child: Center(
-                                child: AnimatedDefaultTextStyle(
-                                  duration: Motion.fast,
-                                  style: T.sans(bd, size: 11.5, spacing: 11.5 * .16, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint),
-                                  child: Text(_labels[t]!.toUpperCase(), maxLines: 1),
+                              // Large text: the label shrinks to fit instead of being cut off.
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: AnimatedDefaultTextStyle(
+                                    duration: Motion.fast,
+                                    style: T.sans(bd, size: 11.5, spacing: 11.5 * .16, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint),
+                                    child: Text(_labels[t]!.toUpperCase(), maxLines: 1),
+                                  ),
                                 ),
                               ),
                             ),

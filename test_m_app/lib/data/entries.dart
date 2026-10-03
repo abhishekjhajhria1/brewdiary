@@ -16,6 +16,7 @@ import 'auth.dart';
 import 'base.dart';
 
 const _localKey = 'brewdiary.entries.v1';
+const _archiveKey = 'brewdiary.entries.archive.v1'; // put-away entries, signed out
 const _entryCols = 'id, date, drink, type, mood, note, venue, who_with, visibility, created_at, entry_photos(id, url, sort_order)';
 
 class EntryStore extends ChangeNotifier {
@@ -260,47 +261,96 @@ class EntryStore extends ChangeNotifier {
     if (e != null) updateEntry(e.copyWith(visibility: v));
   }
 
+  /// Take an entry out of the diary. It's put away, never destroyed (055): in the
+  /// cloud by archive_entry(); signed out, into this phone's own archive.
   void deleteEntry(String id) {
+    final gone = _cache.where((e) => e.id == id).toList();
     _setCache(_cache.where((e) => e.id != id).toList());
     final c = db;
     if (_remote && _user != null && c != null) {
-      c.from('entries').delete().eq('id', id).catchError((_) => null);
+      c.rpc('archive_entry', params: {'eid': id}).catchError((Object e) {
+        logDebug(e);
+        reload(); // it didn't go: show it again rather than pretend
+        return null;
+      });
     } else {
+      _archiveLocal(gone);
       _writeLocal(_cache);
     }
   }
 
-  void resetAll() {
+  /// Start a fresh diary. Everything logged is kept; the diary just starts empty.
+  /// In the cloud the database insists on a fresh emailed code first — confirm one
+  /// with auth.verifyEmailCode() right before calling this. Returns an error to
+  /// show, or null.
+  Future<String?> clearDiary() async {
     final c = db;
-    final userId = _user;
-    _setCache(const []);
-    if (_remote && userId != null && c != null) {
-      c.from('entries').delete().eq('user_id', userId).catchError((_) => null);
-    } else {
-      _writeLocal(const []);
+    if (_remote && _user != null && c != null) {
+      try {
+        await c.rpc('archive_my_diary');
+      } on PostgrestException catch (e) {
+        return e.message.contains('code') ? 'Confirm with the code we email you first.' : "Couldn't start a fresh diary — try again.";
+      } catch (_) {
+        return "Couldn't reach brewdiary — check your connection and try again.";
+      }
+      _setCache(const []);
+      return null;
     }
+    _archiveLocal(_cache);
+    _setCache(const []);
+    await _writeLocal(const []);
+    return null;
   }
 
-  /// Wipe and re-seed the demo history.
-  void reseed() => replaceAll(seedEntries());
+  /// How much of the past is kept: the cloud's archive, or this phone's.
+  Future<int> archivedCount() async {
+    final c = db;
+    if (_remote && _user != null && c != null) {
+      try {
+        final r = rows(await c.rpc('my_archive'));
+        return r.isEmpty ? 0 : (r.first['entries'] as num?)?.toInt() ?? 0;
+      } catch (_) {
+        return 0;
+      }
+    }
+    return (Prefs.getJson<List<dynamic>>(_archiveKey) ?? const []).length;
+  }
 
-  /// Replace the whole diary (used by import). Malformed rows are dropped upstream.
-  void replaceAll(List<Entry> clean) {
+  void _archiveLocal(List<Entry> entries) {
+    if (entries.isEmpty) return;
+    final kept = Prefs.getJson<List<dynamic>>(_archiveKey) ?? const [];
+    Prefs.setJson(_archiveKey, [...kept, ...entries.map((e) => e.toJson())]);
+  }
+
+  /// For tests and the signed-out demo: an empty diary (put away, as always).
+  void resetAll() => clearDiary();
+
+  /// Wipe and re-seed the demo history (signed-out builds only).
+  void reseed() {
+    if (_remote) return;
+    _archiveLocal(_cache);
+    _setCache(seedEntries());
+    _writeLocal(_cache);
+  }
+
+  /// Add a diary file's entries. Nothing is removed or overwritten: an entry
+  /// that's already here is skipped, everything else comes in under a fresh id
+  /// (so an old backup never collides with entries put away). Returns how many
+  /// were added.
+  Future<int> importEntries(List<Entry> incoming) async {
+    final have = {for (final e in _cache) e.id};
+    final fresh = [for (final e in incoming) if (!have.contains(e.id)) Entry(id: newId(), date: e.date, createdAt: e.createdAt, drink: e.drink, type: e.type, mood: e.mood, note: e.note, photos: e.photos, venue: e.venue, whoWith: e.whoWith, visibility: e.visibility)];
+    if (fresh.isEmpty) return 0;
     final c = db;
     final userId = _user;
-    _setCache(clean);
     if (_remote && userId != null && c != null) {
-      () async {
-        try {
-          await c.from('entries').delete().eq('user_id', userId);
-          if (clean.isNotEmpty) await c.from('entries').insert(clean.map((e) => _entryToRow(e, userId)).toList());
-        } catch (e) {
-          logDebug(e);
-        }
-      }();
+      await c.from('entries').insert(fresh.map((e) => _entryToRow(e, userId)).toList());
+      await reload();
     } else {
-      _writeLocal(clean);
+      _setCache([..._cache, ...fresh]);
+      await _writeLocal(_cache);
     }
+    return fresh.length;
   }
 }
 

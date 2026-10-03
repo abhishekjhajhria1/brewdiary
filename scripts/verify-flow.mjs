@@ -1944,6 +1944,104 @@ try {
         await refused(() => as(mgr, `insert into public.${tb} (venue_id) values ($1)`, [vid])));
     }
   }
+
+  // ── 25. a diary is never deleted (055): put away; a fresh emailed code clears it ──
+  if ((await db.query(`select to_regprocedure('public.archive_my_diary()') f`)).rows[0].f) {
+    console.log("\n── 25. a diary is put away, never deleted (055) ──");
+    const t = Date.now();
+    const kai = await mkUser("Kai", `vf-kai-${t}`);
+    const e1 = randomUUID(), e2 = randomUUID();
+    await as(kai, `insert into public.entries (id, user_id, date, drink) values ($1,$2,current_date,'Negroni'), ($3,$2,current_date,'Lime soda')`, [e1, kai, e2]);
+    /** As Kai, with a session that says how (and when) it was signed in. */
+    const withAmr = async (uid, amr, sql, params = []) => {
+      await db.query("set local role authenticated");
+      await db.query(`set local request.jwt.claims = '${JSON.stringify({ sub: uid, role: "authenticated", amr })}'`);
+      const r = await db.query(sql, params);
+      await db.query("reset role");
+      await db.query("reset request.jwt.claims");
+      return r;
+    };
+    const live = async () => (await as(kai, `select id from public.entries`)).rows.length;
+    ok("an app can't write an entry already put away", await refused(() => as(kai, `insert into public.entries (user_id, date, drink, archived_at) values ($1,current_date,'x',now())`, [kai])));
+    ok("…or put one away itself", await refused(() => as(kai, `update public.entries set archived_at = now() where id = $1`, [e1])));
+    ok("…or delete one (no client delete; nothing is destroyed)", (await as(kai, `delete from public.entries where id = $1 returning 1`, [e1])).rows.length === 0 && (await live()) === 2);
+    ok("removing an entry puts it away", (await as(kai, `select public.archive_entry($1) ok`, [e1])).rows[0].ok === true && (await live()) === 1);
+    ok("…and it's still kept", (await db.query(`select archived_at from public.entries where id = $1`, [e1])).rows[0].archived_at !== null);
+    ok("clearing the diary without a code is refused", await refused(() => as(kai, `select public.archive_my_diary()`)));
+    const stale = Math.floor(Date.now() / 1000) - 3600;
+    ok("…and with an hour-old code", await refused(() => withAmr(kai, [{ method: "otp", timestamp: stale }], `select public.archive_my_diary()`)));
+    ok("…and with a password sign-in", await refused(() => withAmr(kai, [{ method: "password", timestamp: Math.floor(Date.now() / 1000) }], `select public.archive_my_diary()`)));
+    const n = (await withAmr(kai, [{ method: "otp", timestamp: Math.floor(Date.now() / 1000) }], `select public.archive_my_diary() n`)).rows[0].n;
+    ok("with a fresh code the diary starts fresh", n === 1 && (await live()) === 0);
+    ok("…and every entry is kept", Number((await db.query(`select count(*) c from public.entries where user_id = $1`, [kai])).rows[0].c) === 2);
+    ok("my_archive() says how much is kept", Number((await as(kai, `select * from public.my_archive()`)).rows[0].entries) === 2);
+  }
+
+  // ── 26. your taste at the table (056): tonight only, the drink-makers only ──
+  if ((await db.query(`select to_regprocedure('public.share_taste(text,jsonb)') f`)).rows[0].f) {
+    console.log("\n── 26. taste at the table, guests tonight, the guest's code (056) ──");
+    const t = Date.now();
+    const boss = await mkUser("Boss", `vf-tboss-${t}`);
+    const pour = await mkUser("Pour", `vf-tpour-${t}`);
+    const door = await mkUser("Door", `vf-tdoor-${t}`);
+    const cook = await mkUser("Cook", `vf-tcook-${t}`);
+    const guest = await mkUser("Guest", `vf-tguest-${t}`);
+    const bar = randomUUID();
+    await as(boss, `insert into public.venues (id, name, slug, created_by, country) values ($1,'Taste Bar',$2,$3,'IN')`, [bar, `vf-taste-${t}`, boss]);
+    await as(boss, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [bar, boss]);
+    for (const [u, r] of [[pour, "bartender"], [door, "host"], [cook, "kitchen"]]) await seat(bar, u, r);
+    await db.query(`update public.venues set verified = true where id = $1`, [bar]);
+    const code = (await db.query(`insert into public.venue_tables (venue_id, label) values ($1,'7') returning code`, [bar])).rows[0].code;
+
+    const shared = (await as(guest, `select * from public.share_taste($1, $2::jsonb)`, [code, JSON.stringify({ into: ["Negroni", "Paloma"], usually: ["Cocktails"], alcohol_free_often: false, sweetness: "dry", avoid: ["gin"], diary: ["everything"], where_else: "Soka" })])).rows[0];
+    ok("opening a table link shares the taste with that venue", shared?.venue_name === "Taste Bar");
+    const stored = (await db.query(`select taste from public.taste_shares where user_id = $1`, [guest])).rows[0].taste;
+    ok("…only the taste card's own keys are kept", JSON.stringify(Object.keys(stored).sort()) === JSON.stringify(["alcohol_free_often", "avoid", "into", "sweetness", "usually"]));
+    ok("a made-up table code is refused", await refused(() => as(guest, `select * from public.share_taste('zzzzzzzz', '{}'::jsonb)`)));
+    ok("nobody writes taste_shares directly", await refused(() => as(guest, `insert into public.taste_shares (user_id, venue_id, taste, expires_at) values ($1,$2,'{}',now())`, [guest, bar])));
+    const tonight = (await as(pour, `select * from public.venue_guests_tonight($1)`, [bar])).rows;
+    ok("the bartender sees who's in, at which table, and what they like", tonight.length === 1 && tonight[0].table_label === "7" && tonight[0].taste.into[0] === "Negroni");
+    ok("…the host doesn't", await refused(() => as(door, `select * from public.venue_guests_tonight($1)`, [bar])));
+    ok("…nor the kitchen", await refused(() => as(cook, `select * from public.venue_guests_tonight($1)`, [bar])));
+    ok("…nor a stranger", await refused(() => as(guest, `select * from public.venue_guests_tonight($1)`, [bar])));
+    ok("opening a link records no visit (a guest can't write their own reward)", Number((await db.query(`select count(*) c from public.venue_checkins where user_id = $1`, [guest])).rows[0].c) === 0);
+    ok("the guest sees their own share", (await as(guest, `select * from public.my_taste_shares()`)).rows.length === 1);
+    await db.query(`update public.taste_shares set expires_at = now() - interval '1 minute' where user_id = $1`, [guest]);
+    ok("after the night it's gone from staff screens", (await as(pour, `select * from public.venue_guests_tonight($1)`, [bar])).rows.length === 0);
+    await as(guest, `select * from public.share_taste($1, '{}'::jsonb)`, [code]);
+    await as(guest, `select public.stop_taste_share($1)`, [bar]);
+    const viaMenu = (await as(guest, `select * from public.share_taste_at($1, $2::jsonb)`, [`vf-taste-${t}`, JSON.stringify({ moods: ["bright"] })])).rows[0];
+    ok("opening the venue's menu link shares it too (no table)", viaMenu?.venue_id === bar && (await as(pour, `select * from public.venue_guests_tonight($1)`, [bar])).rows[0]?.table_label === null);
+    await as(guest, `select public.stop_taste_share($1)`, [bar]);
+    ok("the guest can stop sharing any time", Number((await db.query(`select count(*) c from public.taste_shares where user_id = $1`, [guest])).rows[0].c) === 0);
+
+    const card = (await as(guest, `select * from public.my_guest_code()`)).rows[0];
+    ok("the guest's card is a 6-letter code", /^[A-HJ-NP-Z2-9]{6}$/.test(card.code));
+    ok("staff who punch cards find the guest by it", (await as(pour, `select * from public.venue_find_guest($1,$2)`, [bar, card.code.toLowerCase()])).rows[0]?.user_id === guest);
+    ok("…a wrong code finds nobody", (await as(pour, `select * from public.venue_find_guest($1,'ZZZZZZ')`, [bar])).rows.length === 0);
+    ok("…the host can't look people up", await refused(() => as(door, `select * from public.venue_find_guest($1,$2)`, [bar, card.code])));
+    ok("nobody reads guest_codes directly", (await as(pour, `select * from public.guest_codes`)).rows.length === 0);
+    await db.query(`update public.guest_codes set expires_at = now() - interval '1 second' where user_id = $1`, [guest]);
+    ok("…an old code finds nobody", (await as(pour, `select * from public.venue_find_guest($1,$2)`, [bar, card.code])).rows.length === 0);
+  }
+
+  // ── 27. photos kept a year at most (057) ─────────────────────────────────────
+  if ((await db.query(`select to_regprocedure('public.photo_files_older_than(int,int)') f`)).rows[0].f) {
+    console.log("\n── 27. photos are kept for a year, at most (057) ──");
+    const t = Date.now();
+    const pia = await mkUser("Pia", `vf-pia-${t}`);
+    await db.query(`insert into storage.buckets (id, name, public) values ('photos','photos',true) on conflict do nothing`);
+    await db.query(`insert into storage.objects (bucket_id, name, created_at) values ('photos', $1, now() - interval '400 days'), ('photos', $2, now() - interval '10 days')`, [`${pia}/e1/old`, `${pia}/e2/new`]);
+    await db.query("set local role service_role");
+    const old = (await db.query(`select name from public.photo_files_older_than(365, 500)`)).rows.map((r) => r.name);
+    const mine = (await db.query(`select name from public.photo_files_of($1)`, [pia])).rows.map((r) => r.name);
+    const floor = (await db.query(`select name from public.photo_files_older_than(1, 500)`)).rows.map((r) => r.name);
+    await db.query("reset role");
+    ok("a photo older than a year is due to go; a recent one isn't", old.includes(`${pia}/e1/old`) && !old.includes(`${pia}/e2/new`));
+    ok("account deletion finds every file, however deep", mine.length === 2);
+    ok("…asked for 1 day, it still keeps 30", !floor.includes(`${pia}/e2/new`));
+    ok("an app can't list photo files", await refused(() => as(pia, `select * from public.photo_files_of($1)`, [pia])));
+  }
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

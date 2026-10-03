@@ -423,6 +423,58 @@ try {
     console.log("  ~ venue_menu (042) not applied — skipping");
   }
 
+  // ── a diary is never deleted (055): put away, with a fresh code to clear it all ──
+  const arcCol = await one(`select 1 x from information_schema.columns where table_schema='public' and table_name='entries' and column_name='archived_at'`);
+  if (arcCol) {
+    const entPol = await all(`select policyname, cmd, permissive from pg_policies where schemaname='public' and tablename='entries'`);
+    ok("entries: no client DELETE policy (nothing is destroyed from an app)", !entPol.some((p) => p.cmd === "DELETE"), `— ${entPol.map((p) => p.policyname).join(", ")}`);
+    ok("entries: a RESTRICTIVE read policy keeps put-away entries out of every read",
+      entPol.some((p) => p.cmd === "SELECT" && p.permissive === "RESTRICTIVE"));
+    const trig = await one(`select 1 x from pg_trigger where tgrelid='public.entries'::regclass and tgname='entries_guard_archive' and not tgisinternal`);
+    ok("entries: a trigger stops a client setting archived_at itself", !!trig);
+    const amd = await one(`select pg_get_functiondef('public.archive_my_diary()'::regprocedure) d`);
+    ok("archive_my_diary(): refuses without a fresh emailed code", amd && /signed_in_by_code_recently/.test(amd.d));
+    ok("archive_my_diary(): puts away, never deletes", amd && !/\bdelete\b/i.test(amd.d));
+  } else {
+    console.log("  ~ diary archive (055) not applied — skipping");
+  }
+
+  // ── your taste at the table (056): tonight only, the drink-makers only ──────
+  const vgt = await one(`select pg_get_functiondef(p.oid) d from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='venue_guests_tonight'`);
+  if (vgt) {
+    ok("venue_guests_tonight(): gated by venue_can(…, 'guests.taste')", /venue_can\(.*'guests\.taste'\)/.test(vgt.d));
+    ok("venue_guests_tonight(): only live shares (expires_at > now())", /expires_at\s*>\s*now\(\)/.test(vgt.d));
+    ok("venue_guests_tonight(): never reads the diary", !/\bentries\b/.test(vgt.d));
+    const tsPol = await all(`select cmd from pg_policies where schemaname='public' and tablename='taste_shares'`);
+    ok("taste_shares: no client INSERT or UPDATE (share_taste() is the only way in)", !tsPol.some((p) => p.cmd === "INSERT" || p.cmd === "UPDATE" || p.cmd === "ALL"));
+    const st = await one(`select pg_get_functiondef('public.share_taste(text,jsonb)'::regprocedure) d`);
+    ok("share_taste(): cleans what's shared and expires it", st && /clean_taste/.test(st.d) && /interval '8 hours'/.test(st.d));
+    ok("share_taste(): records no visit and no perk (a guest can't write their own reward)", st && !/venue_checkins|perk_redemptions|spend_events|record_visit/.test(st.d));
+    const sta = await one(`select pg_get_functiondef('public.share_taste_at(text,jsonb)'::regprocedure) d`);
+    ok("share_taste_at(): verified venues only, cleaned, expires, no reward", sta && /verified/.test(sta.d) && /clean_taste/.test(sta.d) && /interval '8 hours'/.test(sta.d) && !/venue_checkins|perk_redemptions|spend_events/.test(sta.d));
+    const caps = await all(`select role from public.role_capabilities where capability='guests.taste'`);
+    ok("guests.taste: never the host or the kitchen", !caps.some((r) => r.role === "host" || r.role === "kitchen"), `— ${caps.map((r) => r.role).join(", ")}`);
+    const gcPol = await all(`select 1 from pg_policies where schemaname='public' and tablename='guest_codes'`);
+    ok("guest_codes: no client policy at all", gcPol.length === 0);
+    const vfg = await one(`select pg_get_functiondef('public.venue_find_guest(uuid,text)'::regprocedure) d`);
+    ok("venue_find_guest(): gated by perks.redeem, live codes only", vfg && /'perks\.redeem'/.test(vfg.d) && /expires_at\s*>\s*now\(\)/.test(vfg.d));
+  } else {
+    console.log("  ~ taste at the table (056) not applied — skipping");
+  }
+
+  // ── photos kept a year at most (057): server-only helpers ───────────────────
+  const pf = await one(`select to_regprocedure('public.photo_files_older_than(int,int)') f`);
+  if (pf.f) {
+    for (const fn of ["photo_files_older_than(int,int)", "photo_files_of(uuid)"]) {
+      const g = await one(`select has_function_privilege('authenticated', 'public.${fn}', 'execute') a, has_function_privilege('anon', 'public.${fn}', 'execute') n`);
+      ok(`${fn}: the server's key only — no app can list other people's files`, !g.a && !g.n);
+    }
+    const pd = await one(`select pg_get_functiondef('public.photo_files_older_than(int,int)'::regprocedure) d`);
+    ok("photo_files_older_than(): never younger than 30 days, whatever it's asked", /greatest\(days, 30\)/.test(pd.d));
+  } else {
+    console.log("  ~ photo retention (057) not applied — skipping");
+  }
+
   // ── more challenges (043): counts only, inside the circle ─────────────────
   const cb2 = await one(`
     select pg_get_functiondef(p.oid) d from pg_proc p

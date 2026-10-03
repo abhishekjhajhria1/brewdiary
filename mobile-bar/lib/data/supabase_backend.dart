@@ -840,6 +840,32 @@ class SupabaseBackend implements Backend {
 
   // ── guest book ────────────────────────────────────────────────────────────
   @override
+  Future<List<GuestTonight>> guestsTonight(String venueId) => _run(() async {
+        final rows = await _c.rpc('venue_guests_tonight', params: {'vid': venueId});
+        return [
+          for (final r in (rows as List? ?? const []))
+            GuestTonight(
+              userId: r['user_id'] as String,
+              name: (r['name'] as String?) ?? (r['handle'] as String?) ?? 'A guest',
+              handle: (r['handle'] as String?) ?? '',
+              tableLabel: r['table_label'] as String?,
+              taste: GuestTaste.fromJson(r['taste']),
+              sharedAt: DateTime.parse(r['shared_at'] as String),
+            ),
+        ];
+      });
+
+  @override
+  Future<ProfileHit?> findGuestByCode(String venueId, String code) => _run(() async {
+        final c = code.trim().toUpperCase();
+        if (!RegExp(r'^[A-HJ-NP-Z2-9]{6}$').hasMatch(c)) return null;
+        final rows = await _c.rpc('venue_find_guest', params: {'vid': venueId, 'in_code': c}) as List? ?? const [];
+        if (rows.isEmpty) return null;
+        final r = rows.first;
+        return ProfileHit(id: r['user_id'] as String, handle: (r['handle'] as String?) ?? '', name: (r['name'] as String?) ?? 'A guest');
+      });
+
+  @override
   Future<GuestCard?> guestCard(String venueId, String guestId) => _run(() async {
         final r = await _c.rpc('venue_guest_card', params: {'vid': venueId, 'uid': guestId});
         final row = r is List ? (r.isEmpty ? null : r.first) : r;

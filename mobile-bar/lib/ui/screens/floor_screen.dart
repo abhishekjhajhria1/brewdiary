@@ -16,6 +16,7 @@ import '../../logic/service.dart';
 import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
+import '../widgets/next_steps.dart';
 import '../widgets/page.dart';
 import 'door_screen.dart';
 import 'floor_setup_screen.dart';
@@ -97,6 +98,7 @@ class _FloorScreenState extends State<FloorScreen> {
       children: [
         const DemoNote(),
         ShiftCard(venue: v),
+        NextSteps(venue: v),
         Loader<FloorData>(
           load: () => loadFloor(v),
           refresh: floorRev,

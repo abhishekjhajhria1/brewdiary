@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/drinks.dart';
+import 'package:brewdiary_core/game.dart';
 import 'package:brewdiary_core/types.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
@@ -20,8 +21,8 @@ import '../../data/entries.dart';
 import '../../data/parties.dart';
 import '../theme.dart';
 import 'common.dart';
+import 'game.dart';
 import '../screens/photo_studio.dart';
-import 'share_card.dart';
 
 Future<void> showLogSheet(
   BuildContext context, {
@@ -59,6 +60,8 @@ class _LogSheetState extends State<LogSheet> {
   DrinkType? _type;
   List<Photo> _photos = [];
   bool _justLogged = false;
+  Unlocks? _unlocks;
+  Timer? _unlockTimer;
   String? _editingId;
   Entry? _pendingDelete;
   Timer? _deleteTimer;
@@ -80,6 +83,7 @@ class _LogSheetState extends State<LogSheet> {
   @override
   void dispose() {
     // Closing the sheet commits any still-pending remove.
+    _unlockTimer?.cancel();
     _deleteTimer?.cancel();
     if (_pendingDelete != null) entryStore.deleteEntry(_pendingDelete!.id);
     for (final c in [_drink, _mood, _note, _venue, _who]) {
@@ -166,6 +170,7 @@ class _LogSheetState extends State<LogSheet> {
         );
       }
     } else {
+      final before = passportGame(entryStore.entries);
       entryStore.addEntry(
         date: widget.dateKey,
         drink: _drink.text,
@@ -176,6 +181,7 @@ class _LogSheetState extends State<LogSheet> {
         whoWith: who,
         photos: _photos.isEmpty ? null : _photos,
       );
+      _celebrate(before);
     }
     _reset();
     _flashLogged();
@@ -186,9 +192,30 @@ class _LogSheetState extends State<LogSheet> {
   /// never counted as a drink. Only offered on a day with nothing logged yet.
   void _logDryDay() {
     HapticFeedback.lightImpact();
+    final before = passportGame(entryStore.entries);
     entryStore.addEntry(date: widget.dateKey, drink: dryDayLabel, type: DrinkType.none, mood: _clean(_mood));
+    _celebrate(before);
     _reset();
     _flashLogged();
+  }
+
+  /// What that save earned on the passport — a strip above the button for a few
+  /// seconds, and a proper moment for a new rank.
+  void _celebrate(PassportGame before) {
+    final u = unlocksBetween(before, passportGame(entryStore.entries));
+    if (u.isEmpty) return;
+    HapticFeedback.mediumImpact();
+    _unlockTimer?.cancel();
+    setState(() => _unlocks = u);
+    _unlockTimer = Timer(const Duration(milliseconds: 4200), () {
+      if (mounted) setState(() => _unlocks = null);
+    });
+    final up = u.rankUp;
+    if (up != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showRankUp(context, up);
+      });
+    }
   }
 
   void _flashLogged() {
@@ -407,7 +434,11 @@ class _LogSheetState extends State<LogSheet> {
                 const SizedBox(height: S.s),
                 GlassField(controller: _note, hint: 'A line about the moment…', maxLines: 3),
                 const SizedBox(height: S.xl),
-                const Label('Photos'),
+                Row(children: [
+                  const Label('Photos'),
+                  const Spacer(),
+                  if (auth.isAuthed && db != null) Text('kept for a year', style: T.caption(context.bd)),
+                ]),
                 const SizedBox(height: S.s),
                 Wrap(spacing: S.s, runSpacing: S.s, children: [
                   for (final p in _photos) _photoTile(p),
@@ -452,12 +483,18 @@ class _LogSheetState extends State<LogSheet> {
               const SizedBox(width: S.m),
               Expanded(child: BdButton('Save', onTap: _drink.text.trim().isEmpty ? null : _submit)),
             ])
-          else
+          else ...[
+            AnimatedSize(
+              duration: Motion.med,
+              curve: Motion.curve,
+              child: _unlocks == null ? const SizedBox(width: double.infinity) : Padding(padding: const EdgeInsets.only(bottom: S.m), child: UnlockStrip(_unlocks!)),
+            ),
             BdButton(
               _justLogged ? 'Logged' : 'Log',
               icon: _justLogged ? PhBold.check : null,
               onTap: _drink.text.trim().isEmpty ? null : _submit,
             ),
+          ],
           if (dayIsEmpty) ...[
             const SizedBox(height: S.s),
             BdButton('Nothing today — log a dry day', kind: BtnKind.secondary, icon: Ph.drop, onTap: _logDryDay),
@@ -521,7 +558,7 @@ class _LogSheetState extends State<LogSheet> {
       SheetAction('Edit', icon: Ph.pencilSimple, onTap: () => _loadForEdit(e)),
       if (signedIn) SheetAction(_shareFor == e.id ? 'Hide sharing' : 'Share with friends…', icon: Ph.usersThree, onTap: () => setState(() => _shareFor = _shareFor == e.id ? null : e.id)),
       SheetAction('Share with a photo', icon: Ph.camera, onTap: () => showPhotoStudio(context, NightStory.fromEntry(e), photo: e.photos?.firstOrNull?.url)),
-      SheetAction('Share as a card', icon: Ph.image, onTap: () => showShareCard(context, e)),
+      SheetAction('Share as a card', icon: Ph.image, onTap: () => showPhotoStudio(context, NightStory.fromEntry(e))),
       SheetAction('Remove', icon: Ph.trash, destructive: true, onTap: () => _requestRemove(e)),
     ]);
   }

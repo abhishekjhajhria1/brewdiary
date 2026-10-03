@@ -15,6 +15,7 @@ import '../../logic/roles.dart';
 import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
+import '../widgets/guest_finder.dart';
 import '../widgets/page.dart';
 import 'tonight_screen.dart';
 
@@ -26,39 +27,6 @@ class GuestsScreen extends StatefulWidget {
 }
 
 class _GuestsScreenState extends State<GuestsScreen> {
-  final _q = TextEditingController();
-  Timer? _debounce;
-  List<ProfileHit> _hits = const [];
-  bool _searched = false;
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _q.dispose();
-    super.dispose();
-  }
-
-  void _search(String q) {
-    _debounce?.cancel();
-    if (q.trim().length < 2) {
-      return setState(() {
-        _hits = const [];
-        _searched = false;
-      });
-    }
-    _debounce = Timer(const Duration(milliseconds: 300), () async {
-      try {
-        final r = await Backend.i.searchPeople(q);
-        if (mounted) {
-          setState(() {
-            _hits = r;
-            _searched = true;
-          });
-        }
-      } catch (_) {}
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
@@ -68,20 +36,10 @@ class _GuestsScreenState extends State<GuestsScreen> {
       children: [
         const DemoNote(),
         Text('Your own notes on the regulars you serve — first-party only: never their diary, never another venue. They can see and erase anything you keep.', style: T.caption(bd)),
-        const SizedBox(height: S.m),
-        GlassField(controller: _q, hint: 'Find a guest by name or @handle', icon: Ph.magnifyingGlass, onChanged: _search, caps: TextCapitalization.none),
-        const SizedBox(height: S.m),
-        if (_searched && _hits.isEmpty) const EmptyNote('No one by that name or handle.'),
-        if (_hits.isNotEmpty)
-          Group(children: [
-            for (final p in _hits)
-              GroupTile(
-                title: p.name,
-                subtitle: '@${p.handle}',
-                chevron: true,
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => GuestDetailScreen(venue: widget.venue, guestId: p.id, name: p.name))),
-              ),
-          ]),
+        GuestFinder(
+          venue: widget.venue,
+          onPick: (p) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => GuestDetailScreen(venue: widget.venue, guestId: p.id, name: p.name))),
+        ),
       ],
     );
   }

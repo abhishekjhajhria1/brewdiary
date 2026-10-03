@@ -14,6 +14,7 @@ import '../../logic/roles.dart';
 import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
+import '../widgets/next_steps.dart';
 import '../widgets/page.dart';
 import 'guests_screen.dart';
 import 'host_screen.dart';
@@ -56,6 +57,7 @@ class _TonightScreenState extends State<TonightScreen> {
       children: [
         const DemoNote(),
         if (!widget.pushed) ShiftCard(venue: v),
+        NextSteps(venue: v),
         if (!v.verified)
           Padding(
             padding: const EdgeInsets.only(bottom: S.l),

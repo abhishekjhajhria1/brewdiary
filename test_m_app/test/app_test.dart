@@ -66,7 +66,7 @@ void main() {
     YouScreen.random = Random(7);
     await bootApp(tester, prefs: _placed, signedIn: true);
 
-    expect(find.text('night streak'.toUpperCase()), findsOneWidget);
+    expect(find.text('night streak', skipOffstage: false), findsOneWidget); // the glance under the calendar
     await expectLater(find.byType(BrewdiaryApp), matchesGoldenFile('goldens/04_calendar.png'));
 
     await tester.tap(find.byTooltip('Show the year'));
