@@ -1,11 +1,10 @@
-// The taste passport — a game you play by drinking widely, never by drinking
-// more. On top, the passport card: your rank, your miles, the bar to the next rank
-// (tap it to see what a bartender would see). Below, four tabs:
-//   Journey    — this week's three quests, the season stamp, the road of ranks,
-//                your latest miles and how miles are earned.
-//   Collection — eight sets to fill, one slot per drink family; a few come gilded.
-//   Stamps     — feats, season stamps, and the stamp book: a page a month.
-//   Taste      — your palate, what the bar sees, what you love and avoid.
+// The taste passport — a game you win by drinking widely, never by drinking more.
+// One calm page, in type and the mosaic:
+//   • who you are: your name, your rank and miles, the line to the next rank;
+//   • the taste map: every drink family as a square, one row per collection —
+//     a first taste fills it, about one in six glows gilded;
+//   • this week's three quests, the season, your latest stamps, your feats;
+//   • at the bar: what a bartender sees, your taste, sharing, your guest card.
 // The rules (brewdiary_core/game.dart) are derived from the diary, never stored.
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -31,12 +30,9 @@ import '../widgets/game.dart';
 import '../widgets/page.dart';
 import '../widgets/passport.dart';
 
-enum PassportTab { journey, collection, stamps, taste }
-
-/// [open] is 'YYYY-MM' or 'YYYY' to open the stamp book; [tab] picks a tab.
-Future<void> showTasteCard(BuildContext context, {String? open, PassportTab? tab}) => Navigator.of(context).push(
-      MaterialPageRoute(fullscreenDialog: true, builder: (_) => TasteCardScreen(tab: tab ?? (open != null ? PassportTab.stamps : PassportTab.journey))),
-    );
+/// [open] is 'YYYY-MM' (or 'YYYY') to show that month's (year's) stamps.
+Future<void> showTasteCard(BuildContext context, {String? open}) =>
+    Navigator.of(context).push(MaterialPageRoute(fullscreenDialog: true, builder: (_) => TasteCardScreen(open: open)));
 
 /// The bar's view of the taste card as (text, strong) chips — allergies and
 /// "nothing with alcohol tonight" first.
@@ -57,31 +53,270 @@ List<(String, bool)> tasteChips(Map<String, Object> payload) {
   ];
 }
 
-class TasteCardScreen extends StatefulWidget {
-  final PassportTab tab;
-  const TasteCardScreen({super.key, this.tab = PassportTab.journey});
+class TasteCardScreen extends StatelessWidget {
+  final String? open;
+  const TasteCardScreen({super.key, this.open});
+
   @override
-  State<TasteCardScreen> createState() => _TasteCardScreenState();
+  Widget build(BuildContext context) {
+    return Ambient(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: ListenableBuilder(
+          listenable: Listenable.merge([entryStore, WishlistStore.instance, TasteShareStore.instance]),
+          builder: (context, _) {
+            final entries = entryStore.entries;
+            final g = passportGame(entries);
+            return SubPage(
+              title: 'Taste passport',
+              large: false,
+              actions: [IconBtn(Ph.shareNetwork, tooltip: 'Share your passport', onTap: () => _sharePoster(context, g))],
+              child: _PassportBody(game: g, entries: entries, open: open),
+            );
+          },
+        ),
+      ),
+    );
+  }
 }
 
-class _TasteCardScreenState extends State<TasteCardScreen> {
-  late final Set<String> _hidden = {...(Prefs.getJson<List<dynamic>>(TasteShareStore.hiddenKey) ?? const []).map((e) => '$e')};
-  late PassportTab _tab = widget.tab;
-  bool _showPlaces = true;
-  bool _sharing = false;
-  final _cardKey = GlobalKey();
+class _PassportBody extends StatelessWidget {
+  final PassportGame game;
+  final List<Entry> entries;
+  final String? open;
+  const _PassportBody({required this.game, required this.entries, this.open});
 
-  void _toggle(String line) {
-    setState(() => _hidden.contains(line) ? _hidden.remove(line) : _hidden.add(line));
-    Prefs.setJson(TasteShareStore.hiddenKey, _hidden.toList());
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final g = game;
+    final p = passport(entries);
+    final total = g.collections.fold<int>(0, (a, c) => a + c.total);
+    final store = TasteShareStore.instance;
+    final chips = tasteChips(store.payload());
+    final next = nextStamps(entries, 2);
+
+    // the stamps section: a month (or year) if one was asked for, else the latest
+    final period = open == null
+        ? null
+        : open!.length == 4
+            ? open!
+            : '${monthNames[parseKey('${open!}-01').month - 1]} ${open!.substring(0, 4)}';
+    final stamps = open == null ? g.ledger.take(5).toList() : g.ledger.where((e) => e.date.startsWith(open!)).toList();
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _Identity(game: g, name: auth.profile?.name, entries: entries),
+      const SizedBox(height: S.xl),
+      _Figures(items: [('${g.families}', 'of $total tastes'), ('${p.places}', 'places'), ('${p.dryNights}', 'dry nights'), ('${g.feats.where((f) => f.earned).length}', 'feats')]),
+
+      SectionHeader('Taste map', trailing: Text('${g.families} / $total', style: T.caption(bd).copyWith(fontFeatures: T.tnum))),
+      Glass(
+        padding: const EdgeInsets.fromLTRB(S.l, S.m, S.l, S.m),
+        child: TasteMap(collections: g.collections, gilded: g.gilded, onOpen: (c) => _openCollection(context, c, g)),
+      ),
+      const SizedBox(height: S.s),
+      Text('A first taste fills a square; about one in six comes out gilded. Tap a row to see what\'s in it.', style: T.caption(bd)),
+
+      SectionHeader('This week', trailing: Text(g.questDaysLeft == 0 ? 'new ones tomorrow' : 'new in ${g.questDaysLeft} ${g.questDaysLeft == 1 ? 'day' : 'days'}', style: T.caption(bd))),
+      QuestList(quests: g.quests),
+
+      const SectionHeader('This season'),
+      SeasonLine(season: g.season, onTap: () => _openSeason(context, g)),
+
+      SectionHeader(period == null ? 'Latest stamps' : 'Stamps · $period', action: g.ledger.length > stamps.length ? 'All' : null, onAction: () => _openLedger(context, g)),
+      if (stamps.isEmpty)
+        Text(period == null ? 'Your first stamp comes with your first log — a drink or a dry night.' : 'No stamps in $period yet.', style: T.bodyMuted(bd))
+      else
+        MilesLedger(stamps),
+
+      SectionHeader('Feats', trailing: Text('${g.feats.where((f) => f.earned).length} of ${g.feats.length}', style: T.caption(bd))),
+      FeatRow(feats: g.feats),
+
+      const SectionHeader('At the bar'),
+      Group(children: [
+        GroupTile(
+          icon: Ph.martini,
+          title: 'What the bar sees',
+          subtitle: chips.isEmpty ? 'Nothing yet — add what you love' : chips.take(3).map((c) => c.$1).join(' · '),
+          chevron: true,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TasteAtTheBarScreen())),
+        ),
+        if (next.isNotEmpty)
+          GroupTile(
+            icon: Ph.sparkle,
+            title: 'Next to try',
+            subtitle: next.map((n) => n.family).join(' · '),
+            chevron: true,
+            onTap: () => showBdSheet<void>(context, title: 'Next to try', builder: (_) => const NextStampsList()),
+          ),
+        GroupTile(
+          icon: Ph.compass,
+          title: 'Ranks and miles',
+          subtitle: 'The eight ranks, and what earns a mile',
+          chevron: true,
+          onTap: () => _openRanks(context, g),
+        ),
+        if (auth.isAuthed && db != null) GroupTile(icon: Ph.identificationBadge, title: 'Your guest card', subtitle: 'A code staff type to find you', chevron: true, onTap: () => showGuestCard(context)),
+      ]),
+    ]);
   }
+}
+
+/// Who you are, in type: your name, your rank and miles, the line to the next.
+class _Identity extends StatelessWidget {
+  final PassportGame game;
+  final String? name;
+  final List<Entry> entries;
+  const _Identity({required this.game, required this.name, required this.entries});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final g = game;
+    String? since;
+    if (entries.isNotEmpty) {
+      final d = parseKey(entries.map((e) => e.date).reduce((a, b) => a.compareTo(b) < 0 ? a : b));
+      since = 'since ${monthNames[d.month - 1]} ${d.year}';
+    }
+    return Semantics(
+      label: '${(name ?? '').trim().isEmpty ? 'Your passport' : name}. ${g.rank.title}, ${g.miles} miles${g.next == null ? '' : ', ${g.toNext} to ${g.next!.title}'}.',
+      excludeSemantics: true,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('TASTE PASSPORT', style: T.label(bd, color: bd.accentText)),
+              const SizedBox(height: 6),
+              Text((name ?? '').trim().isEmpty ? 'Your passport' : name!.trim(), maxLines: 1, overflow: TextOverflow.ellipsis, style: T.serif(bd, size: 42, height: 1.0)),
+              const SizedBox(height: 4),
+              Text.rich(TextSpan(children: [
+                TextSpan(text: g.rank.title, style: T.serif(bd, size: 20, italic: true, color: bd.accentText)),
+                TextSpan(text: '   ${g.miles} miles', style: T.sans(bd, size: 14, color: bd.muted).copyWith(fontFeatures: T.tnum)),
+              ])),
+            ]),
+          ),
+          RankEmblem(g.rank.index, size: 54),
+        ]),
+        const SizedBox(height: S.l),
+        RankLine(g.progress),
+        const SizedBox(height: S.s),
+        Row(children: [
+          Text(since ?? 'a fresh passport', style: T.caption(bd)),
+          const Spacer(),
+          Text(g.next == null ? 'the top of the map' : '${g.toNext} miles to ${g.next!.title}', style: T.caption(bd)),
+        ]),
+      ]),
+    );
+  }
+}
+
+/// A row of small figures with hairlines between them.
+class _Figures extends StatelessWidget {
+  final List<(String, String)> items;
+  const _Figures({required this.items});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Row(children: [
+      for (var i = 0; i < items.length; i++) ...[
+        if (i > 0) Container(width: .8, height: 26, color: bd.line),
+        Expanded(
+          child: Column(children: [
+            Text(items[i].$1, style: T.serif(bd, size: 24, height: 1).copyWith(fontFeatures: T.tnum)),
+            const SizedBox(height: 4),
+            Text(items[i].$2, textAlign: TextAlign.center, style: T.sans(bd, size: 11.5, color: bd.muted)),
+          ]),
+        ),
+      ],
+    ]);
+  }
+}
+
+void _wish(BuildContext context, String family) {
+  final listed = WishlistStore.instance.items.any((w) => w.drink.toLowerCase() == family.toLowerCase());
+  if (listed) {
+    toast(context, '$family is already on your to-try list.');
+    return;
+  }
+  WishlistStore.instance.add(family);
+  toast(context, '$family is on your to-try list.');
+}
+
+Set<String> get _listed => {for (final w in WishlistStore.instance.items) w.drink.toLowerCase()};
+
+void _openCollection(BuildContext context, CollectionState col, PassportGame g) {
+  showBdSheet<void>(context, title: col.collection.title, builder: (sheet) {
+    final bd = sheet.bd;
+    return ListenableBuilder(
+      listenable: WishlistStore.instance,
+      builder: (sheet, _) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(col.complete ? 'Complete since ${formatDayLongYear(col.completedOn!)}.' : '${col.have} of ${col.total}. A full set is +$milesCollection miles.', style: T.bodyMuted(bd)),
+        const SizedBox(height: S.l),
+        Group(children: [
+          for (final f in col.collection.families)
+            GroupTile(
+              icon: col.tried.containsKey(f) ? (g.gilded.contains(f) ? PhFill.sparkle : Ph.checkCircle) : Ph.circle,
+              title: f,
+              subtitle: col.tried.containsKey(f)
+                  ? 'First tasted ${formatDayLongYear(col.tried[f]!)}${g.gilded.contains(f) ? ' · gilded' : ''}'
+                  : (flavours[f] ?? const []).isEmpty
+                      ? 'not tried yet'
+                      : (flavours[f] ?? const []).join(', '),
+              trailing: col.tried.containsKey(f)
+                  ? null
+                  : _listed.contains(f.toLowerCase())
+                      ? Text('On your list', style: T.caption(bd))
+                      : TextAction('To try', accent: true, onTap: () => _wish(sheet, f)),
+            ),
+        ]),
+      ]),
+    );
+  });
+}
+
+void _openSeason(BuildContext context, PassportGame g) => showBdSheet<void>(
+      context,
+      builder: (sheet) => ListenableBuilder(
+        listenable: WishlistStore.instance,
+        builder: (sheet, _) => SeasonCard(season: g.season, onPick: (f) => _wish(sheet, f), onList: _listed),
+      ),
+    );
+
+void _openLedger(BuildContext context, PassportGame g) => showBdSheet<void>(context, title: 'Every stamp', builder: (_) => MilesLedger(g.ledger));
+
+void _openRanks(BuildContext context, PassportGame g) => showBdSheet<void>(
+      context,
+      title: 'Ranks and miles',
+      builder: (sheet) {
+        final bd = sheet.bd;
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('${g.rank.title} — ${g.rank.line}', style: T.serif(bd, size: 18, italic: true, color: bd.muted, height: 1.3)),
+          const SizedBox(height: S.l),
+          RankRoad(game: g),
+          const SizedBox(height: S.xl),
+          const MilesGuide(),
+        ]);
+      },
+    );
+
+/// Share the passport as a picture: your name, rank and taste map.
+Future<void> _sharePoster(BuildContext context, PassportGame g) => showBdSheet<void>(context, title: 'Share your passport', builder: (_) => _PosterSheet(game: g));
+
+class _PosterSheet extends StatefulWidget {
+  final PassportGame game;
+  const _PosterSheet({required this.game});
+  @override
+  State<_PosterSheet> createState() => _PosterSheetState();
+}
+
+class _PosterSheetState extends State<_PosterSheet> {
+  final _key = GlobalKey();
+  bool _busy = false;
 
   Future<void> _share() async {
-    if (_sharing) return;
-    setState(() => _sharing = true);
-    await WidgetsBinding.instance.endOfFrame;
+    if (_busy) return;
+    setState(() => _busy = true);
     try {
-      final boundary = _cardKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary = _key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) return;
       final image = await boundary.toImage(pixelRatio: 1080 / boundary.size.width);
       final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -93,266 +328,91 @@ class _TasteCardScreenState extends State<TasteCardScreen> {
     } catch (_) {
       if (mounted) toast(context, "Couldn't make the image — try again.");
     } finally {
-      if (mounted) setState(() => _sharing = false);
+      if (mounted) setState(() => _busy = false);
     }
-  }
-
-  void _wish(String family) {
-    final listed = WishlistStore.instance.items.any((w) => w.drink.toLowerCase() == family.toLowerCase());
-    if (listed) {
-      toast(context, '$family is already on your to-try list.');
-      return;
-    }
-    WishlistStore.instance.add(family);
-    toast(context, '$family is on your to-try list.');
-  }
-
-  String? _since(List<Entry> entries) {
-    if (entries.isEmpty) return null;
-    final first = entries.map((e) => e.date).reduce((a, b) => a.compareTo(b) < 0 ? a : b);
-    final d = parseKey(first);
-    return '${monthNames[d.month - 1].substring(0, 3)} ${d.year}';
   }
 
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ClipRRect(
+        borderRadius: BorderRadius.circular(rTile),
+        child: RepaintBoundary(key: _key, child: PassportPoster(game: widget.game, name: auth.profile?.name)),
+      ),
+      const SizedBox(height: S.s),
+      Text('Your rank and your taste map — never what or how much you drank.', textAlign: TextAlign.center, style: T.caption(bd)),
+      const SizedBox(height: S.l),
+      BdButton(_busy ? 'Making it…' : 'Share', icon: Ph.export, onTap: _share),
+    ]);
+  }
+}
+
+/// At the bar: your palate, exactly what a bartender would see, what you love and
+/// avoid, which lines go to the bar, and your guest card.
+class TasteAtTheBarScreen extends StatefulWidget {
+  const TasteAtTheBarScreen({super.key});
+  @override
+  State<TasteAtTheBarScreen> createState() => _TasteAtTheBarScreenState();
+}
+
+class _TasteAtTheBarScreenState extends State<TasteAtTheBarScreen> {
+  late final Set<String> _hidden = {...(Prefs.getJson<List<dynamic>>(TasteShareStore.hiddenKey) ?? const []).map((e) => '$e')};
+
+  void _toggle(String line) {
+    setState(() => _hidden.contains(line) ? _hidden.remove(line) : _hidden.add(line));
+    Prefs.setJson(TasteShareStore.hiddenKey, _hidden.toList());
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Ambient(
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: ListenableBuilder(
-          listenable: Listenable.merge([entryStore, WishlistStore.instance, TasteShareStore.instance]),
+          listenable: Listenable.merge([entryStore, TasteShareStore.instance]),
           builder: (context, _) {
             final entries = entryStore.entries;
-            final g = passportGame(entries);
             final store = TasteShareStore.instance;
+            final lines = tasteLines(tasteProfile(entries), notes: palate(entries), loves: store.loves, avoid: store.avoid, sweetness: store.sweetness, diet: store.diet, allergies: store.allergies);
             return SubPage(
-              title: 'Taste passport',
+              title: 'At the bar',
+              subtitle: 'What a bartender sees when you open their menu — and what you tell them.',
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                RepaintBoundary(
-                  key: _cardKey,
-                  child: PassportCard(game: g, name: auth.profile?.name, since: _since(entries), back: CardChips(tasteChips(store.payload()))),
-                ),
-                const SizedBox(height: S.m),
-                Row(children: [
-                  Icon(Ph.handTap, size: 14, color: bd.faint),
-                  const SizedBox(width: 6),
-                  Expanded(child: Text('Tap the card to see what a bartender sees.', style: T.caption(bd))),
-                  TextAction(_sharing ? 'Making it…' : 'Share', accent: true, onTap: _share),
-                ]),
-                const SizedBox(height: S.l),
-                _Stats(game: g, entries: entries),
-                const SizedBox(height: S.xl),
-                Segmented<PassportTab>(
-                  options: const [(PassportTab.journey, 'Journey'), (PassportTab.collection, 'Collection'), (PassportTab.stamps, 'Stamps'), (PassportTab.taste, 'Taste')],
-                  value: _tab,
-                  onChanged: (t) => setState(() => _tab = t),
-                ),
-                AnimatedSwitcher(
-                  duration: Motion.med,
-                  child: KeyedSubtree(
-                    key: ValueKey(_tab),
-                    child: switch (_tab) {
-                      PassportTab.journey => _journey(g),
-                      PassportTab.collection => _collection(g),
-                      PassportTab.stamps => _stamps(g, entries),
-                      PassportTab.taste => _taste(entries),
-                    },
+                const SectionHeader('What the bar sees', padding: EdgeInsets.only(top: S.s, bottom: S.m)),
+                BarPreview(payload: store.payload()),
+                const SectionHeader('Palate'),
+                PassportPalate(notes: palate(entries), sweetness: store.sweetness, avoid: store.avoid),
+                const SectionHeader('Your taste'),
+                TastePrefsEditor(onChanged: () => setState(() {})),
+                const SectionHeader('Sharing'),
+                Group(children: [
+                  SettingRow(
+                    title: 'Nothing with alcohol tonight',
+                    hint: 'Goes first on what tonight\'s bartender sees.',
+                    trailing: BdToggle(on: store.dryTonight, label: 'Nothing with alcohol tonight', onChanged: (v) async {
+                      await store.setDryTonight(v);
+                      if (mounted) setState(() {});
+                    }),
                   ),
-                ),
+                  for (final l in lines)
+                    SettingRow(
+                      title: 'Share "${l.$2}"',
+                      hint: l.$3,
+                      trailing: BdToggle(on: !_hidden.contains(l.$1), label: 'Share ${l.$2}', onChanged: (_) => _toggle(l.$1)),
+                    ),
+                ]),
+                if (auth.isAuthed && db != null) ...[
+                  const SizedBox(height: S.xl),
+                  const TasteShareSettings(),
+                  const SizedBox(height: S.m),
+                  BdButton('Show my guest card', kind: BtnKind.secondary, icon: Ph.identificationBadge, onTap: () => showGuestCard(context)),
+                ],
               ]),
             );
           },
         ),
       ),
-    );
-  }
-
-  Set<String> get _listed => {for (final w in WishlistStore.instance.items) w.drink.toLowerCase()};
-
-  Widget _journey(PassportGame g) {
-    final bd = context.bd;
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const SectionHeader('This week'),
-      QuestCard(quests: g.quests, daysLeft: g.questDaysLeft),
-      const SectionHeader('This season'),
-      SeasonCard(season: g.season, onPick: _wish, onList: _listed),
-      SectionHeader('Your road', trailing: Text('Rank ${g.rank.index + 1} of ${ranks.length}', style: T.caption(bd))),
-      RankRoad(game: g),
-      const SizedBox(height: S.s),
-      Text(g.rank.line, style: T.serif(bd, size: 17, italic: true, color: bd.muted, height: 1.3)),
-      const SectionHeader('Recent miles'),
-      MilesLedger(g.ledger.take(8).toList()),
-      const SectionHeader('How miles work'),
-      const MilesGuide(),
-    ]);
-  }
-
-  Widget _collection(PassportGame g) {
-    final bd = context.bd;
-    final total = collections.fold<int>(0, (s, c) => s + c.families.length);
-    final sets = g.collections.where((c) => c.complete).length;
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const SizedBox(height: S.xl),
-      Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-        Text('${g.families}', style: T.serif(bd, size: 40, color: bd.accentText)),
-        Text(' / $total', style: T.serif(bd, size: 22, color: bd.muted)),
-        const SizedBox(width: S.m),
-        Expanded(child: Text('drink families met · $sets ${sets == 1 ? 'set' : 'sets'} complete', style: T.caption(bd))),
-      ]),
-      const SizedBox(height: S.s),
-      Text('Each square is a family. A first taste fills it; about one in six comes out gilded.', style: T.caption(bd)),
-      const SizedBox(height: S.l),
-      LayoutBuilder(builder: (context, c) {
-        final w = (c.maxWidth - S.m) / 2;
-        return Wrap(spacing: S.m, runSpacing: S.m, children: [
-          for (final col in g.collections) SizedBox(width: w, child: CollectionTile(state: col, gilded: g.gilded, onTap: () => _openCollection(col, g))),
-        ]);
-      }),
-      const SectionHeader('Next stamps'),
-      const NextStampsList(),
-    ]);
-  }
-
-  void _openCollection(CollectionState col, PassportGame g) {
-    showBdSheet<void>(context, title: col.collection.title, builder: (sheet) {
-      final bd = sheet.bd;
-      return ListenableBuilder(
-        listenable: WishlistStore.instance,
-        builder: (sheet, _) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(col.complete ? 'Complete since ${formatDayLongYear(col.completedOn!)}.' : '${col.have} of ${col.total}. A full set is +$milesCollection miles.', style: T.bodyMuted(bd)),
-          const SizedBox(height: S.l),
-          Group(children: [
-            for (final f in col.collection.families)
-              GroupTile(
-                icon: col.tried.containsKey(f) ? (g.gilded.contains(f) ? PhFill.sparkle : Ph.checkCircle) : Ph.circle,
-                title: f,
-                subtitle: col.tried.containsKey(f)
-                    ? 'First tasted ${formatDayLongYear(col.tried[f]!)}${g.gilded.contains(f) ? ' · gilded' : ''}'
-                    : (flavours[f] ?? const []).join(', ').ifBlank('not tried yet'),
-                trailing: col.tried.containsKey(f)
-                    ? null
-                    : _listed.contains(f.toLowerCase())
-                        ? Text('On your list', style: T.caption(bd))
-                        : TextAction('To try', accent: true, onTap: () => _wish(f)),
-              ),
-          ]),
-        ]),
-      );
-    });
-  }
-
-  Widget _stamps(PassportGame g, List<Entry> entries) {
-    final bd = context.bd;
-    final earned = g.feats.where((f) => f.earned).length;
-    final months = {for (final e in entries) e.date.substring(0, 7)}.toList()..sort((a, b) => b.compareTo(a));
-    final now = appNow();
-    final thisMonth = '${now.year}-${now.month.toString().padLeft(2, '0')}';
-    if (!months.contains(thisMonth)) months.insert(0, thisMonth);
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      SectionHeader('Feats', trailing: Text('$earned of ${g.feats.length}', style: T.caption(bd))),
-      LayoutBuilder(builder: (context, c) {
-        final w = (c.maxWidth - S.m * 2) / 3;
-        final sorted = [...g.feats.where((f) => f.earned), ...g.feats.where((f) => !f.earned)];
-        return Wrap(spacing: S.m, runSpacing: S.l, children: [for (final f in sorted) SizedBox(width: w, child: FeatMedal(f))]);
-      }),
-      if (g.seasonsEarned.isNotEmpty) ...[
-        const SectionHeader('Season stamps'),
-        Wrap(spacing: S.l, runSpacing: S.m, children: [
-          for (final s in g.seasonsEarned.reversed)
-            Column(children: [
-              SeasonMotif(s.def.id, earned: true, size: 56),
-              const SizedBox(height: 6),
-              Text(s.label, style: T.sans(bd, size: 12, weight: FontWeight.w600)),
-            ]),
-        ]),
-      ],
-      const SectionHeader('Stamp book'),
-      Row(children: [
-        Expanded(child: Text('A page a month: places, first tastes, new kinds, dry nights.', style: T.caption(bd))),
-        TextAction(_showPlaces ? 'Hide places' : 'Show places', onTap: () => setState(() => _showPlaces = !_showPlaces)),
-      ]),
-      const SizedBox(height: S.m),
-      for (final m in months.take(12)) ...[
-        () {
-          final d = parseKey('$m-01');
-          final stamps = stampsBetween(entries, '$m-01', toKey(DateTime(d.year, d.month + 1, 0))).where((s) => _showPlaces || s.kind != StampKind.place).toList();
-          return VisaPage(title: '${monthNames[d.month - 1]} ${d.year}', stamps: stamps, max: 9, empty: 'No stamps this month yet — a new place, a first taste or a dry night earns one.');
-        }(),
-        const SizedBox(height: S.m),
-      ],
-    ]);
-  }
-
-  Widget _taste(List<Entry> entries) {
-    final store = TasteShareStore.instance;
-    final lines = tasteLines(tasteProfile(entries), notes: palate(entries), loves: store.loves, avoid: store.avoid, sweetness: store.sweetness, diet: store.diet, allergies: store.allergies);
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const SectionHeader('Palate'),
-      PassportPalate(notes: palate(entries), sweetness: store.sweetness, avoid: store.avoid),
-      const SectionHeader('What the bar sees'),
-      BarPreview(payload: store.payload()),
-      const SectionHeader('Your taste'),
-      TastePrefsEditor(onChanged: () => setState(() {})),
-      const SectionHeader('Sharing'),
-      Group(children: [
-        SettingRow(
-          title: 'Nothing with alcohol tonight',
-          hint: 'Goes first on what tonight\'s bartender sees.',
-          trailing: BdToggle(on: store.dryTonight, label: 'Nothing with alcohol tonight', onChanged: (v) async {
-            await store.setDryTonight(v);
-            if (mounted) setState(() {});
-          }),
-        ),
-        for (final l in lines)
-          SettingRow(
-            title: 'Share "${l.$2}"',
-            hint: l.$3,
-            trailing: BdToggle(on: !_hidden.contains(l.$1), label: 'Share ${l.$2}', onChanged: (_) => _toggle(l.$1)),
-          ),
-      ]),
-      if (auth.isAuthed && db != null) ...[
-        const SizedBox(height: S.xl),
-        const TasteShareSettings(),
-        const SizedBox(height: S.m),
-        BdButton('Show my guest card', kind: BtnKind.secondary, icon: Ph.identificationBadge, onTap: () => showGuestCard(context)),
-      ],
-    ]);
-  }
-}
-
-extension on String {
-  String ifBlank(String other) => trim().isEmpty ? other : this;
-}
-
-/// Four numbers under the card.
-class _Stats extends StatelessWidget {
-  final PassportGame game;
-  final List<Entry> entries;
-  const _Stats({required this.game, required this.entries});
-  @override
-  Widget build(BuildContext context) {
-    final bd = context.bd;
-    final p = passport(entries);
-    Widget cell(String n, String label) => Expanded(
-          child: Column(children: [
-            Text(n, style: T.serif(bd, size: 26, height: 1).copyWith(fontFeatures: T.tnum)),
-            const SizedBox(height: 4),
-            Text(label, textAlign: TextAlign.center, style: T.sans(bd, size: 11.5, color: bd.muted)),
-          ]),
-        );
-    Widget rule() => Container(width: 1, height: 30, color: bd.line);
-    return Glass(
-      padding: const EdgeInsets.symmetric(vertical: S.l),
-      child: Row(children: [
-        cell('${game.families}', 'tastes'),
-        rule(),
-        cell('${p.places}', 'places'),
-        rule(),
-        cell('${p.dryNights}', 'dry nights'),
-        rule(),
-        cell('${game.feats.where((f) => f.earned).length}', 'feats'),
-      ]),
     );
   }
 }

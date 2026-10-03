@@ -50,12 +50,10 @@ void main() {
     expect(find.textContaining("isn't connected"), findsOneWidget);
   });
 
-  testWidgets('the passport: rank and miles on the card; lines can be kept from the bar; a dry night goes first', (t) async {
+  testWidgets('at the bar: lines can be kept from the bar; a dry night goes first', (t) async {
     await bootApp(t, prefs: const {'brewdiary.age.v2': 'ok', 'brewdiary.country.v1': 'IN'}, signedIn: true);
-    navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const TasteCardScreen(tab: PassportTab.taste)));
+    navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const TasteAtTheBarScreen()));
     await t.pumpAndSettle();
-    final g = passportGame(entryStore.entries);
-    expect(find.bySemanticsLabel(RegExp('^Passport\\. ${g.rank.title}, ${g.miles} miles')), findsOneWidget);
     expect(TasteShareStore.instance.payload().containsKey('into'), isTrue);
     await t.ensureVisible(find.bySemanticsLabel('Share Into'));
     await t.pumpAndSettle();
@@ -70,16 +68,20 @@ void main() {
     expect(find.text('Nothing with alcohol tonight'), findsWidgets, reason: 'the bar preview leads with it');
   });
 
-  testWidgets('the passport tabs: quests, collections, feats', (t) async {
+  testWidgets('the passport: rank and miles, the taste map, quests, feats — one page', (t) async {
     await bootApp(t, prefs: const {'brewdiary.age.v2': 'ok', 'brewdiary.country.v1': 'IN'}, signedIn: true);
     navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const TasteCardScreen()));
     await t.pumpAndSettle();
-    expect(find.text('THIS WEEK'), findsOneWidget);
-    await t.tap(find.bySemanticsLabel('Collection'));
-    await t.pumpAndSettle();
+    final g = passportGame(entryStore.entries);
+    expect(find.bySemanticsLabel(RegExp('${g.rank.title}, ${g.miles} miles')), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp(r'^Coffee bar, \d+ of 10')), findsOneWidget);
-    await t.tap(find.bySemanticsLabel('Stamps'));
+    await t.tap(find.bySemanticsLabel(RegExp(r'^Coffee bar, \d+ of 10')));
     await t.pumpAndSettle();
+    expect(find.text('Espresso'), findsWidgets, reason: 'a row opens its families');
+    Navigator.of(t.element(find.text('Espresso').first)).pop();
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('FEATS'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.text('THIS WEEK', skipOffstage: false), findsOneWidget);
     expect(find.text('FEATS'), findsOneWidget);
   });
 

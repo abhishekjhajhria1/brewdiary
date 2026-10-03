@@ -1,8 +1,9 @@
 // The passport game, drawn. The rules live in brewdiary_core/game.dart (derived
-// from the diary, never stored); this is how they look: the passport card (a dark
-// metal card with a security-print pattern and amber foil), rank emblems, the
-// week's quests, the season stamp, collections, feats, and the little moment after
-// a save that earned something.
+// from the diary, never stored); this is how they look — calm, in type and the
+// mosaic: a flat amber rank emblem, the taste map (every drink family as a square,
+// one row per collection), the week's quests, the season, feats, the share poster,
+// the passport on the calendar, and the little moment after a save that earned
+// something. (The foil palette below is kept for the photo overlay's sticker.)
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -24,9 +25,6 @@ const cardMuted = Color(0xFFB9AC9A);
 const foilGradient = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [foilHi, foil, foilLo], stops: [0, .45, 1]);
 
 const _roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
-
-TextStyle _cs(double size, Color color, {FontWeight weight = FontWeight.w600, double spacing = 0}) =>
-    T.rawSans(size, color, weight: weight, spacing: spacing);
 
 String kindTitle(String kind) => switch (kind) {
       'coffee' => 'Coffee',
@@ -60,7 +58,7 @@ IconData mileIcon(MileSource s) => switch (s) {
     };
 
 // ── rank emblem ──────────────────────────────────────────────────────────────
-/// An octagon in foil with one lit point per rank climbed and the numeral inside.
+/// An octagon in amber with one lit point per rank climbed and the numeral inside.
 class RankEmblem extends StatelessWidget {
   final int index;
   final double size;
@@ -69,18 +67,14 @@ class RankEmblem extends StatelessWidget {
   const RankEmblem(this.index, {super.key, this.size = 56, this.locked = false, this.lockedColor});
   @override
   Widget build(BuildContext context) {
-    final lc = lockedColor ?? context.bd.faint;
+    final bd = context.bd;
+    final lc = lockedColor ?? bd.faint;
     return SizedBox(
       width: size,
       height: size,
       child: CustomPaint(
-        painter: _EmblemPainter(index, locked, lc),
-        child: Center(
-          child: Text(
-            _roman[index.clamp(0, 7)],
-            style: T.rawSerif(size * .3, locked ? lc : foilHi, weight: FontWeight.w500),
-          ),
-        ),
+        painter: _EmblemPainter(index, locked, lc, bd.accent),
+        child: Center(child: Text(_roman[index.clamp(0, 7)], style: T.rawSerif(size * .3, locked ? lc : bd.accentText, weight: FontWeight.w500))),
       ),
     );
   }
@@ -100,321 +94,32 @@ class _EmblemPainter extends CustomPainter {
   final int index;
   final bool locked;
   final Color lockedColor;
-  const _EmblemPainter(this.index, this.locked, this.lockedColor);
+  final Color accent;
+  const _EmblemPainter(this.index, this.locked, this.lockedColor, this.accent);
   @override
   void paint(Canvas canvas, Size size) {
     final c = size.center(Offset.zero);
     final r = size.shortestSide / 2;
-    final rect = Offset.zero & size;
-    final stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(1.2, r * .06)
-      ..strokeJoin = StrokeJoin.round;
-    if (locked) {
-      stroke.color = lockedColor.withValues(alpha: .7);
-    } else {
-      stroke.shader = foilGradient.createShader(rect);
-      canvas.drawPath(_octagon(c, r * .86), Paint()..color = foil.withValues(alpha: .10));
-    }
-    canvas.drawPath(_octagon(c, r * .86), stroke);
-    final inner = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(.6, r * .025)
-      ..color = (locked ? lockedColor : foil).withValues(alpha: locked ? .35 : .5);
-    canvas.drawPath(_octagon(c, r * .68), inner);
-    // one lit point per rank climbed, at the corners
+    final color = locked ? lockedColor.withValues(alpha: .7) : accent;
+    if (!locked) canvas.drawPath(_octagon(c, r * .86), Paint()..color = accent.withValues(alpha: .1));
+    canvas.drawPath(
+      _octagon(c, r * .86),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = math.max(1.2, r * .055)
+        ..strokeJoin = StrokeJoin.round
+        ..color = color,
+    );
     for (var i = 0; i < 8; i++) {
       final a = -math.pi / 2 + i * math.pi / 4;
       final o = c + Offset(math.cos(a) * r * .97, math.sin(a) * r * .97);
       final lit = !locked && i < index;
-      canvas.drawCircle(o, r * (lit ? .07 : .045), Paint()..color = lit ? foilHi : (locked ? lockedColor : foil).withValues(alpha: .3));
+      canvas.drawCircle(o, r * (lit ? .065 : .04), Paint()..color = lit ? accent : color.withValues(alpha: .3));
     }
   }
 
   @override
-  bool shouldRepaint(_EmblemPainter o) => o.index != index || o.locked != locked || o.lockedColor != lockedColor;
-}
-
-// ── the passport card ───────────────────────────────────────────────────────
-/// The hero: rank, name, miles and the bar to the next rank, on a dark metal card
-/// with a security-print pattern. Tap to turn it over ([back]); a foil sheen
-/// crosses it once when it appears and again each time it turns.
-class PassportCard extends StatefulWidget {
-  final PassportGame game;
-  final String? name;
-  final String? since;
-  final Widget? back;
-  const PassportCard({super.key, required this.game, this.name, this.since, this.back});
-  @override
-  State<PassportCard> createState() => _PassportCardState();
-}
-
-class _PassportCardState extends State<PassportCard> with TickerProviderStateMixin {
-  late final _flip = AnimationController(vsync: this, duration: const Duration(milliseconds: 520));
-  late final _sheen = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600));
-  bool _started = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_started) {
-      _started = true;
-      if (!MediaQuery.disableAnimationsOf(context)) _sheen.forward();
-    }
-  }
-
-  @override
-  void dispose() {
-    _flip.dispose();
-    _sheen.dispose();
-    super.dispose();
-  }
-
-  void _turn() {
-    if (widget.back == null) return;
-    _flip.isDismissed || _flip.status == AnimationStatus.reverse ? _flip.forward() : _flip.reverse();
-    if (!MediaQuery.disableAnimationsOf(context)) _sheen.forward(from: 0);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final g = widget.game;
-    return Semantics(
-      button: widget.back != null,
-      label: 'Passport. ${g.rank.title}, ${g.miles} miles${g.next == null ? '' : ', ${g.toNext} to ${g.next!.title}'}. ${widget.back == null ? '' : 'Double tap to turn over.'}',
-      excludeSemantics: true,
-      child: GestureDetector(
-        onTap: _turn,
-        child: AspectRatio(
-          aspectRatio: 1.586,
-          child: AnimatedBuilder(
-            animation: Listenable.merge([_flip, _sheen]),
-            builder: (context, _) {
-              final t = Curves.easeInOutCubic.transform(_flip.value);
-              final showBack = t > .5;
-              final face = showBack ? Transform(alignment: Alignment.center, transform: Matrix4.rotationY(math.pi), child: _CardBack(child: widget.back!)) : _CardFront(game: g, name: widget.name, since: widget.since);
-              return Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..setEntry(3, 2, .0012)
-                  ..rotateY(math.pi * t),
-                child: _CardShell(sheen: _sheen.value, child: face),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CardShell extends StatelessWidget {
-  final double sheen;
-  final Widget child;
-  const _CardShell({required this.sheen, required this.child});
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [BoxShadow(color: foil.withValues(alpha: .16), blurRadius: 28, offset: const Offset(0, 10))],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: CustomPaint(
-          painter: _CardGround(sheen),
-          foregroundPainter: _CardEdge(),
-          child: Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 18), child: child),
-        ),
-      ),
-    );
-  }
-}
-
-/// The ground: a warm dark gradient, a guilloché rosette (the fine engraved
-/// lines on banknotes and passports), a glow behind the emblem, and the sheen.
-class _CardGround extends CustomPainter {
-  final double sheen;
-  const _CardGround(this.sheen);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final r = Offset.zero & size;
-    canvas.drawRect(r, Paint()..shader = const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [cardTop, cardBottom]).createShader(r));
-    canvas.drawRect(
-      r,
-      Paint()
-        ..shader = RadialGradient(center: const Alignment(-.75, -.1), radius: .9, colors: [foil.withValues(alpha: .20), foil.withValues(alpha: 0)]).createShader(r),
-    );
-    // guilloché: a rose of wavy rings around a point off the right edge
-    final c = Offset(size.width * .92, size.height * .62);
-    final line = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = .7
-      ..color = foil.withValues(alpha: .085);
-    for (var k = 0; k < 16; k++) {
-      final base = size.height * (.22 + k * .055);
-      final path = Path();
-      for (var i = 0; i <= 180; i++) {
-        final th = i / 180 * math.pi * 2;
-        final rr = base + size.height * .035 * math.sin(th * 9 + k * .55);
-        final p = c + Offset(math.cos(th) * rr, math.sin(th) * rr);
-        i == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
-      }
-      canvas.drawPath(path, line);
-    }
-    // the sheen: a soft diagonal band of light, crossing once
-    if (sheen > 0 && sheen < 1) {
-      final x = -0.6 + sheen * 2.2;
-      canvas.drawRect(
-        r,
-        Paint()
-          ..shader = LinearGradient(
-            begin: Alignment(x - .5, -1),
-            end: Alignment(x + .5, 1),
-            colors: [Colors.white.withValues(alpha: 0), foilHi.withValues(alpha: .16), Colors.white.withValues(alpha: 0)],
-          ).createShader(r),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_CardGround o) => o.sheen != sheen;
-}
-
-class _CardEdge extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rr = RRect.fromRectAndRadius((Offset.zero & size).deflate(.5), const Radius.circular(21.5));
-    canvas.drawRRect(
-      rr,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1
-        ..shader = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [foilHi.withValues(alpha: .55), foil.withValues(alpha: .12), foilLo.withValues(alpha: .4)]).createShader(Offset.zero & size),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_CardEdge o) => false;
-}
-
-class _CardFront extends StatelessWidget {
-  final PassportGame game;
-  final String? name;
-  final String? since;
-  const _CardFront({required this.game, this.name, this.since});
-  @override
-  Widget build(BuildContext context) {
-    final g = game;
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Text('TASTE PASSPORT', style: _cs(9.5, foil, weight: FontWeight.w700, spacing: 2.2)),
-        const Spacer(),
-        Text('brewdiary', style: T.rawSerif(14, cardMuted, italic: true)),
-      ]),
-      const Spacer(),
-      Row(children: [
-        RankEmblem(g.rank.index, size: 62),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(g.rank.title, style: T.rawSerif(34, cardInk, height: 1))),
-            const SizedBox(height: 4),
-            Text(
-              [if ((name ?? '').trim().isNotEmpty) name!.trim(), if (since != null) 'since $since'].join(' · ').ifEmpty('Rank ${_roman[g.rank.index]} of VIII'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: _cs(12, cardMuted, weight: FontWeight.w500),
-            ),
-          ]),
-        ),
-      ]),
-      const Spacer(),
-      Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-        ShaderMask(
-          shaderCallback: (r) => foilGradient.createShader(r),
-          child: Text('${g.miles}', style: T.rawSerif(30, Colors.white, height: 1).copyWith(fontFeatures: T.tnum)),
-        ),
-        const SizedBox(width: 6),
-        Text('miles', style: _cs(11.5, cardMuted, weight: FontWeight.w500)),
-        const Spacer(),
-        Text(g.next == null ? 'The top of the map' : '${g.toNext} to ${g.next!.title}', style: _cs(11.5, cardMuted, weight: FontWeight.w500)),
-      ]),
-      const SizedBox(height: 8),
-      _FoilBar(value: g.progress),
-    ]);
-  }
-}
-
-extension on String {
-  String ifEmpty(String other) => isEmpty ? other : this;
-}
-
-class _FoilBar extends StatelessWidget {
-  final double value;
-  const _FoilBar({required this.value});
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 6,
-      child: LayoutBuilder(
-        builder: (context, c) => Stack(children: [
-          Container(decoration: BoxDecoration(color: Colors.white.withValues(alpha: .09), borderRadius: BorderRadius.circular(3))),
-          Container(
-            width: math.max(6, c.maxWidth * value.clamp(0, 1)),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [foilLo, foil, foilHi]),
-              borderRadius: BorderRadius.circular(3),
-              boxShadow: [BoxShadow(color: foil.withValues(alpha: .55), blurRadius: 8)],
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-class _CardBack extends StatelessWidget {
-  final Widget child;
-  const _CardBack({required this.child});
-  @override
-  Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Text('WHAT THE BAR SEES', style: _cs(9.5, foil, weight: FontWeight.w700, spacing: 2.2)),
-        const Spacer(),
-        Icon(Ph.arrowsClockwise, size: 14, color: cardMuted),
-      ]),
-      const SizedBox(height: 12),
-      Expanded(child: child),
-    ]);
-  }
-}
-
-/// Small chips for the back of the card.
-class CardChips extends StatelessWidget {
-  final List<(String, bool)> chips;
-  const CardChips(this.chips, {super.key});
-  @override
-  Widget build(BuildContext context) {
-    if (chips.isEmpty) {
-      return Text('Nothing yet — log a few drinks, or add what you love under Taste.', style: _cs(13, cardMuted, weight: FontWeight.w500));
-    }
-    return ClipRect(
-      child: Wrap(spacing: 6, runSpacing: 6, children: [
-        for (final (t, strong) in chips)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-            decoration: BoxDecoration(
-              color: strong ? foil.withValues(alpha: .2) : Colors.white.withValues(alpha: .06),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: strong ? foil.withValues(alpha: .6) : Colors.white.withValues(alpha: .12), width: .8),
-            ),
-            child: Text(t, style: _cs(12, strong ? foilHi : cardInk, weight: strong ? FontWeight.w700 : FontWeight.w500)),
-          ),
-      ]),
-    );
-  }
+  bool shouldRepaint(_EmblemPainter o) => o.index != index || o.locked != locked || o.lockedColor != lockedColor || o.accent != accent;
 }
 
 // ── a progress ring ─────────────────────────────────────────────────────────
@@ -469,39 +174,37 @@ class _RingPainter extends CustomPainter {
 }
 
 // ── this week's quests ──────────────────────────────────────────────────────
-class QuestCard extends StatelessWidget {
+class QuestList extends StatelessWidget {
   final List<QuestState> quests;
-  final int daysLeft;
-  const QuestCard({super.key, required this.quests, required this.daysLeft});
+  const QuestList({super.key, required this.quests});
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    final done = quests.where((q) => q.done).length;
     return Glass(
-      padding: const EdgeInsets.fromLTRB(S.l, S.l, S.l, S.m),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Expanded(child: Text(done == quests.length ? 'All three done.' : '$done of ${quests.length} this week', style: T.serif(bd, size: 22, height: 1.1))),
-          _Pill(daysLeft == 0 ? 'New ones tomorrow' : 'New in $daysLeft ${daysLeft == 1 ? 'day' : 'days'}'),
-        ]),
-        const SizedBox(height: S.s),
-        for (final q in quests)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: S.s),
-            child: Row(children: [
-              ProgressRing(value: q.progress / q.def.target, done: q.done, size: 40, icon: _questIcon(q.def.id)),
-              const SizedBox(width: S.m),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(q.def.title, style: T.sans(bd, size: 15.5, weight: FontWeight.w600, color: q.done ? bd.muted : bd.ink)),
-                  const SizedBox(height: 2),
-                  Text(q.def.target > 1 && !q.done ? '${q.def.line}  ${q.progress}/${q.def.target}' : q.def.line, style: T.caption(bd)),
-                ]),
-              ),
-              const SizedBox(width: S.s),
-              Text(q.done ? 'Done' : '+$milesQuest', style: T.sans(bd, size: 13, weight: FontWeight.w700, color: q.done ? bd.faint : bd.accentText)),
-            ]),
+      padding: const EdgeInsets.symmetric(horizontal: S.l, vertical: S.xs),
+      child: Column(children: [
+        for (var i = 0; i < quests.length; i++) ...[
+          if (i > 0) Container(height: .8, color: bd.line),
+          Semantics(
+            label: '${quests[i].def.title}. ${quests[i].def.line} ${quests[i].done ? 'Done.' : '${quests[i].progress} of ${quests[i].def.target}.'}',
+            excludeSemantics: true,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: S.m),
+              child: Row(children: [
+                ProgressRing(value: quests[i].progress / quests[i].def.target, done: quests[i].done, size: 30, icon: _questIcon(quests[i].def.id)),
+                const SizedBox(width: S.m),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(quests[i].def.title, style: T.sans(bd, size: 15, weight: FontWeight.w500, color: quests[i].done ? bd.muted : bd.ink)),
+                    Text(quests[i].def.line, style: T.caption(bd)),
+                  ]),
+                ),
+                const SizedBox(width: S.s),
+                Text(quests[i].done ? 'done' : '+$milesQuest', style: T.sans(bd, size: 13, weight: FontWeight.w600, color: quests[i].done ? bd.accentText : bd.faint).copyWith(fontFeatures: T.tnum)),
+              ]),
+            ),
           ),
+        ],
       ]),
     );
   }
@@ -619,6 +322,42 @@ class _MotifPainter extends CustomPainter {
   bool shouldRepaint(_MotifPainter o) => o.season != season || o.color != color || o.earned != earned;
 }
 
+/// The season in one line: its motif, its name, stamped or how long it's open.
+class SeasonLine extends StatelessWidget {
+  final SeasonNow season;
+  final VoidCallback onTap;
+  const SeasonLine({super.key, required this.season, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final s = season;
+    final earned = s.earnedOn != null;
+    final line = earned
+        ? 'Stamped with ${s.earnedWith} · ${shortDay(s.earnedOn!)}'
+        : '${s.daysLeft <= 0 ? 'Closes today' : 'Closes in ${s.daysLeft} ${s.daysLeft == 1 ? 'day' : 'days'}'} · try ${s.picks.take(2).join(' or ')}';
+    return Glass(
+      onTap: onTap,
+      semanticLabel: '${s.window.label}. $line',
+      padding: const EdgeInsets.fromLTRB(S.l, S.m, S.m, S.m),
+      child: Row(children: [
+        SeasonMotif(s.window.def.id, size: 40, earned: earned),
+        const SizedBox(width: S.m),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(s.window.label, style: T.serif(bd, size: 19, height: 1.15)),
+            const SizedBox(height: 2),
+            Text(line, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.caption(bd, color: !earned && s.daysLeft <= 14 ? bd.accentText : null)),
+          ]),
+        ),
+        const SizedBox(width: S.s),
+        Text(earned ? 'stamped' : '+$milesSeason', style: T.sans(bd, size: 13, weight: FontWeight.w600, color: earned ? bd.accentText : bd.faint)),
+        const SizedBox(width: S.xs),
+        Icon(Ph.caretRight, size: 15, color: bd.faint),
+      ]),
+    );
+  }
+}
+
 class SeasonCard extends StatelessWidget {
   final SeasonNow season;
   final void Function(String family) onPick;
@@ -706,56 +445,86 @@ class RankRoad extends StatelessWidget {
   }
 }
 
-// ── collections ─────────────────────────────────────────────────────────────
-class CollectionTile extends StatelessWidget {
-  final CollectionState state;
+// ── the taste map ───────────────────────────────────────────────────────────
+/// Every drink family as a square, one row per collection — the mosaic, for
+/// taste. A first taste fills a square; a gilded one glows. Tap a row to open it.
+class TasteMap extends StatelessWidget {
+  final List<CollectionState> collections;
   final Set<String> gilded;
-  final VoidCallback onTap;
-  const CollectionTile({super.key, required this.state, required this.gilded, required this.onTap});
+  final void Function(CollectionState)? onOpen;
+  final bool compact;
+  const TasteMap({super.key, required this.collections, required this.gilded, this.onOpen, this.compact = false});
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    final s = state;
-    return Glass(
-      onTap: onTap,
-      semanticLabel: '${s.collection.title}, ${s.have} of ${s.total}',
-      padding: const EdgeInsets.all(S.m + 2),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(child: Text(s.collection.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 14, weight: FontWeight.w600))),
-          if (s.complete) Icon(PhFill.sealCheck, size: 16, color: bd.accent) else Text('${s.have}/${s.total}', style: T.sans(bd, size: 12.5, weight: FontWeight.w700, color: s.have > 0 ? bd.accentText : bd.faint)),
-        ]),
-        const SizedBox(height: S.m),
-        Wrap(spacing: 5, runSpacing: 5, children: [
-          for (final f in s.collection.families) _Slot(filled: s.tried.containsKey(f), gilded: gilded.contains(f), label: f),
-        ]),
-      ]),
-    );
+    return LayoutBuilder(builder: (context, c) {
+      final label = compact ? 0.0 : 74.0;
+      final count = compact ? 0.0 : 38.0;
+      const gap = 4.0;
+      final most = collections.fold<int>(0, (m, x) => math.max(m, x.total));
+      final cell = ((c.maxWidth - label - count - (most - 1) * gap) / most).clamp(8.0, 22.0);
+      return Column(children: [
+        for (final col in collections)
+          Semantics(
+            button: onOpen != null,
+            label: '${col.collection.title}, ${col.have} of ${col.total}',
+            excludeSemantics: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onOpen == null ? null : () => onOpen!(col),
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: compact ? 2 : 6),
+                child: Row(children: [
+                  if (!compact)
+                    SizedBox(
+                      width: label,
+                      child: Text(shortCollection(col.collection.id), maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 13, color: col.complete ? bd.accentText : bd.muted, weight: col.complete ? FontWeight.w600 : FontWeight.w400)),
+                    ),
+                  for (var i = 0; i < col.collection.families.length; i++) ...[
+                    if (i > 0) const SizedBox(width: gap),
+                    _Square(size: cell, filled: col.tried.containsKey(col.collection.families[i]), gilded: gilded.contains(col.collection.families[i])),
+                  ],
+                  const Spacer(),
+                  if (!compact) Text('${col.have}/${col.total}', style: T.sans(bd, size: 12.5, color: col.have == 0 ? bd.faint : bd.muted).copyWith(fontFeatures: T.tnum)),
+                ]),
+              ),
+            ),
+          ),
+      ]);
+    });
   }
 }
 
-class _Slot extends StatelessWidget {
+/// A collection's name, short enough for a row label.
+String shortCollection(String id) => switch (id) {
+      'coffee' => 'Coffee',
+      'tea' => 'Tea',
+      'zero' => 'Zero proof',
+      'brewery' => 'Beer',
+      'cellar' => 'Wine',
+      'classics' => 'Classics',
+      'long' => 'Long drinks',
+      'backbar' => 'Spirits',
+      _ => id,
+    };
+
+class _Square extends StatelessWidget {
+  final double size;
   final bool filled;
   final bool gilded;
-  final String label;
-  const _Slot({required this.filled, required this.gilded, required this.label});
+  const _Square({required this.size, required this.filled, required this.gilded});
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
     return Container(
-      width: 22,
-      height: 22,
-      alignment: Alignment.center,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        color: filled && !gilded ? bd.accent.withValues(alpha: .85) : null,
-        gradient: filled && gilded ? foilGradient : null,
-        borderRadius: BorderRadius.circular(6),
+        color: filled ? bd.accent.withValues(alpha: gilded ? 1 : .62) : null,
+        borderRadius: BorderRadius.circular(size * .22),
         border: filled ? null : Border.all(color: bd.lineStrong, width: .9),
-        boxShadow: gilded ? [BoxShadow(color: foil.withValues(alpha: .6), blurRadius: 6)] : null,
+        boxShadow: filled && gilded ? [BoxShadow(color: bd.accent.withValues(alpha: .7), blurRadius: size * .5)] : null,
       ),
-      child: gilded && filled
-          ? const Icon(PhFill.sparkle, size: 12, color: Color(0xFF2A1A08))
-          : Text(label.characters.first, style: T.sans(bd, size: 10.5, weight: FontWeight.w700, color: filled ? bd.accentContrast : bd.faint)),
     );
   }
 }
@@ -779,7 +548,7 @@ IconData featIcon(String id) => switch (id) {
 class FeatMedal extends StatelessWidget {
   final FeatState feat;
   final double size;
-  const FeatMedal(this.feat, {super.key, this.size = 60});
+  const FeatMedal(this.feat, {super.key, this.size = 52});
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
@@ -787,19 +556,21 @@ class FeatMedal extends StatelessWidget {
     return Semantics(
       label: '${f.def.title}. ${f.def.line} ${f.earned ? 'Earned ${formatDayLong(f.earnedOn!)}.' : '${f.progress} of ${f.def.target}.'}',
       excludeSemantics: true,
-      child: Column(children: [
-        SizedBox(
-          width: size,
-          height: size,
-          child: CustomPaint(
-            painter: _MedalPainter(f.earned, f.progress / f.def.target, bd.line, bd.accent),
-            child: Center(child: Icon(featIcon(f.def.id), size: size * .38, color: f.earned ? foilHi : bd.faint)),
+      child: SizedBox(
+        width: size + 30,
+        child: Column(children: [
+          SizedBox(
+            width: size,
+            height: size,
+            child: CustomPaint(
+              painter: _MedalPainter(f.earned, f.progress / f.def.target, bd.line, bd.accent),
+              child: Center(child: Icon(featIcon(f.def.id), size: size * .4, color: f.earned ? bd.accentContrast : bd.faint)),
+            ),
           ),
-        ),
-        const SizedBox(height: 6),
-        Text(f.def.title, textAlign: TextAlign.center, maxLines: 2, style: T.sans(bd, size: 12, weight: FontWeight.w600, color: f.earned ? bd.ink : bd.muted, height: 1.2)),
-        Text(f.earned ? shortDay(f.earnedOn!) : '${f.progress}/${f.def.target}', style: T.sans(bd, size: 11, color: f.earned ? bd.accentText : bd.faint)),
-      ]),
+          const SizedBox(height: 6),
+          Text(f.def.title, textAlign: TextAlign.center, maxLines: 2, style: T.sans(bd, size: 11.5, weight: FontWeight.w500, color: f.earned ? bd.ink : bd.muted, height: 1.2)),
+        ]),
+      ),
     );
   }
 }
@@ -814,37 +585,39 @@ class _MedalPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final c = size.center(Offset.zero);
     final r = size.shortestSide / 2;
-    final rect = Offset.zero & size;
     if (earned) {
-      canvas.drawCircle(c, r - 1, Paint()..shader = const RadialGradient(colors: [Color(0xFF3A2A16), Color(0xFF16100A)]).createShader(rect));
-      canvas.drawCircle(
-        c,
-        r - 1.5,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.4
-          ..shader = foilGradient.createShader(rect),
-      );
-      // a ring of tiny ticks, like a coin's edge
-      final tick = Paint()
-        ..strokeWidth = 1
-        ..color = foil.withValues(alpha: .5);
-      for (var i = 0; i < 36; i++) {
-        final a = i * math.pi * 2 / 36;
-        canvas.drawLine(c + Offset(math.cos(a), math.sin(a)) * (r - 6), c + Offset(math.cos(a), math.sin(a)) * (r - 8.5), tick);
-      }
-    } else {
-      final p = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round;
-      canvas.drawCircle(c, r - 1.5, p..color = track);
-      if (progress > 0) canvas.drawArc(Rect.fromCircle(center: c, radius: r - 1.5), -math.pi / 2, math.pi * 2 * progress.clamp(0, 1), false, p..color = accent.withValues(alpha: .8));
+      canvas.drawCircle(c, r - 1, Paint()..color = accent);
+      return;
     }
+    final p = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(c, r - 1.5, p..color = track);
+    if (progress > 0) canvas.drawArc(Rect.fromCircle(center: c, radius: r - 1.5), -math.pi / 2, math.pi * 2 * progress.clamp(0, 1), false, p..color = accent.withValues(alpha: .8));
   }
 
   @override
   bool shouldRepaint(_MedalPainter o) => o.earned != earned || o.progress != progress || o.track != track || o.accent != accent;
+}
+
+/// Feats in a row you can slide — earned first.
+class FeatRow extends StatelessWidget {
+  final List<FeatState> feats;
+  const FeatRow({super.key, required this.feats});
+  @override
+  Widget build(BuildContext context) {
+    final sorted = [...feats.where((f) => f.earned), ...feats.where((f) => !f.earned)];
+    return SizedBox(
+      height: 98,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: sorted.length,
+        separatorBuilder: (_, _) => const SizedBox(width: S.xs),
+        itemBuilder: (_, i) => FeatMedal(sorted[i]),
+      ),
+    );
+  }
 }
 
 // ── the miles ledger and the rules ──────────────────────────────────────────
@@ -866,8 +639,7 @@ class MilesLedger extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  gradient: e.gilded ? foilGradient : null,
-                  color: e.gilded ? null : bd.accent.withValues(alpha: .12),
+                  color: e.gilded ? bd.accent : bd.accent.withValues(alpha: .12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(mileIcon(e.source), size: 16, color: e.gilded ? bd.accentContrast : bd.accentText),
@@ -951,8 +723,8 @@ class UnlockStrip extends StatelessWidget {
           Container(
             width: 34,
             height: 34,
-            decoration: BoxDecoration(gradient: foilGradient, borderRadius: BorderRadius.circular(10), boxShadow: gild ? [BoxShadow(color: foil.withValues(alpha: .7), blurRadius: 10)] : null),
-            child: Icon(u.rankUp != null ? PhFill.crown : (gild ? PhFill.sparkle : (u.events.isNotEmpty ? mileIcon(u.events.first.source) : PhFill.star)), size: 17, color: const Color(0xFF1A130B)),
+            decoration: BoxDecoration(color: bd.accent, borderRadius: BorderRadius.circular(10), boxShadow: gild ? [BoxShadow(color: bd.accent.withValues(alpha: .7), blurRadius: 10)] : null),
+            child: Icon(u.rankUp != null ? PhFill.crown : (gild ? PhFill.sparkle : (u.events.isNotEmpty ? mileIcon(u.events.first.source) : PhFill.star)), size: 17, color: bd.accentContrast),
           ),
           const SizedBox(width: S.m),
           Expanded(
@@ -987,90 +759,118 @@ Future<void> showRankUp(BuildContext context, Rank rank) => showBdSheet<void>(
       },
     );
 
-// ── the passport on the calendar ────────────────────────────────────────────
-/// A slim version of the card for the calendar: rank, miles, the bar, then what
-/// this month (or year) added and what's open this week.
-class PassportMini extends StatelessWidget {
-  final PassportGame game;
-  final String period;
-  final Widget stamps;
-  final int stampCount;
-  final VoidCallback onTap;
-  const PassportMini({super.key, required this.game, required this.period, required this.stamps, required this.stampCount, required this.onTap});
+// ── a thin line to the next rank ────────────────────────────────────────────
+class RankLine extends StatelessWidget {
+  final double value;
+  const RankLine(this.value, {super.key});
   @override
   Widget build(BuildContext context) {
-    final g = game;
-    final questsDone = g.quests.where((q) => q.done).length;
-    final s = g.season;
-    return Semantics(
-      button: true,
-      label: 'Taste passport. ${g.rank.title}, ${g.miles} miles. $stampCount stamps in $period. $questsDone of ${g.quests.length} quests this week.',
-      excludeSemantics: true,
-      child: Pressable(
-        onTap: onTap,
-        child: _CardShell(
-          sheen: 0,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Row(children: [
-              RankEmblem(g.rank.index, size: 46),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(g.rank.title, style: T.rawSerif(24, cardInk, height: 1)),
-                  const SizedBox(height: 3),
-                  Text(g.next == null ? '${g.miles} miles · the top of the map' : '${g.miles} miles · ${g.toNext} to ${g.next!.title}', style: _cs(11.5, cardMuted, weight: FontWeight.w500)),
-                ]),
-              ),
-              const Icon(Ph.caretRight, size: 16, color: cardMuted),
-            ]),
-            const SizedBox(height: 12),
-            _FoilBar(value: g.progress),
-            const SizedBox(height: 14),
-            Row(children: [
-              Text(period.toUpperCase(), style: _cs(9.5, foil, weight: FontWeight.w700, spacing: 1.8)),
-              const Spacer(),
-              Text(stampCount == 0 ? 'no stamps yet' : '$stampCount ${stampCount == 1 ? 'stamp' : 'stamps'}', style: _cs(11, cardMuted, weight: FontWeight.w500)),
-            ]),
-            const SizedBox(height: 8),
-            stamps,
-            const SizedBox(height: 12),
-            Row(children: [
-              _MiniTag(icon: Ph.target, text: 'Quests $questsDone/${g.quests.length}'),
-              const SizedBox(width: 6),
-              Flexible(
-                child: _MiniTag(
-                  icon: Ph.sun,
-                  text: s.earnedOn != null ? '${s.window.def.title} stamped' : '${s.window.def.title} · ${s.daysLeft <= 0 ? 'closes today' : '${s.daysLeft}d left'}',
-                  strong: s.earnedOn == null && s.daysLeft <= 14,
-                ),
-              ),
-            ]),
-          ]),
-        ),
+    final bd = context.bd;
+    return SizedBox(
+      height: 3,
+      child: LayoutBuilder(
+        builder: (context, c) => Stack(children: [
+          Container(decoration: BoxDecoration(color: bd.line, borderRadius: BorderRadius.circular(2))),
+          Container(width: (c.maxWidth * value.clamp(0, 1)).clamp(3.0, c.maxWidth), decoration: BoxDecoration(color: bd.accent, borderRadius: BorderRadius.circular(2))),
+        ]),
       ),
     );
   }
 }
 
-class _MiniTag extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  final bool strong;
-  const _MiniTag({required this.icon, required this.text, this.strong = false});
+// ── the passport on the calendar ────────────────────────────────────────────
+/// The calendar's glance at the passport: rank and miles, the line to the next
+/// rank, and one line of what this month added and what's open this week.
+class PassportMini extends StatelessWidget {
+  final PassportGame game;
+  final String period;
+  final int stampCount;
+  final VoidCallback onTap;
+  const PassportMini({super.key, required this.game, required this.period, required this.stampCount, required this.onTap});
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: strong ? foil.withValues(alpha: .16) : Colors.white.withValues(alpha: .06),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: strong ? foil.withValues(alpha: .5) : Colors.white.withValues(alpha: .1), width: .8),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 12, color: strong ? foilHi : cardMuted),
-        const SizedBox(width: 5),
-        Flexible(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: _cs(11.5, strong ? foilHi : cardInk, weight: FontWeight.w600))),
+    final bd = context.bd;
+    final g = game;
+    final questsDone = g.quests.where((q) => q.done).length;
+    final s = g.season;
+    return Glass(
+      onTap: onTap,
+      semanticLabel: 'Taste passport. ${g.rank.title}, ${g.miles} miles. $stampCount stamps in $period. $questsDone of ${g.quests.length} quests this week.',
+      padding: const EdgeInsets.all(S.l),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          RankEmblem(g.rank.index, size: 40),
+          const SizedBox(width: S.m),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(g.rank.title, style: T.serif(bd, size: 22, height: 1.05)),
+              const SizedBox(height: 2),
+              Text(g.next == null ? '${g.miles} miles' : '${g.miles} miles · ${g.toNext} to ${g.next!.title}', style: T.caption(bd)),
+            ]),
+          ),
+          Icon(Ph.caretRight, size: 16, color: bd.faint),
+        ]),
+        const SizedBox(height: S.m),
+        RankLine(g.progress),
+        const SizedBox(height: S.m),
+        Text(
+          [
+            '${g.families} of ${g.collections.fold<int>(0, (a, c) => a + c.total)} tastes',
+            stampCount == 0 ? 'no stamps in $period yet' : '$stampCount ${stampCount == 1 ? 'stamp' : 'stamps'} in $period',
+            'quests $questsDone/${g.quests.length}',
+            if (s.earnedOn == null && s.daysLeft <= 14) '${s.window.def.title} closes in ${s.daysLeft}d',
+          ].join(' · '),
+          style: T.caption(bd),
+        ),
       ]),
+    );
+  }
+}
+
+// ── the share poster ────────────────────────────────────────────────────────
+/// What you share: your name, your rank, your taste map. Drawn in the dark theme's
+/// colours whatever the phone is set to, so it looks the same everywhere.
+class PassportPoster extends StatelessWidget {
+  final PassportGame game;
+  final String? name;
+  const PassportPoster({super.key, required this.game, this.name});
+  @override
+  Widget build(BuildContext context) {
+    final g = game;
+    final dark = Theme.of(context).copyWith(extensions: const [BD.darkTokens]);
+    return Theme(
+      data: dark,
+      child: Builder(builder: (context) {
+        final bd = context.bd;
+        return Container(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(center: const Alignment(-.8, -1), radius: 1.4, colors: [bd.accent.withValues(alpha: .18), bd.base], stops: const [0, .7]),
+            color: bd.base,
+          ),
+          padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              Text('TASTE PASSPORT', style: T.label(bd, color: bd.accentText)),
+              const Spacer(),
+              Text('brewdiary', style: T.serif(bd, size: 16, italic: true, color: bd.muted)),
+            ]),
+            const SizedBox(height: 26),
+            Row(children: [
+              Expanded(child: Text((name ?? '').trim().isEmpty ? 'My passport' : name!.trim(), maxLines: 1, overflow: TextOverflow.ellipsis, style: T.serif(bd, size: 40, height: 1))),
+              RankEmblem(g.rank.index, size: 46),
+            ]),
+            const SizedBox(height: 6),
+            Text.rich(TextSpan(children: [
+              TextSpan(text: g.rank.title, style: T.serif(bd, size: 20, italic: true, color: bd.accentText)),
+              TextSpan(text: '  ·  ${g.miles} miles  ·  ${g.families} tastes', style: T.sans(bd, size: 14, color: bd.muted)),
+            ])),
+            const SizedBox(height: 24),
+            TasteMap(collections: g.collections, gilded: g.gilded),
+            const SizedBox(height: 18),
+            Text('Miles for range, never rounds.', style: T.caption(bd)),
+          ]),
+        );
+      }),
     );
   }
 }

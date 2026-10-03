@@ -289,26 +289,7 @@ class _PassportStrip extends StatelessWidget {
     void open() => showTasteCard(context, open: id);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SectionHeader('Passport', action: 'Open', onAction: open),
-      PassportMini(
-        game: passportGame(entries),
-        period: title,
-        stampCount: stamps.length,
-        onTap: open,
-        stamps: stamps.isEmpty
-            ? Text(
-                entries.isEmpty ? 'Your first log is your first stamp.' : 'Somewhere new, something you have never had, or a dry night — each one is a stamp.',
-                style: T.rawSans(12.5, cardMuted),
-              )
-            : SizedBox(
-                height: 64,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: stamps.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 6),
-                  itemBuilder: (_, i) => Center(child: VisaStampMark(stamps[stamps.length - 1 - i], scale: .62)),
-                ),
-              ),
-      ),
+      PassportMini(game: passportGame(entries), period: title, stampCount: stamps.length, onTap: open),
       if (yearView) ...[
         const SizedBox(height: S.l),
         _YearStrip(year: year, entries: entries),
