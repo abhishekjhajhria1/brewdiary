@@ -7,11 +7,13 @@ import 'dart:io';
 
 import 'package:brewdiary/app.dart';
 import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary/data/auth.dart';
 import 'package:brewdiary/data/circles.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/data/friends.dart';
 import 'package:brewdiary/data/parties.dart';
 import 'package:brewdiary/data/plans.dart';
+import 'package:brewdiary/ui/screens/circles_section.dart';
 import 'package:brewdiary/ui/screens/menu_screen.dart';
 import 'package:brewdiary/ui/screens/party_screens.dart';
 import 'package:brewdiary/ui/screens/photo_studio.dart';
@@ -145,6 +147,20 @@ void main() {
               parties: [Party(id: 'p1', name: 'Friday tasting', hostId: 'u2', venue: 'Bar Termini', date: todayKey(), inviteCode: 'FRI-7KQ2', going: 4)],
               plans: [MyPlan(id: 'pl2', title: 'Sunday coffee crawl', date: toKey(addDays(testNow, 2)), time: '10:00', city: 'Bandra', drinks: const [], vibeTags: const [], joinPolicy: JoinPolicy.fof, status: PlanStatus.open, going: 2, pending: 1)],
               compete: true,
+              circles: const [Circle(id: 'c1', name: 'The Bandra lot', createdBy: 'u2', inviteCode: 'BND-4KX', memberCount: 4), Circle(id: 'c2', name: 'Coffee people', createdBy: 'u3', inviteCode: 'COF-9QA', memberCount: 3)],
+              circle: CirclePreview(
+                detail: CircleDetail(
+                  [CircleMember(auth.meId ?? 'me', 'sekhi', 'Sekhi'), const CircleMember('u2', 'mira', 'Mira'), const CircleMember('u3', 'arjun', 'Arjun'), const CircleMember('u4', 'kabir', 'Kabir')],
+                  [
+                    SharedEntry(id: 's1', userId: 'u2', authorName: 'Mira', date: todayKey(), createdAt: _iso(21), drink: 'Mezcal Negroni', mood: 'smoky', venue: 'Soka, Bandra'),
+                    SharedEntry(id: 's2', userId: auth.meId ?? 'me', authorName: 'Sekhi', date: toKey(addDays(testNow, -1)), createdAt: _iso(19), drink: 'Paloma', mood: 'bright'),
+                    SharedEntry(id: 's3', userId: 'u4', authorName: 'Kabir', date: toKey(addDays(testNow, -2)), createdAt: _iso(20), drink: 'Hazy IPA'),
+                  ],
+                ),
+                challenges: [Challenge(id: 'ch1', circleId: 'c1', createdBy: 'u2', kind: ChallengeKind.newDrinks, title: 'Try something new', startsOn: toKey(addDays(testNow, -5)), endsOn: toKey(addDays(testNow, 9)), participantIds: [auth.meId ?? 'me', 'u2', 'u4'])],
+                boards: {'ch1': [const BoardRow('u2', 'Mira', 4), BoardRow(auth.meId ?? 'me', 'Sekhi', 3), const BoardRow('u4', 'Kabir', 1)]},
+              ),
+              board: [const PointRow('u2', 'Mira', 12, 4), PointRow(auth.meId ?? 'me', 'Sekhi', 9, 2), const PointRow('u3', 'Arjun', 4, 0)],
             ),
           ),
         ),
@@ -163,6 +179,27 @@ void main() {
     await t.tap(find.text('BOARD'));
     await t.pumpAndSettle();
     await _shot(t, 's23_together_board_tab');
+    await t.tap(find.text('PARTIES'));
+    await t.pumpAndSettle();
+    await _shot(t, 's24_together_parties');
+    await t.tap(find.text('CIRCLES'));
+    await t.pumpAndSettle();
+    await _shot(t, 's25_together_circles');
+    await t.tap(find.bySemanticsLabel(RegExp(r'^The Bandra lot')));
+    await t.pumpAndSettle();
+    await _shot(t, 's26_circle');
+    await t.drag(find.byType(Scrollable).first, const Offset(0, -500));
+    await t.pumpAndSettle();
+    await _shot(t, 's27_circle_challenges');
+    navigatorKey.currentState!.pop();
+    await t.pumpAndSettle();
+    await t.tap(find.text('FEED'));
+    await t.pumpAndSettle();
+    await t.tap(find.bySemanticsLabel(RegExp(r'^Mira, @mira')));
+    await t.pumpAndSettle();
+    await t.drag(find.byType(Scrollable).last, const Offset(0, -300));
+    await t.pumpAndSettle();
+    await _shot(t, 's28_friend_sheet');
   });
 
   _tourTest('feed + plan cards (sample data)', (t) async {

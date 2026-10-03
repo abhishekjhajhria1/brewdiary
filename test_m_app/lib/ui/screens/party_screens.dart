@@ -228,12 +228,8 @@ class _PartyLog extends StatelessWidget {
         ]),
       ),
       const SectionHeader('Who poured what'),
-      Group(children: [
-        for (final e in entries)
-          GroupTile(
-            title: e.mood == null ? e.drink : '${e.drink} · ${e.mood}',
-            subtitle: '${e.userId == me ? 'you' : e.authorName} · ${timeOfDayLabel(e.createdAt).toLowerCase()}',
-          ),
+      PourList([
+        for (final e in entries) PourRow(author: e.authorName, drink: e.drink, mood: e.mood, meta: '${e.userId == me ? 'you' : e.authorName} · ${timeOfDayLabel(e.createdAt).toLowerCase()}'),
       ]),
       if (moodList.isNotEmpty) ...[
         const SectionHeader('How it felt'),
@@ -328,6 +324,7 @@ class _PointsBoardState extends State<_PointsBoard> {
                   sparks: rows[i].sparks,
                   vibe: rows[i].vibe,
                   leads: rows[i].sparks > 0 && rows[i].sparks == top,
+                  top: top,
                   trailing: rows[i].isMe ? null : TextAction('Vibe', accent: _openVibe == rows[i].id, onTap: () => setState(() => _openVibe = _openVibe == rows[i].id ? null : rows[i].id)),
                 ),
                 if (_openVibe == rows[i].id)
