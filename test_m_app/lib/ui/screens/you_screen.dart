@@ -12,11 +12,13 @@ import 'package:brewdiary_core/derive.dart';
 import 'package:brewdiary_core/game.dart';
 import 'package:brewdiary_core/drinks.dart';
 import 'package:brewdiary_core/types.dart';
+import '../../data/auth.dart';
 import '../../data/entries.dart';
 import '../../data/settings.dart';
 import '../../data/wishlist.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/game.dart' show RankEmblem;
 import '../widgets/moments.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
@@ -78,6 +80,8 @@ class _YouScreenState extends State<YouScreen> {
           titleNote: '${s.longest} night best',
           onRefresh: entryStore.reload,
           children: [
+            _Identity(entries: entries),
+            const SizedBox(height: S.m),
             StreakStrip(stats: s, nights: loggedDates(entryStore.entries).length),
             _BalanceCard(entries: entries),
             if (yr.total > 0) ...[
@@ -139,19 +143,6 @@ class _YouScreenState extends State<YouScreen> {
             const _Pantry(),
             const SizedBox(height: S.m),
             _JourneyTile(entries: entries),
-            const SizedBox(height: S.m),
-            Group(children: [
-              GroupTile(
-                icon: Ph.identificationBadge,
-                title: 'Your taste passport',
-                subtitle: () {
-                  final g = passportGame(entries);
-                  return '${g.rank.title} · ${g.miles} miles · quests ${g.quests.where((q) => q.done).length}/${g.quests.length} this week';
-                }(),
-                chevron: true,
-                onTap: () => showTasteCard(context),
-              ),
-            ]),
             SectionHeader('History', trailing: Text('${filtered.length}', style: T.caption(bd).copyWith(fontFeatures: T.tnum))),
             GlassField(
               controller: _query,
@@ -483,5 +474,53 @@ class _JourneyTile extends StatelessWidget {
         }),
       ),
     ]);
+  }
+}
+
+/// Who this diary belongs to — your initial, name and handle, and your passport
+/// rank. Tap it for the passport.
+class _Identity extends StatelessWidget {
+  final List<Entry> entries;
+  const _Identity({required this.entries});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final p = auth.profile;
+    final g = passportGame(entries);
+    final name = (p?.name.trim().isNotEmpty ?? false) ? p!.name.trim() : 'Your diary';
+    String? since;
+    if (entries.isNotEmpty) {
+      final d = parseKey(entries.map((e) => e.date).reduce((a, b) => a.compareTo(b) < 0 ? a : b));
+      since = 'since ${monthNames[d.month - 1].substring(0, 3)} ${d.year}';
+    }
+    final line = [if ((p?.handle ?? '').isNotEmpty) '@${p!.handle}' else 'on this phone', ?since].join(' · ');
+    return Glass(
+      onTap: () => showTasteCard(context),
+      semanticLabel: '$name, $line. Taste passport: ${g.rank.title}, ${g.miles} miles',
+      padding: const EdgeInsets.all(S.l),
+      child: Row(children: [
+        Container(
+          width: 56,
+          height: 56,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: bd.accent.withValues(alpha: .16), border: Border.all(color: bd.accent.withValues(alpha: .45))),
+          child: Text(name.characters.first.toUpperCase(), style: T.serif(bd, size: 26, color: bd.accentText)),
+        ),
+        const SizedBox(width: S.m),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.serif(bd, size: 24, height: 1.1)),
+            const SizedBox(height: 3),
+            Text(line, maxLines: 2, overflow: TextOverflow.ellipsis, style: T.caption(bd)),
+          ]),
+        ),
+        const SizedBox(width: S.s),
+        Column(children: [
+          RankEmblem(g.rank.index, size: 38),
+          const SizedBox(height: 4),
+          Text(g.rank.title, style: T.sans(bd, size: 11, weight: FontWeight.w600, color: bd.accentText)),
+        ]),
+      ]),
+    );
   }
 }

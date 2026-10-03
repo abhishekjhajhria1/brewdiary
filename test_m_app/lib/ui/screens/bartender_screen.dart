@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:brewdiary_core/bartender.dart';
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/types.dart';
 import '../../data/auth.dart';
 import '../../data/bartender_api.dart';
 import '../../data/chats.dart';
@@ -217,6 +218,30 @@ class _BartenderScreenState extends State<BartenderScreen> {
         Semantics(header: true, child: Text(ninkasiName, style: T.largeTitle(bd))),
         const SizedBox(height: S.s),
         Text("Mistress of the bar, named for the goddess who brewed for the gods. Tell her the mood — she knows what you've been pouring.", style: T.bodyMuted(bd)),
+        const SizedBox(height: S.xl),
+        _SheKnows(entries: entryStore.entries),
+        if (ChatStore.instance.chats.isNotEmpty) ...[
+          const SizedBox(height: S.m),
+          () {
+            final last = ChatStore.instance.chats.first;
+            return Glass(
+              onTap: () => _openChat(last),
+              semanticLabel: 'Pick up where you left off: ${last.title}',
+              padding: const EdgeInsets.fromLTRB(S.l, S.m, S.m, S.m),
+              child: Row(children: [
+                Icon(Ph.chatsCircle, size: 20, color: bd.accentText),
+                const SizedBox(width: S.m),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Pick up where you left off', style: T.caption(bd)),
+                    Text(last.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.row(bd)),
+                  ]),
+                ),
+                Icon(Ph.caretRight, size: 16, color: bd.faint),
+              ]),
+            );
+          }(),
+        ],
         const SectionHeader('Try asking', padding: EdgeInsets.only(top: S.x3, bottom: S.m)),
         // The website's starters: glass pills, one tap to ask.
         Wrap(spacing: S.s, runSpacing: S.s, children: [
@@ -417,6 +442,49 @@ class _ChatList extends StatelessWidget {
           Text('Kept on this phone. They also go into your diary book.', style: T.caption(bd)),
         ]);
       },
+    );
+  }
+}
+
+/// What Ninkasi has to go on — said out loud, so her suggestions never feel like
+/// a trick. Only what the app sends her: recent drinks, your palate, your bar.
+class _SheKnows extends StatelessWidget {
+  final List<Entry> entries;
+  const _SheKnows({required this.entries});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final recent = recentDrinks(entries, 3);
+    final notes = [for (final n in palate(entries).take(3)) n.note];
+    final bar = PantryStore.instance.items;
+    final rows = <(String, String)>[
+      if (recent.isNotEmpty) ('Lately', recent.join(', ')),
+      if (notes.isNotEmpty) ('Your palate', notes.join(', ')),
+      if (bar.isNotEmpty) ('At home', bar.length <= 3 ? bar.join(', ') : '${bar.take(3).join(', ')} +${bar.length - 3}'),
+    ];
+    if (rows.isEmpty) {
+      return Text('Log a few drinks and she will pour from what you like.', style: T.caption(bd));
+    }
+    return Glass(
+      padding: const EdgeInsets.fromLTRB(S.l, S.m, S.l, S.m),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('SHE KNOWS', style: T.label(bd, color: bd.accentText)),
+        const SizedBox(height: S.s),
+        for (final r in rows)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(width: 92, child: Text(r.$1, style: T.sans(bd, size: 13.5, color: bd.muted))),
+              Expanded(child: Text(r.$2, style: T.sans(bd, size: 14.5))),
+            ]),
+          ),
+        const SizedBox(height: S.s),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Ph.lock, size: 12, color: bd.faint)),
+          const SizedBox(width: 6),
+          Expanded(child: Text('From your diary — never your notes or places.', style: T.caption(bd))),
+        ]),
+      ]),
     );
   }
 }

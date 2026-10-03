@@ -124,7 +124,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         )
       else
         YearMosaic(year: now.year, counts: counts, onSelect: (k) => _open(k, planDays)),
-      if (entries.isEmpty) const EmptyNote('Tap a day to log your first drink — a coffee counts.', icon: Ph.handTap),
+      if (entries.isEmpty) const EmptyNote('Tap a day to log your first drink — a coffee counts.', icon: Ph.handTap) else _Glance(stats: s, nights: loggedDates(entries).length),
       _PassportStrip(year: month ? _y : now.year, month0: month ? _m : null),
       const SizedBox(height: S.xxl),
       if (morningAfterWorthOffering(now)) ...[
@@ -179,8 +179,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         const SizedBox(height: S.m),
       ],
-      StreakStrip(stats: s, nights: loggedDates(entryStore.entries).length),
-      if (!month) ...[const SizedBox(height: S.m), const AchievementTile()],
+      if (!month) ...[const AchievementTile(), const SizedBox(height: S.m)],
       if (month && ExtrasStore.instance.enabledCounters.isNotEmpty) ...[
         const SectionHeader('Today'),
         DayCounters(dateKey: todayKey()),
@@ -240,6 +239,40 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
 /// The taste passport for what you're looking at: this month's visa page under
 /// the month grid, the year's under the mosaic. Tap to open the whole book there.
+/// The glance under the calendar: the streak, the nights you kept, the kinds —
+/// one quiet line instead of a card (the full meter lives in You).
+class _Glance extends StatelessWidget {
+  final Stats stats;
+  final int nights;
+  const _Glance({required this.stats, required this.nights});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    Widget item(int n, String label, {bool accent = false}) => Expanded(
+          child: Column(children: [
+            Text('$n', style: T.serif(bd, size: 24, height: 1, color: accent ? bd.accentText : bd.ink).copyWith(fontFeatures: T.tnum)),
+            const SizedBox(height: 4),
+            Text(label, textAlign: TextAlign.center, style: T.sans(bd, size: 11.5, color: bd.muted)),
+          ]),
+        );
+    Widget rule() => Container(width: .8, height: 26, color: bd.line);
+    return Semantics(
+      label: '${stats.current} night streak, $nights nights kept, ${stats.kinds} kinds',
+      excludeSemantics: true,
+      child: Padding(
+        padding: const EdgeInsets.only(top: S.l, bottom: S.xs),
+        child: Row(children: [
+          item(stats.current, 'night streak', accent: true),
+          rule(),
+          item(nights, 'nights kept'),
+          rule(),
+          item(stats.kinds, 'kinds'),
+        ]),
+      ),
+    );
+  }
+}
+
 class _PassportStrip extends StatelessWidget {
   final int year;
   final int? month0; // null = the whole year
