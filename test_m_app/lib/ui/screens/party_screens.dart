@@ -95,7 +95,7 @@ class PartyBody extends StatelessWidget {
       ),
 
       if (mine && pending.isNotEmpty) ...[
-        SectionHeader('Asking to join', trailing: Text('${pending.length}', style: T.caption(bd))),
+        SectionHeader('Requests to join', trailing: Text('${pending.length}', style: T.caption(bd))),
         Group(children: [
           for (final g in pending)
             Padding(
@@ -139,7 +139,7 @@ class PartyBody extends StatelessWidget {
             },
           ),
           const SizedBox(height: S.m),
-          InviteCodeCard(label: 'Invite with the code', code: party.inviteCode, shareText: "You're invited to ${party.name} — ${Config.siteUrl}/p/${party.inviteCode}"),
+          InviteCodeCard(label: 'Invite with the code', code: party.inviteCode, link: '${Config.siteUrl}/p/${party.inviteCode}', shareText: "You're invited to ${party.name} — ${Config.siteUrl}/p/${party.inviteCode}"),
         ],
         SectionHeader(past ? 'Who came' : "Who's coming", trailing: coming.isEmpty ? null : Text('${coming.length}', style: T.caption(bd))),
         if (coming.isEmpty && maybes.isEmpty)

@@ -15,7 +15,10 @@ class InviteCodeCard extends StatelessWidget {
   final String label;
   final String code;
   final String? shareText;
-  const InviteCodeCard({super.key, this.label = 'Invite code', required this.code, this.shareText});
+
+  /// The invite as a link (the website's "Copy link").
+  final String? link;
+  const InviteCodeCard({super.key, this.label = 'Invite code', required this.code, this.shareText, this.link});
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +39,11 @@ class InviteCodeCard extends StatelessWidget {
           Clipboard.setData(ClipboardData(text: code));
           toast(context, 'Code copied');
         }),
+        if (link != null)
+          IconBtn(Ph.linkSimple, tooltip: 'Copy the link', color: bd.muted, onTap: () {
+            Clipboard.setData(ClipboardData(text: link!));
+            toast(context, 'Link copied');
+          }),
         if (shareText != null) IconBtn(Ph.shareNetwork, tooltip: 'Share the invite', color: bd.muted, onTap: () => SharePlus.instance.share(ShareParams(text: shareText!))),
       ]),
     );

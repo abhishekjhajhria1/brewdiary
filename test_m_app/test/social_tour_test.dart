@@ -110,17 +110,13 @@ void main() {
     await _boot(t);
     await _push(t, const Ambient(child: Scaffold(backgroundColor: Colors.transparent, body: TogetherScreen())));
     await _shot(t, 's1_together_empty');
-    await t.tap(find.bySemanticsLabel(RegExp(r'^Plan a night')));
+    await t.tap(find.text('PLANS'));
     await t.pumpAndSettle();
     await _shot(t, 's2_plans_empty');
-    navigatorKey.currentState!.pop();
-    await t.pumpAndSettle();
-    await t.tap(find.bySemanticsLabel(RegExp(r'^Circles\.')));
+    await t.tap(find.text('CIRCLES'));
     await t.pumpAndSettle();
     await _shot(t, 's3_circles_empty');
-    navigatorKey.currentState!.pop();
-    await t.pumpAndSettle();
-    await t.tap(find.bySemanticsLabel(RegExp(r'^Host a night')));
+    await t.tap(find.text('PARTIES'));
     await t.pumpAndSettle();
     await _shot(t, 's4_parties_empty');
     await t.tap(find.text('Host one'));
@@ -148,6 +144,7 @@ void main() {
               feed: feed,
               parties: [Party(id: 'p1', name: 'Friday tasting', hostId: 'u2', venue: 'Bar Termini', date: todayKey(), inviteCode: 'FRI-7KQ2', going: 4)],
               plans: [MyPlan(id: 'pl2', title: 'Sunday coffee crawl', date: toKey(addDays(testNow, 2)), time: '10:00', city: 'Bandra', drinks: const [], vibeTags: const [], joinPolicy: JoinPolicy.fof, status: PlanStatus.open, going: 2, pending: 1)],
+              compete: true,
             ),
           ),
         ),
@@ -161,6 +158,11 @@ void main() {
     await t.drag(list, const Offset(0, -600));
     await t.pumpAndSettle();
     await _shot(t, 's22_together_feed');
+    await t.drag(list, const Offset(0, 4000));
+    await t.pumpAndSettle();
+    await t.tap(find.text('BOARD'));
+    await t.pumpAndSettle();
+    await _shot(t, 's23_together_board_tab');
   });
 
   _tourTest('feed + plan cards (sample data)', (t) async {

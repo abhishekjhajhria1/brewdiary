@@ -59,7 +59,13 @@ class TogetherScreen extends StatefulWidget {
   State<TogetherScreen> createState() => _TogetherScreenState();
 }
 
+enum _Room { feed, plans, circles, parties, board }
+
+const _roomLabel = {_Room.feed: 'Feed', _Room.plans: 'Plans', _Room.circles: 'Circles', _Room.parties: 'Parties', _Room.board: 'Board'};
+
 class _TogetherScreenState extends State<TogetherScreen> {
+  _Room _room = _Room.feed;
+
   @override
   void initState() {
     super.initState();
@@ -104,41 +110,85 @@ class _TogetherScreenState extends State<TogetherScreen> {
     );
   }
 
+  // Laid out like the website's Together: the title with the friend count, the
+  // rooms as tabs (Feed · Plans · Circles · Parties, and Board for people who
+  // switched the leaderboard on), and Split as a quiet link at the foot.
   Widget _page(_Data? data, {required bool loading}) {
     final bd = context.bd;
     final friends = data?.friends ?? const <SocialProfile>[];
     final feed = data?.feed ?? const <FeedEntry>[];
-    final today = todayKey();
-    final out = {for (final f in feed) if (f.date == today) f.userId};
+    final rooms = [_Room.feed, _Room.plans, _Room.circles, _Room.parties, if (data?.compete ?? false) _Room.board];
+    final room = rooms.contains(_room) ? _room : _Room.feed;
     return ScrollPage(
       title: 'Together',
       titleNote: data == null ? null : '${friends.length} ${friends.length == 1 ? 'friend' : 'friends'}',
-      actions: [IconBtn(Ph.userPlus, tooltip: 'Add a friend', onTap: () => showAddFriend(context))],
+      subtitle: 'Your calendar stays yours and quiet. This is the other room — what friends are pouring.',
       onRefresh: _refresh,
       children: [
-        if (widget.preview == null) const _Requests(),
-        _FriendsRail(friends: friends, outTonight: out, loading: loading),
-        if (!loading && friends.length < 3) ...[const SizedBox(height: S.l), _InviteCard(friends: friends.length)],
-        const SectionHeader('Do something together'),
-        _Actions(compete: data?.compete ?? false),
-        if (data != null) _Happening(parties: data.parties, plans: data.plans),
-        if (friends.isNotEmpty) ...[
-          SectionHeader('Their week', trailing: Text('what friends shared', style: T.caption(bd))),
-          _FriendsWeek(friends: friends, feed: feed),
-        ],
-        _FriendPicks(feed: feed),
-        SectionHeader('Feed', trailing: feed.isEmpty ? null : Text('${feed.length} ${feed.length == 1 ? 'pour' : 'pours'}', style: T.caption(bd))),
-        if (loading)
-          const Column(children: [Skeleton(height: 132), SizedBox(height: S.m), Skeleton(height: 132)])
-        else if (feed.isEmpty)
-          _QuietFeed(hasFriends: friends.isNotEmpty)
-        else
-          for (var i = 0; i < feed.length; i++) ...[
-            if (i > 0) const SizedBox(height: S.m),
-            FeedCard(item: feed[i]),
-          ],
+        Segmented<_Room>(
+          options: [for (final r in rooms) (r, _roomLabel[r]!)],
+          value: room,
+          onChanged: (r) => setState(() => _room = r),
+        ),
+        const SizedBox(height: S.xs),
+        switch (room) {
+          _Room.feed => _feedRoom(data, friends, feed, loading: loading),
+          _Room.plans => const PlansSection(),
+          _Room.circles => const CirclesSection(),
+          _Room.parties => const PartiesSection(),
+          _Room.board => const _FriendsBoard(),
+        },
+        const SizedBox(height: S.x3),
+        // The website's foot: a hairline, a sentence, and "Split →".
+        Semantics(
+          button: true,
+          label: 'Split a tab or a round with friends',
+          excludeSemantics: true,
+          child: Pressable(
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SplitScreen())),
+            child: Container(
+              padding: const EdgeInsets.only(top: S.l, bottom: S.m),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: bd.line, width: .8))),
+              child: Row(children: [
+                Expanded(child: Text('Split a tab or a round with friends', style: T.body(bd, color: bd.muted))),
+                Text('Split →', style: T.sans(bd, size: 14, weight: FontWeight.w600, color: bd.accentText)),
+              ]),
+            ),
+          ),
+        ),
       ],
     );
+  }
+
+  /// The feed room: requests, your people (a ring on anyone who shared today),
+  /// an invite until you have three, what's coming up, their week, picks to try,
+  /// then the feed itself.
+  Widget _feedRoom(_Data? data, List<SocialProfile> friends, List<FeedEntry> feed, {required bool loading}) {
+    final bd = context.bd;
+    final today = todayKey();
+    final out = {for (final f in feed) if (f.date == today) f.userId};
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const SizedBox(height: S.l),
+      if (widget.preview == null) const _Requests(),
+      _FriendsRail(friends: friends, outTonight: out, loading: loading),
+      if (!loading && friends.length < 3) ...[const SizedBox(height: S.l), _InviteCard(friends: friends.length)],
+      if (data != null) _Happening(parties: data.parties, plans: data.plans),
+      if (friends.isNotEmpty) ...[
+        SectionHeader('Their week', trailing: Text('what friends shared', style: T.caption(bd))),
+        _FriendsWeek(friends: friends, feed: feed),
+      ],
+      _FriendPicks(feed: feed),
+      SectionHeader('Feed', trailing: feed.isEmpty ? null : Text('${feed.length} ${feed.length == 1 ? 'pour' : 'pours'}', style: T.caption(bd))),
+      if (loading)
+        const Column(children: [Skeleton(height: 132), SizedBox(height: S.m), Skeleton(height: 132)])
+      else if (feed.isEmpty)
+        _QuietFeed(hasFriends: friends.isNotEmpty)
+      else
+        for (var i = 0; i < feed.length; i++) ...[
+          if (i > 0) const SizedBox(height: S.m),
+          FeedCard(item: feed[i]),
+        ],
+    ]);
   }
 }
 
@@ -292,86 +342,6 @@ class _Dots3 extends StatelessWidget {
             child: i < filled ? Icon(Ph.check, size: 14, color: bd.accentContrast) : null,
           ),
       ]),
-    );
-  }
-}
-
-// ── things to do together ───────────────────────────────────────────────────
-class _Actions extends StatelessWidget {
-  final bool compete;
-  const _Actions({required this.compete});
-
-  void _room(BuildContext context, String title, String subtitle, Widget child) =>
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => Ambient(child: Scaffold(backgroundColor: Colors.transparent, body: SubPage(title: title, subtitle: subtitle, child: child)))));
-
-  @override
-  Widget build(BuildContext context) {
-    final tiles = [
-      (Ph.confetti, 'Host a night', 'One room; everyone logs; the page becomes the recap.', () => _room(context, 'Parties', 'One night, one room.', const PartiesSection())),
-      (Ph.calendarPlus, 'Plan a night', 'Friends ask to join; you say who comes.', () => _room(context, 'Plans', 'Plan it; say who comes.', const PlansSection())),
-      (Ph.usersThree, 'Circles', 'A few of you, one shared mosaic, gentle challenges.', () => _room(context, 'Circles', 'A private room for a few of you.', const CirclesSection())),
-      (Ph.receipt, 'Split a tab', 'Who bought which round, settled at the table.', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SplitScreen()))),
-    ];
-    return Column(children: [
-      for (var r = 0; r < tiles.length; r += 2) ...[
-        if (r > 0) const SizedBox(height: S.m),
-        IntrinsicHeight(
-          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            for (final t in tiles.skip(r).take(2)) ...[
-              if (t != tiles[r]) const SizedBox(width: S.m),
-              Expanded(child: _ActionTile(icon: t.$1, title: t.$2, line: t.$3, onTap: t.$4)),
-            ],
-          ]),
-        ),
-      ],
-      if (compete) ...[
-        const SizedBox(height: S.m),
-        _ActionTile(icon: Ph.trophy, title: 'The board', line: 'You and the friends who opted in — sparks for variety, never spend.', wide: true, onTap: () => _room(context, 'The board', 'Opt-in, on both sides.', const _FriendsBoard())),
-      ],
-    ]);
-  }
-}
-
-class _ActionTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String line;
-  final VoidCallback onTap;
-  final bool wide;
-  const _ActionTile({required this.icon, required this.title, required this.line, required this.onTap, this.wide = false});
-  @override
-  Widget build(BuildContext context) {
-    final bd = context.bd;
-    final glyph = Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(color: bd.accent.withValues(alpha: .14), borderRadius: BorderRadius.circular(12)),
-      child: Icon(icon, size: 20, color: bd.accentText),
-    );
-    return Glass(
-      onTap: onTap,
-      semanticLabel: '$title. $line',
-      padding: const EdgeInsets.all(S.l),
-      child: wide
-          ? Row(children: [
-              glyph,
-              const SizedBox(width: S.m),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(title, style: T.sans(bd, size: 15.5, weight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text(line, style: T.caption(bd)),
-                ]),
-              ),
-              Icon(Ph.caretRight, size: 16, color: bd.faint),
-            ])
-          : Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              glyph,
-              const SizedBox(height: S.m),
-              Text(title, style: T.sans(bd, size: 15.5, weight: FontWeight.w600)),
-              const SizedBox(height: 3),
-              Text(line, maxLines: 3, style: T.caption(bd)),
-            ]),
     );
   }
 }
