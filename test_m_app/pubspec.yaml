@@ -54,6 +54,8 @@ dependencies:
   # The shared pure logic (a 1:1 port of src/lib), also used by the venue app.
   brewdiary_core:
     path: ../packages/brewdiary_core
+  pdf: ^3.13.1
+  local_auth: ^3.0.2
 
 dev_dependencies:
   flutter_test:

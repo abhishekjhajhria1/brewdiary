@@ -14,6 +14,8 @@ import '../../logic/venue_kinds.dart';
 import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
+import '../widgets/next_steps.dart';
+import '../widgets/guest_finder.dart';
 import '../widgets/page.dart';
 import 'guests_screen.dart';
 import 'tonight_screen.dart';
@@ -28,38 +30,15 @@ class TillScreen extends StatefulWidget {
 }
 
 class _TillScreenState extends State<TillScreen> {
-  final _q = TextEditingController();
-  Timer? _debounce;
-  List<ProfileHit> _hits = const [];
   ProfileHit? _customer;
   bool _punched = false;
 
   Venue get v => widget.venue;
 
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _q.dispose();
-    super.dispose();
-  }
-
-  void _search(String q) {
-    _debounce?.cancel();
-    if (q.trim().length < 2) return setState(() => _hits = const []);
-    _debounce = Timer(const Duration(milliseconds: 300), () async {
-      try {
-        final r = await Backend.i.searchPeople(q);
-        if (mounted) setState(() => _hits = r);
-      } catch (_) {}
-    });
-  }
-
   Future<void> _punch(ProfileHit p) async {
     setState(() {
       _customer = p;
       _punched = false;
-      _hits = const [];
-      _q.clear();
     });
     final ok = await runAction(context, () => Backend.i.recordVisit(v.id, p.id), done: '${p.name}\'s card is punched for today.');
     if (mounted) setState(() => _punched = ok);
@@ -76,6 +55,7 @@ class _TillScreenState extends State<TillScreen> {
       children: [
         const DemoNote(),
         ShiftCard(venue: v),
+        NextSteps(venue: v),
         if (s.can(Cap.takePayment)) ...[
           BdButton('New sale', icon: Ph.receipt, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckoutScreen(venue: v)))),
           const SizedBox(height: S.xl),
@@ -92,14 +72,7 @@ class _TillScreenState extends State<TillScreen> {
           Text(store ? 'Once a day per customer — buying more never earns more, and a liquor store\'s reward is never alcohol.' : 'Once a day per customer — buying more doesn\'t earn more.', style: T.caption(bd)),
           const SizedBox(height: S.m),
           if (_customer == null) ...[
-            GlassField(controller: _q, hint: 'Find a customer by name or @handle', icon: Ph.magnifyingGlass, onChanged: _search, caps: TextCapitalization.none),
-            const SizedBox(height: S.s),
-            if (_q.text.trim().length >= 2 && _hits.isEmpty) const EmptyNote('No one by that name or handle.'),
-            if (_hits.isNotEmpty)
-              Group(children: [
-                for (final p in _hits)
-                  GroupTile(title: p.name, subtitle: '@${p.handle}', trailing: AccentPill('Punch', onTap: () => _punch(p))),
-              ]),
+            GuestFinder(venue: v, pickLabel: 'Punch', onPick: _punch),
           ] else
             Glass(
               padding: const EdgeInsets.all(S.l),
@@ -113,7 +86,11 @@ class _TillScreenState extends State<TillScreen> {
                       Text('@${_customer!.handle}', style: T.caption(bd)),
                     ]),
                   ),
-                  if (_punched) const ToneTag('punched', Tone.good),
+                  AnimatedSwitcher(
+                    duration: Motion.med,
+                    transitionBuilder: (c, a) => FadeTransition(opacity: a, child: ScaleTransition(scale: Tween(begin: .6, end: 1.0).chain(CurveTween(curve: Curves.easeOutBack)).animate(a), child: c)),
+                    child: _punched ? const ToneTag('punched', Tone.good, key: ValueKey('punched')) : const SizedBox.shrink(),
+                  ),
                 ]),
                 const SizedBox(height: S.m),
                 Wrap(spacing: S.s, runSpacing: S.s, children: [

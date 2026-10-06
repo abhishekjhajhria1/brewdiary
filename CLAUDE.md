@@ -64,7 +64,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `src/components/` | Feature-grouped UI: `calendar/`, `log/`, `you/`, `together/`, `discover/`, `bartender/`, `share/`, `onboarding/`, `venue/`, `kiosk/`, `profile/`, `ui/`. |
 | `src/lib/` | Framework-free logic — the "brains". See the table below. |
 | `public/` | Static assets: PWA `manifest.webmanifest`, `sw.js`, app icons. |
-| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`053`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
+| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`057`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
 | `ai-db/` | The **separate** AI database schema (pseudonymous Ninkasi corpus; deny-all RLS). |
 | `scripts/` | Dev/ops tooling: `db.mjs` (migration runner), `gen-icons.mjs`, `verify-venue.mjs` (the only path that approves a venue), `ninkasi/` (dataset export, trend sync, AI-DB verify). |
 | `tests/` | Vitest unit tests for `src/lib` (excluded from `next build`). |
@@ -131,6 +131,15 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
   A dry day keeps the streak. A quiet-night boost doubles **perk progress**, never a spark and never a
   discount. A flexed tab shows a **band** ("₹2,500+"), never a figure — an exact number turns a wall board
   into a spending race you win by buying one more drink.
+- **A diary is never deleted, only put away (055).** Removing an entry or clearing the diary sets
+  `archived_at`; every read sees only the live diary. Clearing it all takes a fresh emailed code,
+  checked in the database from the session's `amr` claim. Account deletion is still real erasure
+  (the law). Photos are kept a year at most (057, a daily cron).
+- **Taste at the table (056) is the taste card, never the diary.** When a guest who has said yes
+  once opens a venue's table or menu link, that venue's drink-makers (`guests.taste`) see what they're
+  into, what they usually have, mood words, alcohol-free, allergies — for 8 hours. No entries, no
+  dates, no counts, no other venues; no visit or perk is recorded. Staff find a guest by the 6-letter
+  code on their guest card, never by searching everyone.
 - **A guest can never write their own reward.** Spend, visits and perk claims are **staff-recorded only**,
   enforced server-side (no client write policy on `spend_events` / `venue_checkins` / `perk_redemptions`).
   If a guest could punch their own card, the whole thing is a free-drinks machine.
@@ -168,4 +177,5 @@ verification requests, house perks for verified venues), the public kiosk board,
 **Blocked on keys/resources (not code):** live Discover venues (Google Places), payments (Stripe), the
 actual model fine-tune (GPU/managed + ~500 corpus). See `docs/08-founder-playbook.md`.
 
-**Next milestone:** deploy to Vercel (`docs/10-deploy.md`) → then Android via Capacitor (`docs/09-…`).
+**Next milestone:** follow [`docs/18-the-track.md`](docs/18-the-track.md) — the ordered plan for both apps and the
+website, phase by phase, each with a gate. Phase 0 is switching the real server on (`docs/10`, `docs/14`).

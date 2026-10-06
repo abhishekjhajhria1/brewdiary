@@ -4,6 +4,9 @@
 //   flutter test test/tour_test.dart --dart-define=TOUR=true --update-goldens
 // Output: test/tour/*.png (git-ignored).
 import 'package:brewdiary_bar/app.dart';
+import 'package:brewdiary_bar/data/session.dart';
+import 'package:brewdiary_bar/ui/screens/guests_screen.dart';
+import 'package:brewdiary_bar/ui/screens/station_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -128,5 +131,19 @@ void main() {
     await _shot(t, 'w1_rota_mine');
     await tapText(t, 'Open shift');
     await _shot(t, 'w2_ask_for_it');
+  });
+
+  _tourTest('guests tonight, the code, the taste on the ticket, next steps', (t) async {
+    await bootApp(t);
+    await tapText(t, 'The Amber Room');
+    await _shot(t, 'g1_tonight_next_steps');
+    final v = Session.instance.venue!;
+    final nav = Navigator.of(t.element(find.byType(Scaffold).first));
+    nav.push(MaterialPageRoute(builder: (_) => Scaffold(body: GuestsScreen(venue: v))));
+    await t.pumpAndSettle();
+    await _shot(t, 'g2_guests_in_tonight');
+    nav.push(MaterialPageRoute(builder: (_) => StationScreen(venue: v, station: 'bar')));
+    await t.pumpAndSettle();
+    await _shot(t, 'g3_bar_ticket_taste');
   });
 }

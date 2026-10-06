@@ -51,7 +51,7 @@ class MorningAfterScreen extends StatelessWidget {
               Expanded(
                 child: BdButton('+ Water', kind: BtnKind.secondary, icon: Ph.drop, onTap: () {
                   entryStore.addEntry(date: today, drink: 'Water', type: DrinkType.soft);
-                  toast(context, 'A glass of water, logged. Keep them coming.');
+                  toast(context, 'A glass of water, logged. Keep them coming.', tone: ToastTone.success);
                 }),
               ),
               const SizedBox(width: S.s),
@@ -60,7 +60,7 @@ class MorningAfterScreen extends StatelessWidget {
                     ? null
                     : () {
                         entryStore.addEntry(date: today, drink: dryDayLabel, type: DrinkType.none);
-                        toast(context, "Today's a dry day. It keeps your streak.");
+                        toast(context, "Today's a dry day. It keeps your streak.", tone: ToastTone.success);
                       }),
               ),
             ]),

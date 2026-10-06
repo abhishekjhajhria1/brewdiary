@@ -90,7 +90,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _ring() async {
     final block = basketBlock(_basket, _status, idChecked: _idChecked);
-    if (block != null) return toast(context, block);
+    if (block != null) return toast(context, block, tone: ToastTone.error);
     setState(() => _busy = true);
     final total = _basket.total;
     final ok = await runAction(context, () => Backend.i.ringSale(v.id, newId(), _basket.toLines(), _paid, idChecked: _idChecked), done: 'Rung up ${money(total, v.currency)}.');
@@ -186,7 +186,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         const SizedBox(height: S.s),
         if (_basket.isEmpty) Text('Tap Add on anything below.', style: T.bodyMuted(bd)),
         for (final l in _basket.lines)
-          Padding(
+          Reveal(
+            key: ValueKey(l.product.id),
+            child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(children: [
               Expanded(child: Text('${l.qtyLabel} ${l.product.name}', style: T.sans(bd, size: 15))),
@@ -195,8 +197,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 IconBtn(Ph.plus, tooltip: 'One more ${l.product.name}', onTap: () => setState(() => _basket = _basket.set(l.product.id, l.qty + 1))),
               ] else
                 IconBtn(Ph.x, tooltip: 'Remove ${l.product.name}', onTap: () => setState(() => _basket = _basket.set(l.product.id, 0))),
-              SizedBox(width: 90, child: Text(money(l.total, v.currency), textAlign: TextAlign.right, style: T.sans(bd, size: 15).copyWith(fontFeatures: T.tnum))),
+              SizedBox(width: 90, child: RollingText(money(l.total, v.currency), textAlign: TextAlign.right, style: T.sans(bd, size: 15).copyWith(fontFeatures: T.tnum))),
             ]),
+          ),
           ),
         if (!_basket.isEmpty) ...[
           const SizedBox(height: S.s),
@@ -204,7 +207,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           const SizedBox(height: S.s),
           Row(children: [
             Expanded(child: Text('Total', style: T.sans(bd, size: 16, weight: FontWeight.w600))),
-            Text(money(_basket.total, v.currency), style: T.serif(bd, size: 26).copyWith(fontFeatures: T.tnum)),
+            RollingText(money(_basket.total, v.currency), style: T.serif(bd, size: 26).copyWith(fontFeatures: T.tnum)),
           ]),
           const SizedBox(height: S.m),
           Segmented<String>(options: const [('cash', 'Cash'), ('card', 'Card'), ('upi', 'UPI')], value: _paid, onChanged: (x) => setState(() => _paid = x)),

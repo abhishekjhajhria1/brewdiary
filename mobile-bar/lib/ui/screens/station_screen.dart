@@ -10,10 +10,13 @@ import 'package:flutter/material.dart';
 import '../../data/backend.dart';
 import '../../data/models.dart';
 import '../../data/prefs.dart';
+import '../../data/session.dart';
+import '../../logic/roles.dart';
 import '../../logic/service.dart';
 import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
+import '../widgets/guest_finder.dart';
 import '../widgets/page.dart';
 
 class StationScreen extends StatefulWidget {
@@ -27,6 +30,38 @@ class StationScreen extends StatefulWidget {
 
 class _StationScreenState extends State<StationScreen> {
   Timer? _tick;
+
+  /// Tickets on screen at the last read: one that wasn't arrives with a glow and a
+  /// buzz, so a new order is noticed from a step back.
+  Set<String>? _known;
+  Set<String> _fresh = const {};
+
+  /// Lines moved on here but not yet read back: they show their new step at once.
+  final Map<String, String> _moved = {};
+
+  Object? _lastRead;
+
+  void _heard(Object read, List<Ticket> all) {
+    // Once per read from the server, not on every rebuild in between.
+    if (identical(read, _lastRead)) return;
+    _lastRead = read;
+    final ids = {for (final t in all) t.tabId};
+    if (_known != null) {
+      final fresh = ids.difference(_known!);
+      if (fresh.isNotEmpty) Haptics.warning();
+      _fresh = fresh;
+    }
+    _known = ids;
+  }
+
+  Future<void> _advance(OrderLine l) async {
+    final next = nextStationStatus(_moved[l.id] ?? l.status);
+    if (next == null) return;
+    setState(() => _moved[l.id] = next);
+    final ok = await runAction(context, () => Backend.i.setLineStatus(l.id, next));
+    if (!mounted) return;
+    if (!ok) setState(() => _moved.remove(l.id));
+  }
 
   @override
   void initState() {
@@ -50,18 +85,44 @@ class _StationScreenState extends State<StationScreen> {
       maxWidth: kWideMaxWidth,
       onRefresh: () async => floorRev.bump(),
       children: [
-        Loader<List<OrderLine>>(
-          load: () => Backend.i.stationLines(widget.venue.id, widget.station),
+        Loader<(List<OrderLine>, List<GuestTonight>)>(
+          load: () async {
+            final lines = await Backend.i.stationLines(widget.venue.id, widget.station);
+            // The bar sees the taste each table shared, so the drink is one they'll like.
+            final guests = widget.station == 'bar' && Session.instance.can(Cap.tasteShare)
+                ? await Backend.i.guestsTonight(widget.venue.id).catchError((_) => const <GuestTonight>[])
+                : const <GuestTonight>[];
+            return (lines, guests);
+          },
           refresh: floorRev,
           retry: true,
-          builder: (context, lines, loading) {
-            if (lines == null) return const Skeleton(height: 280);
-            final all = tickets(lines);
+          builder: (context, data, loading) {
+            if (data == null) return const Skeleton(height: 280);
+            final (lines, guests) = data;
+            // The server's word replaces what was only shown.
+            _moved.removeWhere((id, st) => lines.any((l) => l.id == id && l.status == st) || !lines.any((l) => l.id == id));
+            final all = tickets([for (final l in lines) _moved[l.id] == null ? l : l.copyWith(status: _moved[l.id]!)]);
+            _heard(lines, all);
             if (all.isEmpty) return EmptyNote('No ${widget.station} tickets waiting. New orders appear here the moment they\'re sent.');
             return LayoutBuilder(builder: (context, c) {
               final cols = c.maxWidth >= 1000 ? 3 : (c.maxWidth >= 640 ? 2 : 1);
               final w = (c.maxWidth - S.m * (cols - 1)) / cols;
-              return Wrap(spacing: S.m, runSpacing: S.m, children: [for (final t in all) SizedBox(width: w, child: _TicketCard(station: widget.station, ticket: t))]);
+              return Wrap(spacing: S.m, runSpacing: S.m, children: [
+                for (final t in all)
+                  SizedBox(
+                    key: ValueKey(t.tabId),
+                    width: w,
+                    child: Reveal(
+                      child: _TicketCard(
+                        station: widget.station,
+                        ticket: t,
+                        fresh: _fresh.contains(t.tabId),
+                        onAdvance: _advance,
+                        tastes: [for (final g in guests) if (g.tableLabel != null && g.tableLabel == t.lines.first.tableLabel) g.taste],
+                      ),
+                    ),
+                  ),
+              ]);
             });
           },
         ),
@@ -74,7 +135,14 @@ class _StationScreenState extends State<StationScreen> {
 class _TicketCard extends StatelessWidget {
   final String station;
   final Ticket ticket;
-  const _TicketCard({required this.station, required this.ticket});
+
+  /// Arrived since the last read: it glows for a moment.
+  final bool fresh;
+  final ValueChanged<OrderLine> onAdvance;
+
+  /// What the guests at this table shared tonight (bar only).
+  final List<GuestTaste> tastes;
+  const _TicketCard({required this.station, required this.ticket, required this.onAdvance, this.fresh = false, this.tastes = const []});
 
   @override
   Widget build(BuildContext context) {
@@ -82,21 +150,30 @@ class _TicketCard extends StatelessWidget {
     final mins = ticket.minutes(DateTime.now());
     final late = lateness(station, mins);
     final tone = [Tone.calm, Tone.wait, Tone.late][late];
-    return Glass(
+    return Pulse(
+      active: fresh,
+      color: bd.accent,
+      child: Glass(
       padding: const EdgeInsets.all(S.l),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
           Expanded(child: Text(ticket.where, style: T.serif(bd, size: 26))),
           ToneTag('${mins}m${late == 2 ? ' · late' : ''}', tone),
         ]),
+        for (final taste in tastes) ...[
+          const SizedBox(height: S.s),
+          TasteChips(taste, compact: true),
+        ],
         const SizedBox(height: S.s),
         for (final l in ticket.lines)
           Semantics(
             button: nextStationStatus(l.status) != null,
             label: '${l.qty} ${l.name}, ${l.status}',
-            child: InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: nextStationStatus(l.status) == null ? null : () => runAction(context, () => Backend.i.setLineStatus(l.id, nextStationStatus(l.status)!)),
+            // A tap moves the line on at once (new → making → ready); the server catches up.
+            child: Pressable(
+              enabled: nextStationStatus(l.status) != null,
+              scale: .98,
+              onTap: () => onAdvance(l),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: S.tap),
                 child: Padding(
@@ -110,7 +187,15 @@ class _TicketCard extends StatelessWidget {
                           Text([if (l.seat != null) 'seat ${l.seat}', if (l.note != null) l.note!].join(' · '), style: T.sans(bd, size: 15, color: bd.accentText)),
                       ]),
                     ),
-                    ToneTag(switch (l.status) { 'sent' => 'new', 'preparing' => 'making', _ => 'ready' }, switch (l.status) { 'sent' => Tone.wait, 'preparing' => Tone.info, _ => Tone.good }),
+                    AnimatedSwitcher(
+                      duration: Motion.med,
+                      transitionBuilder: (c, a) => FadeTransition(opacity: a, child: ScaleTransition(scale: Tween(begin: .8, end: 1.0).animate(a), child: c)),
+                      child: ToneTag(
+                        key: ValueKey(l.status),
+                        switch (l.status) { 'sent' => 'new', 'preparing' => 'making', _ => 'ready' },
+                        switch (l.status) { 'sent' => Tone.wait, 'preparing' => Tone.info, _ => Tone.good },
+                      ),
+                    ),
                   ]),
                 ),
               ),
@@ -125,6 +210,7 @@ class _TicketCard extends StatelessWidget {
               }, done: '${ticket.where} is ready.')),
         ],
       ]),
+      ),
     );
   }
 }

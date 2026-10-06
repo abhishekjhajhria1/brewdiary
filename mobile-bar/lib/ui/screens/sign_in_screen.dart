@@ -25,6 +25,7 @@ class _SignInScreenState extends State<SignInScreen> {
   bool _create = false;
   bool _busy = false;
   String? _error;
+  int _errors = 0;
 
   @override
   void dispose() {
@@ -43,7 +44,9 @@ class _SignInScreenState extends State<SignInScreen> {
     try {
       await f();
     } on BackendError catch (e) {
+      Haptics.error();
       setState(() {
+        _errors++;
         _error = e.message;
         // A new employee whose manager just added them: no account yet — make one here,
         // with the same email, and the manager's code is waiting once they're in.
@@ -88,14 +91,20 @@ class _SignInScreenState extends State<SignInScreen> {
                   Text('Run the floor and know your regulars — for bars, restaurants, cafés, clubs and shops.', style: T.bodyMuted(bd)),
                   const SizedBox(height: S.x3),
                   const DemoNote(),
-                  Glass(
-                    padding: const EdgeInsets.all(S.xl),
-                    child: AnimatedSize(duration: Motion.med, child: _form(bd)),
+                  // A wrong code shakes the card ("no") as the reason appears under it.
+                  Shake(
+                    trigger: _errors,
+                    child: Glass(
+                      padding: const EdgeInsets.all(S.xl),
+                      child: AnimatedSize(duration: Motion.med, curve: Easing.emphasizedDecelerate, child: _form(bd)),
+                    ),
                   ),
-                  if (_error != null) ...[
-                    const SizedBox(height: S.m),
-                    Semantics(liveRegion: true, child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
-                  ],
+                  Appear(
+                    visible: _error != null,
+                    child: _error == null
+                        ? const SizedBox.shrink()
+                        : Padding(padding: const EdgeInsets.only(top: S.m), child: Semantics(liveRegion: true, child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText)))),
+                  ),
                   const SizedBox(height: S.xl),
                   Text('The same account as bwdy.site. Your diary stays yours — the venue app never shows it to anyone.', style: T.caption(bd)),
                 ]),

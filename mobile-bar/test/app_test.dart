@@ -67,6 +67,7 @@ void main() {
     expect(find.text('Kokum Cooler'), findsOneWidget);
 
     await tapText(t, 'NUMBERS');
+    await t.scrollUntilVisible(find.text('64'), 200, scrollable: find.byType(Scrollable).first);
     expect(find.text('64'), findsOneWidget); // guests in the window
     expect(find.textContaining('never a ranking'), findsOneWidget);
 

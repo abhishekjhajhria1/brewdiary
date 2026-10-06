@@ -14,6 +14,7 @@ import '../../logic/roles.dart';
 import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
+import '../widgets/next_steps.dart';
 import '../widgets/page.dart';
 import 'guests_screen.dart';
 import 'host_screen.dart';
@@ -56,6 +57,7 @@ class _TonightScreenState extends State<TonightScreen> {
       children: [
         const DemoNote(),
         if (!widget.pushed) ShiftCard(venue: v),
+        NextSteps(venue: v),
         if (!v.verified)
           Padding(
             padding: const EdgeInsets.only(bottom: S.l),
@@ -212,7 +214,7 @@ class _GuestRow extends StatelessWidget {
         const SizedBox(height: S.xl),
         BdButton('Record', onTap: () async {
           final n = double.tryParse(amount.text.replaceAll(',', '').trim());
-          if (n == null || n <= 0) return toast(ctx, 'Type the amount.');
+          if (n == null || n <= 0) return toast(ctx, 'Type the amount.', tone: ToastTone.error);
           final ok = await runAction(ctx, () => Backend.i.recordSpend(room.id, guest.id, n), done: 'Recorded ${money(n, venue.currency, round: false)}.');
           if (ok && ctx.mounted) Navigator.pop(ctx);
         }),

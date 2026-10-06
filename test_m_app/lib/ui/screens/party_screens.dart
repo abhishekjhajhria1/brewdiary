@@ -15,6 +15,7 @@ import '../../data/parties.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
+import '../widgets/photo_viewer.dart';
 import 'photo_studio.dart';
 import 'tonight_sheet.dart';
 import '../widgets/share_card.dart';
@@ -95,7 +96,7 @@ class PartyBody extends StatelessWidget {
       ),
 
       if (mine && pending.isNotEmpty) ...[
-        SectionHeader('Asking to join', trailing: Text('${pending.length}', style: T.caption(bd))),
+        SectionHeader('Requests to join', trailing: Text('${pending.length}', style: T.caption(bd))),
         Group(children: [
           for (final g in pending)
             Padding(
@@ -109,8 +110,8 @@ class PartyBody extends StatelessWidget {
                     Text('@${g.handle}', style: T.caption(bd)),
                   ]),
                 ),
-                TextAction('Let in', accent: true, onTap: () => PartiesApi.approveGuest(party.id, g.id)),
-                IconBtn(Ph.x, tooltip: 'Decline ${g.name}', size: 18, color: bd.faint, onTap: () => PartiesApi.declineGuest(party.id, g.id)),
+                TextAction('Let in', accent: true, onTap: () => attempt(context, () => PartiesApi.approveGuest(party.id, g.id), done: '${g.name} is in.')),
+                IconBtn(Ph.x, tooltip: 'Decline ${g.name}', size: 18, color: bd.faint, onTap: () => attempt(context, () => PartiesApi.declineGuest(party.id, g.id))),
               ]),
             ),
         ]),
@@ -139,7 +140,7 @@ class PartyBody extends StatelessWidget {
             },
           ),
           const SizedBox(height: S.m),
-          InviteCodeCard(label: 'Invite with the code', code: party.inviteCode, shareText: "You're invited to ${party.name} — ${Config.siteUrl}/p/${party.inviteCode}"),
+          InviteCodeCard(label: 'Invite with the code', code: party.inviteCode, link: '${Config.siteUrl}/p/${party.inviteCode}', shareText: "You're invited to ${party.name} — ${Config.siteUrl}/p/${party.inviteCode}"),
         ],
         SectionHeader(past ? 'Who came' : "Who's coming", trailing: coming.isEmpty ? null : Text('${coming.length}', style: T.caption(bd))),
         if (coming.isEmpty && maybes.isEmpty)
@@ -228,12 +229,8 @@ class _PartyLog extends StatelessWidget {
         ]),
       ),
       const SectionHeader('Who poured what'),
-      Group(children: [
-        for (final e in entries)
-          GroupTile(
-            title: e.mood == null ? e.drink : '${e.drink} · ${e.mood}',
-            subtitle: '${e.userId == me ? 'you' : e.authorName} · ${timeOfDayLabel(e.createdAt).toLowerCase()}',
-          ),
+      PourList([
+        for (final e in entries) PourRow(author: e.authorName, drink: e.drink, mood: e.mood, meta: '${e.userId == me ? 'you' : e.authorName} · ${timeOfDayLabel(e.createdAt).toLowerCase()}'),
       ]),
       if (moodList.isNotEmpty) ...[
         const SectionHeader('How it felt'),
@@ -253,7 +250,20 @@ class _PartyLog extends StatelessWidget {
           mainAxisSpacing: 6,
           crossAxisSpacing: 6,
           children: [
-            for (final p in photos) ClipRRect(borderRadius: BorderRadius.circular(rCtl), child: ColoredBox(color: bd.glass, child: Image.network(p.$1, fit: BoxFit.cover, semanticLabel: p.$2))),
+            for (final (i, p) in photos.indexed)
+              Semantics(
+                button: true,
+                label: p.$2,
+                excludeSemantics: true,
+                child: Pressable(
+                  haptic: false,
+                  onTap: () => showPhotoViewer(context, [for (final x in photos) (url: x.$1, label: x.$2)], initial: i, scope: 'wall'),
+                  child: Hero(
+                    tag: photoHeroTag(p.$1, 'wall'),
+                    child: ClipRRect(borderRadius: BorderRadius.circular(rCtl), child: ColoredBox(color: bd.glass, child: PhotoImage(p.$1, semanticLabel: p.$2))),
+                  ),
+                ),
+              ),
           ],
         ),
       ],
@@ -328,6 +338,7 @@ class _PointsBoardState extends State<_PointsBoard> {
                   sparks: rows[i].sparks,
                   vibe: rows[i].vibe,
                   leads: rows[i].sparks > 0 && rows[i].sparks == top,
+                  top: top,
                   trailing: rows[i].isMe ? null : TextAction('Vibe', accent: _openVibe == rows[i].id, onTap: () => setState(() => _openVibe = _openVibe == rows[i].id ? null : rows[i].id)),
                 ),
                 if (_openVibe == rows[i].id)
@@ -475,7 +486,7 @@ class _ThankStaffState extends State<_ThankStaff> {
                           final err = await PointsApi.thankStaff(widget.partyId, s.id, reason);
                           if (err != null && mounted) {
                             setState(() => _sent.remove(key));
-                            toast(this.context, err);
+                            toast(this.context, err, tone: ToastTone.error);
                           }
                         }),
                     ]),
@@ -609,7 +620,7 @@ class _PartyInviteScreenState extends State<PartyInviteScreen> {
                 const SizedBox(height: S.m),
                 Text("Sign in and you'll land right in this party — the invite is remembered.", textAlign: TextAlign.center, style: T.caption(bd)),
               ],
-              if (_error != null) Padding(padding: const EdgeInsets.only(top: S.m), child: Text(_error!, textAlign: TextAlign.center, style: T.sans(bd, size: 14, color: bd.accentText))),
+              if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.m), style: T.sans(bd, size: 14, color: bd.accentText)),
             ]),
           );
         },

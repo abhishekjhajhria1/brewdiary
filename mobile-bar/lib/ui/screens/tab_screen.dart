@@ -115,7 +115,11 @@ class _LineTile extends StatelessWidget {
         if (isVoid && l.voidReason != null) 'void: ${l.voidReason}',
       ].join(' · '),
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-        ToneTag(_statusWord[l.status] ?? l.status, _statusTone[l.status] ?? Tone.calm),
+        AnimatedSwitcher(
+          duration: Motion.med,
+          transitionBuilder: (c, a) => FadeTransition(opacity: a, child: ScaleTransition(scale: Tween(begin: .8, end: 1.0).animate(a), child: c)),
+          child: ToneTag(key: ValueKey(l.status), _statusWord[l.status] ?? l.status, _statusTone[l.status] ?? Tone.calm),
+        ),
         const SizedBox(width: S.s),
         Text(money(l.unitPrice * l.qty, venue.currency),
             style: T.sans(bd, size: 14, color: isVoid ? bd.faint : bd.ink).copyWith(fontFeatures: T.tnum, decoration: isVoid ? TextDecoration.lineThrough : null)),
@@ -201,11 +205,17 @@ class _PickerState extends State<_Picker> {
                     style: T.caption(bd)),
               ]),
             ),
-            if ((_qty[m.id] ?? 0) > 0) ...[
-              IconBtn(Ph.minus, tooltip: 'One fewer ${m.name}', onTap: () => setState(() => _qty[m.id] = (_qty[m.id]! - 1).clamp(0, 99))),
-              SizedBox(width: 24, child: Text('${_qty[m.id]}', textAlign: TextAlign.center, style: T.sans(bd, size: 16, weight: FontWeight.w600).copyWith(fontFeatures: T.tnum))),
-              IconBtn(Ph.notePencil, tooltip: 'Note for ${m.name}', onTap: () => _noteFor(m)),
-            ],
+            AnimatedSize(
+              duration: Motion.med,
+              curve: Easing.emphasizedDecelerate,
+              child: (_qty[m.id] ?? 0) > 0
+                  ? Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconBtn(Ph.minus, tooltip: 'One fewer ${m.name}', onTap: () => setState(() => _qty[m.id] = (_qty[m.id]! - 1).clamp(0, 99))),
+                      SizedBox(width: 24, child: RollingNumber(_qty[m.id] ?? 0, textAlign: TextAlign.center, style: T.sans(bd, size: 16, weight: FontWeight.w600))),
+                      IconBtn(Ph.notePencil, tooltip: 'Note for ${m.name}', onTap: () => _noteFor(m)),
+                    ])
+                  : const SizedBox.shrink(),
+            ),
             IconBtn(Ph.plus, tooltip: 'Add ${m.name}', onTap: () => setState(() => _qty[m.id] = ((_qty[m.id] ?? 0) + 1).clamp(0, 99))),
           ]),
         ),
@@ -258,7 +268,7 @@ class _BillPane extends StatelessWidget {
         const SizedBox(height: S.s),
         Row(children: [
           Expanded(child: Text('Total', style: T.sans(bd, size: 16, weight: FontWeight.w600))),
-          Text(money(total, venue.currency), style: T.serif(bd, size: 28).copyWith(fontFeatures: T.tnum)),
+          RollingText(money(total, venue.currency), style: T.serif(bd, size: 28).copyWith(fontFeatures: T.tnum)),
         ]),
         const SizedBox(height: S.m),
         BdButton('Share the bill', icon: Ph.shareNetwork, kind: BtnKind.quiet, onTap: () => SharePlus.instance.share(ShareParams(text: billText(venue: venue.name, where: where, lines: lines, currency: venue.currency)))),

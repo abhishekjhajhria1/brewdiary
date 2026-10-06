@@ -9,6 +9,8 @@ import 'package:brewdiary_bar/data/session.dart';
 import 'package:brewdiary_bar/logic/roles.dart';
 import 'package:brewdiary_bar/logic/rota.dart';
 import 'package:brewdiary_bar/logic/staff.dart' show weekStart;
+import 'package:brewdiary_bar/ui/widgets/bits.dart' show ToneTag;
+import 'package:brewdiary_bar/ui/widgets/common.dart' show GroupTile;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -237,8 +239,14 @@ void main() {
       await tapText(t, 'paid');
       await tapText(t, 'Make it unpaid');
 
-      // …and correct that night's end, with a reason.
-      await t.tap(find.textContaining('15 min break').first);
+      // …and correct a night that isn't corrected yet, with a reason. Which night that
+      // is depends on today (the demo's two weeks run up to now), so pick it by its
+      // tile — finished, no tag — and remember its day.
+      final fresh = find.byWidgetPredicate((w) => w is GroupTile && w.trailing == null && (w.subtitle ?? '').contains('worked'));
+      await t.ensureVisible(fresh.first);
+      await t.pumpAndSettle();
+      final day = t.widget<GroupTile>(fresh.first).title.split(' · ').first;
+      await t.tap(fresh.first);
       await t.pumpAndSettle();
       await tapText(t, 'Correct the times');
       await tapText(t, 'End +30 min');
@@ -247,7 +255,10 @@ void main() {
       await t.enterText(find.byType(TextField).last, 'Stayed to close');
       await tapText(t, 'Save the correction');
       expect(find.text('Save the correction'), findsNothing, reason: 'the sheet closed');
-      expect(find.text('corrected'), findsNWidgets(2));
+      final same = find.byWidgetPredicate((w) => w is GroupTile && w.title.startsWith('$day · '));
+      expect(same, findsOneWidget);
+      final tag = t.widget<GroupTile>(same).trailing;
+      expect(tag is ToneTag && tag.text == 'corrected', isTrue, reason: 'the night just corrected carries the tag');
     });
 
     testWidgets('payroll: by name, pay per person, a rate set by the owner', (t) async {

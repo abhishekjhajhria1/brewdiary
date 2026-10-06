@@ -4,6 +4,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
@@ -13,7 +14,7 @@ import 'common.dart';
 import 'moments.dart';
 
 // ── month grid ───────────────────────────────────────────────────────────────
-class MonthCalendar extends StatelessWidget {
+class MonthCalendar extends StatefulWidget {
   final int year;
   final int month; // 0-based
   final Map<String, int> counts;
@@ -46,9 +47,82 @@ class MonthCalendar extends StatelessWidget {
   });
 
   @override
+  State<MonthCalendar> createState() => _MonthCalendarState();
+}
+
+/// The month turns like a page: the days follow a sideways drag (and give only a
+/// little toward a month you can't open yet); let go past the point, or flick, and
+/// the next month slides in from that side. The arrows and "Today" slide it the
+/// same way, so you always know which way you went.
+class _MonthCalendarState extends State<MonthCalendar> with SingleTickerProviderStateMixin {
+  // How far the days are dragged, in points (springs back to 0).
+  late final AnimationController _shift = AnimationController.unbounded(vsync: this);
+  static final _settle = SpringDescription.withDampingRatio(mass: 1, stiffness: 420, ratio: .86);
+  double _dx = 0;
+  double _width = 320;
+  bool _armed = false;
+  int _dir = 1;
+
+  int get _ym => widget.year * 12 + widget.month;
+
+  @override
+  void didUpdateWidget(covariant MonthCalendar old) {
+    super.didUpdateWidget(old);
+    final was = old.year * 12 + old.month;
+    if (was != _ym) _dir = _ym > was ? 1 : -1;
+  }
+
+  @override
+  void dispose() {
+    _shift.dispose();
+    super.dispose();
+  }
+
+  double get _turnAt => _width * .22;
+
+  /// The drag as drawn: it follows the finger with a little weight, and barely
+  /// moves toward a month that can't be opened.
+  double _rubber(double dx) {
+    final blocked = dx < 0 && !widget.canNext;
+    final shown = dx * (blocked ? .12 : .55);
+    return shown.clamp(-_width * .45, _width * .45);
+  }
+
+  bool _canTurn(double dx) => dx > 0 || widget.canNext;
+
+  void _update(DragUpdateDetails d) {
+    _dx += d.delta.dx;
+    if (!context.reduceMotion) _shift.value = _rubber(_dx);
+    // A detent: past this point, letting go turns the month.
+    final armed = _dx.abs() > _turnAt && _canTurn(_dx);
+    if (armed != _armed) {
+      _armed = armed;
+      if (armed) Haptics.tick();
+    }
+  }
+
+  void _end(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    final next = (v < -300 || (_dx < -_turnAt && v <= 300)) && widget.canNext;
+    final prev = !next && (v > 300 || (_dx > _turnAt && v >= -300));
+    if ((next || prev) && !_armed) Haptics.tick(); // a flick that never reached the detent
+    _dx = 0;
+    _armed = false;
+    if (next) widget.onNext();
+    if (prev) widget.onPrev();
+    _shift.animateWith(SpringSimulation(_settle, _shift.value, 0, 0));
+  }
+
+  void _cancel() {
+    _dx = 0;
+    _armed = false;
+    _shift.animateWith(SpringSimulation(_settle, _shift.value, 0, 0));
+  }
+
+  @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    final grid = monthGrid(year, month);
+    final grid = monthGrid(widget.year, widget.month);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(
         padding: const EdgeInsets.only(bottom: S.m),
@@ -56,72 +130,110 @@ class MonthCalendar extends StatelessWidget {
           Expanded(
             child: Semantics(
               header: true,
-              label: '${monthNames[month]} $year',
+              label: '${monthNames[widget.month]} ${widget.year}',
               excludeSemantics: true,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('$year', style: T.sans(bd, size: 13, weight: FontWeight.w500, color: bd.muted).copyWith(fontFeatures: T.tnum)),
-                const SizedBox(height: 2),
-                // Scales down rather than wrapping, so "September" never breaks at large text sizes.
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(monthNames[month], maxLines: 1, style: T.serif(bd, size: 40, height: 1.05)),
-                ),
-              ]),
+              child: SlideSwitcher(
+                direction: _dir,
+                shift: .08,
+                child: Column(key: ValueKey(_ym), crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${widget.year}', style: T.sans(bd, size: 13, weight: FontWeight.w500, color: bd.muted).copyWith(fontFeatures: T.tnum)),
+                  const SizedBox(height: 2),
+                  // Scales down rather than wrapping, so "September" never breaks at large text sizes.
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(monthNames[widget.month], maxLines: 1, style: T.serif(bd, size: 40, height: 1.05)),
+                  ),
+                ]),
+              ),
             ),
           ),
-          if (onToday != null) TextAction('Today', accent: true, onTap: onToday),
-          IconBtn(Ph.caretLeft, tooltip: 'Previous month', onTap: onPrev),
-          IconBtn(Ph.caretRight, tooltip: 'Next month', onTap: canNext ? onNext : null),
+          AnimatedSwitcher(
+            duration: context.reduceMotion ? Duration.zero : Motion.med,
+            transitionBuilder: (c, a) => FadeTransition(opacity: a, child: ScaleTransition(scale: Tween(begin: .85, end: 1.0).animate(a), child: c)),
+            child: widget.onToday != null ? TextAction('Today', key: const ValueKey('today'), accent: true, onTap: widget.onToday) : const SizedBox.shrink(key: ValueKey('none')),
+          ),
+          IconBtn(Ph.caretLeft, tooltip: 'Previous month', onTap: widget.onPrev),
+          IconBtn(Ph.caretRight, tooltip: 'Next month', onTap: widget.canNext ? widget.onNext : null),
         ]),
       ),
       GestureDetector(
         // Swipe the grid sideways to change month, as in a phone's own calendar.
-        onHorizontalDragEnd: (d) {
-          final v = d.primaryVelocity ?? 0;
-          if (v < -300 && canNext) onNext();
-          if (v > 300) onPrev();
-        },
+        onHorizontalDragUpdate: _update,
+        onHorizontalDragEnd: _end,
+        onHorizontalDragCancel: _cancel,
         child: Glass(
           padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
           // Day numbers live in fixed squares: let them grow only a little with the text size.
           child: MediaQuery.withClampedTextScaling(
             maxScaleFactor: 1.1,
             child: Column(children: [
-            Row(children: [
-              for (final w in weekdays)
-                Expanded(child: Center(child: Text(w.substring(0, 1), style: T.sans(bd, size: 12, weight: FontWeight.w600, color: bd.faint)))),
-            ]),
-            const SizedBox(height: 8),
-            DayRings(
-              grid: grid,
-              beckonKey: beckonToday ? todayKey() : null,
-              child: GridView.count(
-                crossAxisCount: 7,
-                shrinkWrap: true,
-                primary: false,
-                padding: EdgeInsets.zero,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 5,
-                crossAxisSpacing: 5,
-                children: [
-                  for (final d in grid)
-                    DayCell(
-                      day: d,
-                      count: counts[d.key] ?? 0,
-                      hasPlan: planKeys.contains(d.key),
-                      dry: dryKeys.contains(d.key),
-                      onSelect: onSelect,
+              Row(children: [
+                for (final w in weekdays)
+                  Expanded(child: Center(child: Text(w.substring(0, 1), style: T.sans(bd, size: 12, weight: FontWeight.w600, color: bd.faint)))),
+              ]),
+              const SizedBox(height: 8),
+              LayoutBuilder(builder: (context, box) {
+                _width = box.maxWidth;
+                // The days slide under the card's edge, never across the page.
+                return ClipRect(
+                  clipper: const _InsetClip(EdgeInsets.fromLTRB(10, 12, 10, 10)),
+                  child: AnimatedBuilder(
+                    animation: _shift,
+                    builder: (context, child) {
+                      final x = _shift.value;
+                      return Opacity(opacity: (1 - x.abs() / _width * .6).clamp(.4, 1.0), child: Transform.translate(offset: Offset(x, 0), child: child));
+                    },
+                    child: SlideSwitcher(
+                      direction: _dir,
+                      shift: .14,
+                      child: KeyedSubtree(
+                        key: ValueKey(_ym),
+                        child: DayRings(
+                          grid: grid,
+                          beckonKey: widget.beckonToday ? todayKey() : null,
+                          child: GridView.count(
+                            crossAxisCount: 7,
+                            shrinkWrap: true,
+                            primary: false,
+                            padding: EdgeInsets.zero,
+                            physics: const NeverScrollableScrollPhysics(),
+                            mainAxisSpacing: 5,
+                            crossAxisSpacing: 5,
+                            children: [
+                              for (final d in grid)
+                                DayCell(
+                                  day: d,
+                                  count: widget.counts[d.key] ?? 0,
+                                  hasPlan: widget.planKeys.contains(d.key),
+                                  dry: widget.dryKeys.contains(d.key),
+                                  onSelect: widget.onSelect,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
-                ],
-              ),
-            ),
-          ]),
+                  ),
+                );
+              }),
+            ]),
           ),
         ),
       ),
     ]);
   }
+}
+
+/// Clips to its box grown by [inset] — the padding of the card around it, so a day's
+/// ripple (which reaches past its square) still shows, but nothing leaves the card.
+class _InsetClip extends CustomClipper<Rect> {
+  final EdgeInsets inset;
+  const _InsetClip(this.inset);
+  @override
+  Rect getClip(Size size) => inset.inflateRect(Offset.zero & size);
+  @override
+  bool shouldReclip(_InsetClip old) => old.inset != inset;
 }
 
 class DayCell extends StatelessWidget {
@@ -239,34 +351,92 @@ class ViewSquircle extends StatelessWidget {
 }
 
 // ── year mosaic ──────────────────────────────────────────────────────────────
-/// GitHub-style contribution grid for the whole year — the collectible view.
-class YearMosaic extends StatelessWidget {
+typedef _YearDay = ({String key, bool inYear, bool future, bool isToday, int count});
+
+/// GitHub-style contribution grid for the whole year — the collectible view. It is
+/// painted in one pass (371 squares, one layer) and, when you turn to it, fills in
+/// left to right across what you can see, like ink taking to paper.
+class YearMosaic extends StatefulWidget {
   final int year;
   final Map<String, int> counts;
   final ValueChanged<String> onSelect;
   const YearMosaic({super.key, required this.year, required this.counts, required this.onSelect});
 
+  static const cell = 11.0, gap = 3.0;
+
   @override
-  Widget build(BuildContext context) {
-    final bd = context.bd;
-    final jan1 = DateTime(year, 1, 1);
+  State<YearMosaic> createState() => _YearMosaicState();
+}
+
+class _YearMosaicState extends State<YearMosaic> with SingleTickerProviderStateMixin {
+  static const _step = YearMosaic.cell + YearMosaic.gap;
+  late final ScrollController _scroll;
+  late final AnimationController _sweep = AnimationController(vsync: this, duration: const Duration(milliseconds: 950));
+  late int _firstVisible;
+  bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Start scrolled so today's week is in view.
+    final todayWeek = _weeks().indexWhere((c) => c.any((d) => d.isToday));
+    _firstVisible = math.max(0, todayWeek - 18);
+    _scroll = ScrollController(initialScrollOffset: _firstVisible * _step);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (context.reduceMotion) {
+      _sweep.value = 1;
+    } else {
+      _sweep.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    _sweep.dispose();
+    super.dispose();
+  }
+
+  List<List<_YearDay>> _weeks() {
+    final jan1 = DateTime(widget.year, 1, 1);
     final gridStart = addDays(jan1, -mondayIndex(jan1));
     final now = appNow();
     final today = DateTime(now.year, now.month, now.day);
     final todayK = todayKey();
-    const cell = 11.0, gap = 3.0;
-
-    final weeks = <List<({String key, bool inYear, bool future, bool isToday, int count})>>[];
+    final weeks = <List<_YearDay>>[];
     var cursor = gridStart;
     for (var w = 0; w < 53; w++) {
-      final col = <({String key, bool inYear, bool future, bool isToday, int count})>[];
+      final col = <_YearDay>[];
       for (var d = 0; d < 7; d++) {
         final key = toKey(cursor);
-        col.add((key: key, inYear: cursor.year == year, future: cursor.isAfter(today), isToday: key == todayK, count: counts[key] ?? 0));
+        col.add((key: key, inYear: cursor.year == widget.year, future: cursor.isAfter(today), isToday: key == todayK, count: widget.counts[key] ?? 0));
         cursor = addDays(cursor, 1);
       }
       weeks.add(col);
     }
+    return weeks;
+  }
+
+  void _tap(List<List<_YearDay>> weeks, Offset at) {
+    final wi = (at.dx / _step).floor(), di = (at.dy / _step).floor();
+    if (wi < 0 || wi >= weeks.length || di < 0 || di > 6) return;
+    final d = weeks[wi][di];
+    if (!d.inYear || d.future) return;
+    Haptics.tick();
+    widget.onSelect(d.key);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    const cell = YearMosaic.cell;
+    final weeks = _weeks();
     final ticks = <int, String>{};
     for (var wi = 0; wi < weeks.length; wi++) {
       final first = weeks[wi].where((d) => d.inYear).firstOrNull;
@@ -275,9 +445,7 @@ class YearMosaic extends StatelessWidget {
         if (dt.day <= 7) ticks[wi] = monthNames[dt.month - 1].substring(0, 3);
       }
     }
-    // Start scrolled so today's week is in view.
-    final todayWeek = weeks.indexWhere((c) => c.any((d) => d.isToday));
-    final controller = ScrollController(initialScrollOffset: math.max(0, (todayWeek - 18) * (cell + gap)));
+    final nights = weeks.expand((w) => w).where((d) => d.inYear && d.count > 0).length;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(
@@ -287,54 +455,35 @@ class YearMosaic extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('The year so far', style: T.sans(bd, size: 13, weight: FontWeight.w500, color: bd.muted)),
             const SizedBox(height: 2),
-            Text('$year', style: T.serif(bd, size: 40, height: 1.05)),
+            Text('${widget.year}', style: T.serif(bd, size: 40, height: 1.05)),
           ]),
         ),
       ),
       Glass(
         padding: const EdgeInsets.all(16),
         child: SingleChildScrollView(
-          controller: controller,
+          controller: _scroll,
           scrollDirection: Axis.horizontal,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               for (var wi = 0; wi < weeks.length; wi++)
                 SizedBox(
-                  width: cell + gap,
+                  width: _step,
                   child: Text(ticks[wi] ?? '', overflow: TextOverflow.visible, softWrap: false, style: T.sans(bd, size: 9, color: bd.faint)),
                 ),
             ]),
             const SizedBox(height: 4),
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              for (final col in weeks)
-                Padding(
-                  padding: const EdgeInsets.only(right: gap),
-                  child: Column(children: [
-                    for (final d in col)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: gap),
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: d.inYear && !d.future ? () => onSelect(d.key) : null,
-                          child: Opacity(
-                            opacity: d.inYear ? 1 : 0,
-                            child: Container(
-                              width: cell,
-                              height: cell,
-                              decoration: BoxDecoration(
-                                color: bd.ycell(intensityLevel(d.count)),
-                                borderRadius: BorderRadius.circular(2),
-                                border: d.isToday
-                                    ? Border.all(color: bd.ink, width: 1.5)
-                                    : (d.count == 0 ? Border.all(color: bd.line) : null),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ]),
+            Semantics(
+              label: '${widget.year}: $nights ${nights == 1 ? 'night' : 'nights'} written in. Darker squares hold more.',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapUp: (d) => _tap(weeks, d.localPosition),
+                child: CustomPaint(
+                  size: Size(weeks.length * _step, 7 * _step),
+                  painter: _YearPainter(weeks: weeks, bd: bd, sweep: _sweep, firstVisible: _firstVisible),
                 ),
-            ]),
+              ),
+            ),
           ]),
         ),
       ),
@@ -354,6 +503,58 @@ class YearMosaic extends StatelessWidget {
       ]),
     ]);
   }
+}
+
+class _YearPainter extends CustomPainter {
+  final List<List<_YearDay>> weeks;
+  final BD bd;
+  final Animation<double> sweep;
+  final int firstVisible;
+  _YearPainter({required this.weeks, required this.bd, required this.sweep, required this.firstVisible}) : super(repaint: sweep);
+
+  // The wave's soft front, in columns, and how many columns it crosses (about a
+  // phone's width of weeks, starting from the first one in view).
+  static const _front = 7.0, _span = 30.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const cell = YearMosaic.cell, step = YearMosaic.cell + YearMosaic.gap;
+    final t = Curves.easeOutCubic.transform(sweep.value);
+    final fill = Paint();
+    final edge = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    for (var wi = 0; wi < weeks.length; wi++) {
+      final reach = t * (_span + _front) - (wi - firstVisible);
+      final alpha = sweep.value >= 1 ? 1.0 : (reach / _front).clamp(0.0, 1.0);
+      if (alpha <= 0) continue;
+      for (var di = 0; di < 7; di++) {
+        final d = weeks[wi][di];
+        if (!d.inYear) continue;
+        final r = RRect.fromRectAndRadius(Rect.fromLTWH(wi * step, di * step, cell, cell), const Radius.circular(2));
+        final level = intensityLevel(d.count);
+        if (level > 0) {
+          final c = bd.ycell(level);
+          fill.color = c.withValues(alpha: c.a * alpha);
+          canvas.drawRRect(r, fill);
+        }
+        if (d.isToday) {
+          edge
+            ..strokeWidth = 1.5
+            ..color = bd.ink.withValues(alpha: alpha);
+          canvas.drawRRect(r.deflate(.75), edge);
+        } else if (d.count == 0) {
+          edge
+            ..strokeWidth = 1
+            ..color = bd.line.withValues(alpha: bd.line.a * alpha);
+          canvas.drawRRect(r.deflate(.5), edge);
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_YearPainter old) => old.weeks != weeks || old.bd != bd || old.firstVisible != firstVisible;
 }
 
 // ── 12-week read-only mosaic ─────────────────────────────────────────────────
@@ -404,15 +605,18 @@ class RecentMosaic extends StatelessWidget {
 }
 
 // ── streak strip + milestone meter ───────────────────────────────────────────
+/// The streak, the nights you kept the diary (dry ones too) and the kinds you've
+/// tried. The meter counts NIGHTS, never drinks — nothing rewards drinking more.
 class StreakStrip extends StatelessWidget {
   final Stats stats;
-  const StreakStrip({super.key, required this.stats});
+  final int nights;
+  const StreakStrip({super.key, required this.stats, required this.nights});
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
     Widget stat(int v, String label, {bool accent = false}) => Expanded(
           child: Column(children: [
-            Text('$v', style: T.sans(bd, size: 30, weight: FontWeight.w600, color: accent ? bd.accent : bd.ink, height: 1).copyWith(fontFeatures: T.tnum)),
+            CountUp(v, style: T.sans(bd, size: 30, weight: FontWeight.w600, color: accent ? bd.accent : bd.ink, height: 1)),
             const SizedBox(height: 6),
             Label(label, align: TextAlign.center),
           ]),
@@ -420,12 +624,12 @@ class StreakStrip extends StatelessWidget {
     return Glass(
       padding: const EdgeInsets.all(20),
       child: Column(children: [
-        Row(children: [stat(stats.current, 'night streak', accent: true), stat(stats.total, 'logged'), stat(stats.kinds, 'kinds')]),
-        if (stats.total > 0) ...[
+        Row(children: [stat(stats.current, 'night streak', accent: true), stat(nights, 'nights kept'), stat(stats.kinds, 'kinds')]),
+        if (nights > 0) ...[
           const SizedBox(height: 16),
           Divider(height: 1, color: bd.line),
           const SizedBox(height: 16),
-          MilestoneMeter(total: stats.total),
+          MilestoneMeter(total: nights),
         ],
       ]),
     );
@@ -439,12 +643,12 @@ class MilestoneMeter extends StatelessWidget {
   Widget build(BuildContext context) {
     final bd = context.bd;
     final p = milestoneProgress(total);
-    if (p.next == null) return Label('All milestones reached — $total logged', color: bd.accent);
+    if (p.next == null) return Label('Every milestone — $total nights kept', color: bd.accent);
     final from = p.reached ?? 0;
     final pct = math.max(.04, (total - from) / (p.next! - from));
     return Column(children: [
       Row(children: [
-        Expanded(child: Label('to ${p.next} logs')),
+        Expanded(child: Label('to ${p.next} nights')),
         Text.rich(TextSpan(children: [
           TextSpan(text: '$total', style: T.sans(bd, size: 14, weight: FontWeight.w500)),
           TextSpan(text: '/${p.next}', style: T.sans(bd, size: 14, color: bd.faint)),

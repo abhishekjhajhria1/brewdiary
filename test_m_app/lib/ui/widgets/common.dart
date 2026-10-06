@@ -5,12 +5,13 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../icons.dart';
 import '../theme.dart';
+import 'motion.dart';
 
 export '../icons.dart';
+export 'motion.dart';
 
 
 /// Height of the floating tab bar (bar + its margins), excluding the safe area.
@@ -107,49 +108,11 @@ class Glass extends StatelessWidget {
       );
     }
     if (onTap != null) {
-      box = Semantics(button: true, label: semanticLabel, child: Pressable(onTap: onTap!, child: box));
+      // A card opens something: the page that slides in is the answer, so no tick,
+      // and a big surface sinks less than a button.
+      box = Semantics(button: true, label: semanticLabel, child: Pressable(onTap: onTap!, haptic: false, scale: .985, child: box));
     }
     return margin == null ? box : Padding(padding: margin!, child: box);
-  }
-}
-
-/// Press feedback: a quick scale + dim, and a selection haptic.
-class Pressable extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onTap;
-  final bool enabled;
-  final bool haptic;
-  const Pressable({super.key, required this.child, required this.onTap, this.enabled = true, this.haptic = true});
-  @override
-  State<Pressable> createState() => _PressableState();
-}
-
-class _PressableState extends State<Pressable> {
-  bool _down = false;
-  void _set(bool v) {
-    if (mounted && _down != v) setState(() => _down = v);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: widget.enabled ? (_) => _set(true) : null,
-      onTapCancel: () => _set(false),
-      onTapUp: (_) => _set(false),
-      onTap: widget.enabled
-          ? () {
-              if (widget.haptic) HapticFeedback.selectionClick();
-              widget.onTap();
-            }
-          : null,
-      child: AnimatedScale(
-        scale: _down ? .97 : 1,
-        duration: Motion.fast,
-        curve: Motion.curve,
-        child: AnimatedOpacity(opacity: _down ? .8 : 1, duration: Motion.fast, child: widget.child),
-      ),
-    );
   }
 }
 
@@ -250,6 +213,10 @@ class Segmented<V> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
+    final index = options.indexWhere((o) => o.$1 == value);
+    // Full width: one ink thumb that slides to the choice (the labels sit over it).
+    // Compact (sized to its labels): each segment fills in place.
+    final slides = !compact && options.length > 1 && index >= 0;
     Widget segment((V, String) o) {
       final selected = o.$1 == value;
       return Semantics(
@@ -261,7 +228,7 @@ class Segmented<V> extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: () {
             if (selected) return;
-            HapticFeedback.selectionClick();
+            Haptics.tick();
             onChanged(o.$1);
           },
           child: AnimatedContainer(
@@ -271,18 +238,25 @@ class Segmented<V> extends StatelessWidget {
             alignment: Alignment.center,
             // The website's tabs: spaced capitals; the chosen one filled in ink.
             decoration: BoxDecoration(
-              color: selected ? bd.ink : Colors.transparent,
+              color: selected && !slides ? bd.ink : Colors.transparent,
               borderRadius: BorderRadius.circular(rCtl - 4),
             ),
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(o.$2.toUpperCase(), maxLines: 1, style: T.sans(bd, size: 11, spacing: 11 * .14, weight: FontWeight.w500, color: selected ? bd.base : bd.faint)),
+              child: AnimatedDefaultTextStyle(
+                duration: Motion.fast,
+                style: T.sans(bd, size: 11, spacing: 11 * .14, weight: FontWeight.w500, color: selected ? bd.base : bd.faint),
+                child: Text(o.$2.toUpperCase(), maxLines: 1),
+              ),
             ),
           ),
         ),
       );
     }
 
+    final row = Row(mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max, children: [
+      for (final o in options) compact ? segment(o) : Expanded(child: segment(o)),
+    ]);
     return SizedBox(
       height: compact ? S.tap : 50,
       child: Center(
@@ -294,9 +268,21 @@ class Segmented<V> extends StatelessWidget {
             borderRadius: BorderRadius.circular(rCtl),
             border: Border.all(color: bd.glassBorder, width: .8),
           ),
-          child: Row(mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max, children: [
-            for (final o in options) compact ? segment(o) : Expanded(child: segment(o)),
-          ]),
+          child: !slides
+              ? row
+              : Stack(children: [
+                  AnimatedAlign(
+                    duration: context.reduceMotion ? Duration.zero : Motion.slow,
+                    curve: Easing.emphasizedDecelerate,
+                    alignment: Alignment(-1 + 2 * index / (options.length - 1), 0),
+                    child: FractionallySizedBox(
+                      widthFactor: 1 / options.length,
+                      heightFactor: 1,
+                      child: DecoratedBox(decoration: BoxDecoration(color: bd.ink, borderRadius: BorderRadius.circular(rCtl - 4))),
+                    ),
+                  ),
+                  row,
+                ]),
         ),
       ),
     );
@@ -347,12 +333,21 @@ class BdButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(rCtl),
               border: border == null ? null : Border.all(color: border, width: .8),
             ),
-            child: busy
-                ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: fg))
-                : Row(mainAxisSize: MainAxisSize.min, children: [
-                    if (icon != null) ...[Icon(icon, size: 18, color: fg), const SizedBox(width: 8)],
-                    Flexible(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 15, weight: FontWeight.w600, color: fg))),
-                  ]),
+            // The label and the spinner cross-fade; a new label (Log → Logged) slides up.
+            child: AnimatedSwitcher(
+              duration: context.reduceMotion ? Duration.zero : Motion.med,
+              switchInCurve: Easing.emphasizedDecelerate,
+              transitionBuilder: (c, a) => FadeTransition(
+                opacity: a,
+                child: SlideTransition(position: Tween(begin: const Offset(0, .35), end: Offset.zero).animate(a), child: c),
+              ),
+              child: busy
+                  ? SizedBox(key: const ValueKey('busy'), width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: fg))
+                  : Row(key: ValueKey('$text$icon'), mainAxisSize: MainAxisSize.min, children: [
+                      if (icon != null) ...[Icon(icon, size: 18, color: fg), const SizedBox(width: 8)],
+                      Flexible(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 15, weight: FontWeight.w600, color: fg))),
+                    ]),
+            ),
           ),
         ),
       ),
@@ -528,7 +523,7 @@ class BdToggle extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
-          HapticFeedback.selectionClick();
+          Haptics.tick();
           onChanged(!on);
         },
         child: SizedBox(
@@ -646,7 +641,7 @@ class GroupTile extends StatelessWidget {
         ]),
       ),
     );
-    return onTap == null ? row : Semantics(button: true, child: Pressable(onTap: onTap!, child: row));
+    return onTap == null ? row : Semantics(button: true, child: Pressable(onTap: onTap!, haptic: false, scale: .985, child: row));
   }
 }
 
@@ -719,7 +714,7 @@ class LineField extends StatelessWidget {
           focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: error != null ? bd.accentText : bd.ink, width: 1.4)),
         ),
       ),
-      if (error != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(error!, style: T.sans(bd, size: 13, color: bd.accentText))),
+      if (error != null) ErrorLine(error!, padding: const EdgeInsets.only(top: 6), style: T.sans(bd, size: 13, color: bd.accentText)),
     ]);
   }
 }
@@ -798,7 +793,19 @@ class Skeleton extends StatefulWidget {
 }
 
 class _SkeletonState extends State<Skeleton> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat(reverse: true);
+  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100), value: .6);
+  late final _pulse = Tween(begin: .5, end: 1.0).animate(CurvedAnimation(parent: _c, curve: Curves.easeInOut));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (context.reduceMotion) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat(reverse: true);
+    }
+  }
+
   @override
   void dispose() {
     _c.dispose();
@@ -809,7 +816,7 @@ class _SkeletonState extends State<Skeleton> with SingleTickerProviderStateMixin
   Widget build(BuildContext context) {
     final bd = context.bd;
     return FadeTransition(
-      opacity: Tween(begin: .5, end: 1.0).animate(CurvedAnimation(parent: _c, curve: Curves.easeInOut)),
+      opacity: _pulse,
       child: Container(
         height: widget.height,
         decoration: BoxDecoration(color: bd.glass, borderRadius: BorderRadius.circular(widget.radius), border: Border.all(color: bd.glassBorder, width: .8)),
@@ -830,19 +837,25 @@ class EmptyNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: S.x3, horizontal: S.l),
+    return Glass(
+      padding: const EdgeInsets.symmetric(vertical: S.xl, horizontal: S.l),
       child: Column(children: [
-        Text(text, textAlign: TextAlign.center, style: T.sans(bd, size: 14, color: bd.faint, height: 1.6)),
-        if (action != null) ...[const SizedBox(height: S.s), TextAction(action!, accent: true, onTap: onAction)],
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: bd.accent.withValues(alpha: .12)),
+          child: Icon(icon ?? Ph.sparkle, size: 22, color: bd.accentText),
+        ),
+        const SizedBox(height: S.m),
+        Text(text, textAlign: TextAlign.center, style: T.sans(bd, size: 14.5, color: bd.muted, height: 1.55)),
+        if (action != null) ...[const SizedBox(height: S.m), BdButton(action!, kind: BtnKind.secondary, expand: false, height: 40, onTap: onAction)],
       ]),
     );
   }
 }
 
-/// The website's room header: a faint line of what this room is, with quiet text
-/// actions on the right. Wraps under the line when the phone is narrow or the
-/// text is large.
+/// A room's header: a line of what this room is, then its actions as buttons —
+/// the first one primary.
 class RoomIntro extends StatelessWidget {
   final String text;
   final List<Widget> actions;
@@ -850,14 +863,30 @@ class RoomIntro extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    final line = Text(text, style: T.sans(bd, size: 14, color: bd.faint, height: 1.5));
-    final acts = Row(mainAxisSize: MainAxisSize.min, children: actions);
-    return LayoutBuilder(builder: (context, c) {
-      final narrow = c.maxWidth < 340 || MediaQuery.textScalerOf(context).scale(14) > 17;
-      if (narrow) return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [line, Transform.translate(offset: const Offset(-6, 0), child: acts)]);
-      return Row(children: [Expanded(child: line), const SizedBox(width: S.s), acts]);
-    });
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text(text, style: T.sans(bd, size: 14.5, color: bd.muted, height: 1.5)),
+      if (actions.isNotEmpty) ...[
+        const SizedBox(height: S.m),
+        Row(children: [
+          for (var i = 0; i < actions.length; i++) ...[
+            if (i > 0) const SizedBox(width: S.s),
+            Expanded(child: actions[i]),
+          ],
+        ]),
+      ],
+    ]);
   }
+}
+
+/// A room action for [RoomIntro]: the first is filled, the rest outlined.
+class RoomAction extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool primary;
+  const RoomAction(this.label, {super.key, required this.icon, required this.onTap, this.primary = false});
+  @override
+  Widget build(BuildContext context) => BdButton(label, icon: icon, kind: primary ? BtnKind.primary : BtnKind.secondary, height: 44, onTap: onTap);
 }
 
 /// A hairline-divided list (no card).
@@ -915,6 +944,15 @@ Future<R?> showBdSheet<R>(BuildContext context, {required WidgetBuilder builder,
     constraints: const BoxConstraints(maxWidth: 600),
     backgroundColor: Colors.transparent,
     modalBarrierColor: context.bd.scrim,
+    // In fast with a long soft landing, out quicker: the sheet arrives, it doesn't pop.
+    sheetAnimationStyle: context.reduceMotion
+        ? AnimationStyle.noAnimation
+        : const AnimationStyle(
+            duration: Duration(milliseconds: 420),
+            reverseDuration: Duration(milliseconds: 240),
+            curve: Easing.emphasizedDecelerate,
+            reverseCurve: Curves.easeOutCubic,
+          ),
     barrierLabel: l10n.scrimLabel,
     barrierOnTapHint: l10n.scrimOnTapHint(l10n.bottomSheetLabel),
     builder: (ctx) {
@@ -971,17 +1009,34 @@ Future<R?> showBdSheet<R>(BuildContext context, {required WidgetBuilder builder,
 
 OverlayEntry? _toastEntry;
 
+/// What a toast is saying. A success or a failure carries a mark and its haptic;
+/// plain news stays quiet.
+enum ToastTone { plain, success, error }
+
 /// Brief, non-blocking feedback. It rides the ROOT overlay, so it shows above
 /// sheets too; it floats clear of the tab bar (or the keyboard) and is announced
-/// to screen readers. A new toast replaces the one on screen.
-void toast(BuildContext context, String message) {
+/// to screen readers. A new toast replaces the one on screen. Plain news never
+/// takes a tap (it floats over whatever is under it); with an [action] ("Undo") it
+/// stays a little longer, the action can be tapped, and a flick down sends it away.
+void toast(BuildContext context, String message, {ToastTone tone = ToastTone.plain, String? action, VoidCallback? onAction}) {
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
   if (overlay == null) return;
+  switch (tone) {
+    case ToastTone.success:
+      Haptics.success();
+    case ToastTone.error:
+      Haptics.error();
+    case ToastTone.plain:
+      break;
+  }
   _toastEntry?.remove();
   late final OverlayEntry entry;
   entry = OverlayEntry(
     builder: (_) => _Toast(
       message: message,
+      tone: tone,
+      action: action,
+      onAction: onAction,
       onDone: () {
         if (_toastEntry != entry) return;
         entry.remove();
@@ -995,24 +1050,41 @@ void toast(BuildContext context, String message) {
 
 class _Toast extends StatefulWidget {
   final String message;
+  final ToastTone tone;
+  final String? action;
+  final VoidCallback? onAction;
   final VoidCallback onDone;
-  const _Toast({required this.message, required this.onDone});
+  const _Toast({required this.message, required this.tone, this.action, this.onAction, required this.onDone});
   @override
   State<_Toast> createState() => _ToastState();
 }
 
 class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
+  static const _in = 220, _out = 200;
+  late final int _hold = widget.action != null ? 4600 : 2400;
+
   // One controller for the whole life (in · hold · out), so tests can settle it.
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2800));
+  late final AnimationController _c = AnimationController(vsync: this, duration: Duration(milliseconds: _in + _hold + _out));
   late final Animation<double> _v = TweenSequence<double>([
-    TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0).chain(CurveTween(curve: Motion.curve)), weight: 7),
-    TweenSequenceItem(tween: ConstantTween(1.0), weight: 86),
-    TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 7),
+    TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0).chain(CurveTween(curve: Easing.emphasizedDecelerate)), weight: _in.toDouble()),
+    TweenSequenceItem(tween: ConstantTween(1.0), weight: _hold.toDouble()),
+    TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0).chain(CurveTween(curve: Curves.easeInCubic)), weight: _out.toDouble()),
   ]).animate(_c);
+  double _drag = 0;
+
+  double get _outStart => (_in + _hold) / (_in + _hold + _out);
 
   @override
   void initState() {
     super.initState();
+    _c.forward().whenComplete(widget.onDone);
+  }
+
+  /// Skip ahead to the fade-out (an action was taken, or a flick sent it away).
+  void _dismiss() {
+    // Setting the value cancels the running forward (whose completion would have
+    // removed the toast), so the fade-out carries that duty itself.
+    if (_c.value < _outStart) _c.value = _outStart;
     _c.forward().whenComplete(widget.onDone);
   }
 
@@ -1028,35 +1100,104 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
     final mq = MediaQuery.of(context);
     final keyboard = mq.viewInsets.bottom;
     final bottom = keyboard > 0 ? keyboard + S.m : mq.padding.bottom + kTabBarSpace + S.m;
+    final ink = bd.dark ? const Color(0xFF14110E) : const Color(0xFFF7F4FA);
+    final mark = switch (widget.tone) {
+      ToastTone.success => (PhFill.checkCircle, bd.dark ? const Color(0xFF9A6418) : const Color(0xFFE6A64B)),
+      ToastTone.error => (Ph.warningCircle, bd.dark ? const Color(0xFFB0402D) : const Color(0xFFE8907F)),
+      ToastTone.plain => null,
+    };
+    final card = Container(
+      constraints: const BoxConstraints(minHeight: S.tap),
+      padding: EdgeInsets.fromLTRB(mark == null ? S.l : S.m, S.s + 2, widget.action == null ? S.l : S.xs, S.s + 2),
+      decoration: BoxDecoration(color: bd.dark ? const Color(0xFFF0EBE2) : const Color(0xFF1C1822), borderRadius: BorderRadius.circular(rCtl)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (mark != null) ...[Icon(mark.$1, size: 20, color: mark.$2), const SizedBox(width: S.s)],
+        Flexible(
+          child: Text(
+            widget.message,
+            textAlign: mark == null && widget.action == null ? TextAlign.center : TextAlign.start,
+            style: T.sans(bd, size: 14, weight: FontWeight.w500, height: 1.35, color: ink),
+          ),
+        ),
+        if (widget.action != null) ...[
+          const SizedBox(width: S.xs),
+          Semantics(
+            button: true,
+            label: widget.action,
+            excludeSemantics: true,
+            child: Pressable(
+              onTap: () {
+                widget.onAction?.call();
+                _dismiss();
+              },
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: S.tap, minWidth: S.tap),
+                child: Center(
+                  widthFactor: 1,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: S.m),
+                    child: Text(widget.action!, style: T.sans(bd, size: 14, weight: FontWeight.w700, color: bd.dark ? const Color(0xFF93570F) : const Color(0xFFE6A64B))),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ]),
+    );
     return Positioned(
       left: S.gutter,
       right: S.gutter,
       bottom: bottom,
-      child: IgnorePointer(
-        child: AnimatedBuilder(
-          animation: _v,
-          builder: (context, child) => Opacity(opacity: _v.value, child: Transform.translate(offset: Offset(0, (1 - _v.value) * 10), child: child)),
-          child: Center(
-            child: Semantics(
-              liveRegion: true,
-              child: Material(
-                type: MaterialType.transparency,
-                child: Container(
-                  constraints: const BoxConstraints(minHeight: S.tap),
-                  padding: const EdgeInsets.symmetric(horizontal: S.l, vertical: S.m),
-                  decoration: BoxDecoration(color: bd.dark ? const Color(0xFFF0EBE2) : const Color(0xFF1C1822), borderRadius: BorderRadius.circular(rCtl)),
-                  child: Text(
-                    widget.message,
-                    textAlign: TextAlign.center,
-                    style: T.sans(bd, size: 14, weight: FontWeight.w500, height: 1.35, color: bd.dark ? const Color(0xFF14110E) : const Color(0xFFF7F4FA)),
-                  ),
-                ),
+      child: AnimatedBuilder(
+        animation: _v,
+        builder: (context, child) => Opacity(
+          opacity: _v.value.clamp(0.0, 1.0),
+          child: Transform.translate(offset: Offset(0, (1 - _v.value) * 16 + _drag), child: child),
+        ),
+        child: Center(
+          child: Semantics(
+            liveRegion: true,
+            child: Material(
+              type: MaterialType.transparency,
+              // A flick down sends it away; only an action toast takes taps at all.
+              child: GestureDetector(
+                behavior: HitTestBehavior.deferToChild,
+                onVerticalDragUpdate: (d) => setState(() => _drag = math.max(0, _drag + d.delta.dy)),
+                onVerticalDragEnd: (d) {
+                  if (_drag > 24 || (d.primaryVelocity ?? 0) > 300) {
+                    _dismiss();
+                  } else {
+                    setState(() => _drag = 0);
+                  }
+                },
+                child: widget.action == null ? IgnorePointer(child: card) : card,
               ),
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+/// Run a call to the server from a tap, and never fail silently: a failure (thrown,
+/// or a sentence handed back, the way the data layer reports refusals) is said in
+/// a toast with an error buzz, and [done] is said on success. Returns whether it
+/// went through.
+Future<bool> attempt(BuildContext context, Future<Object?> Function() call, {String? done}) async {
+  try {
+    final r = await call();
+    if (r is String && r.isNotEmpty) {
+      if (context.mounted) toast(context, r, tone: ToastTone.error);
+      return false;
+    }
+    if (done != null && context.mounted) toast(context, done, tone: ToastTone.success);
+    return true;
+  } catch (e) {
+    debugPrint('[brewdiary] action failed: $e');
+    if (context.mounted) toast(context, "That didn't go through — check your connection and try again.", tone: ToastTone.error);
+    return false;
   }
 }
 
@@ -1185,8 +1326,38 @@ class _LoaderState<D> extends State<Loader<D>> {
       if (widget.failed != null) return widget.failed!(context, _reload);
       if (widget.retry) return LoadError(onRetry: _reload);
     }
-    return widget.builder(context, _data, _loading);
+    return _ArrivalFade(arrived: _data != null, child: widget.builder(context, _data, _loading));
   }
+}
+
+/// The first data fading in over the skeleton's place; later refreshes update in
+/// place without a flicker. Always in the tree, so nothing below it is rebuilt.
+class _ArrivalFade extends StatefulWidget {
+  final bool arrived;
+  final Widget child;
+  const _ArrivalFade({required this.arrived, required this.child});
+  @override
+  State<_ArrivalFade> createState() => _ArrivalFadeState();
+}
+
+class _ArrivalFadeState extends State<_ArrivalFade> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 260), value: 1);
+  late final Animation<double> _fade = CurvedAnimation(parent: _c, curve: Curves.easeOut);
+
+  @override
+  void didUpdateWidget(covariant _ArrivalFade old) {
+    super.didUpdateWidget(old);
+    if (!old.arrived && widget.arrived && !context.reduceMotion) _c.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(opacity: _fade, child: widget.child);
 }
 
 /// A load that didn't make it — plainly said, with a way to try again.

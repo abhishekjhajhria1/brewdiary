@@ -368,7 +368,7 @@ function AuthSheet({
                 type="password"
                 value={password}
                 onChange={setPassword}
-                placeholder={isSignup ? "At least 6 characters" : "Your password"}
+                placeholder={isSignup ? "At least 8 characters" : "Your password"}
                 required
               />
 
@@ -376,7 +376,7 @@ function AuthSheet({
 
               <button
                 type="submit"
-                disabled={busy || !email.trim() || password.length < 6}
+                disabled={busy || !email.trim() || password.length < (isSignup ? 8 : 6)}
                 className="w-full rounded-ctl bg-ink py-3 text-sm font-medium uppercase tracking-[0.12em] text-paper transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 {busy ? "…" : isSignup ? "Start my diary" : "Sign in"}

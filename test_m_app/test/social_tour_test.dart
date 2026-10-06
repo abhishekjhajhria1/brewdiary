@@ -3,13 +3,17 @@
 // cards/party room render from sample data.
 //   flutter test test/social_tour_test.dart --dart-define=TOUR=true --update-goldens
 // Output: test/tour/*.png (git-ignored).
+import 'dart:io';
+
 import 'package:brewdiary/app.dart';
 import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary/data/auth.dart';
 import 'package:brewdiary/data/circles.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/data/friends.dart';
 import 'package:brewdiary/data/parties.dart';
 import 'package:brewdiary/data/plans.dart';
+import 'package:brewdiary/ui/screens/circles_section.dart';
 import 'package:brewdiary/ui/screens/menu_screen.dart';
 import 'package:brewdiary/ui/screens/party_screens.dart';
 import 'package:brewdiary/ui/screens/photo_studio.dart';
@@ -122,6 +126,82 @@ void main() {
     await _shot(t, 's5_host_sheet');
   });
 
+  _tourTest('together with friends (sample data)', (t) async {
+    await _boot(t);
+    final kabir = const SocialProfile(id: 'u4', handle: 'kabir', name: 'Kabir');
+    final feed = [
+      ..._feed(),
+      FeedEntry(id: 'f3', userId: 'u4', author: kabir, date: toKey(addDays(testNow, -1)), createdAt: _iso(20), drink: 'Hazy IPA', mood: 'loose', venue: 'Toit, Indiranagar', cheers: 1, cheered: false, comments: const []),
+      FeedEntry(id: 'f4', userId: 'u2', author: _mira, date: toKey(addDays(testNow, -3)), createdAt: _iso(19), drink: 'Kombucha', mood: 'bright', cheers: 0, cheered: false, comments: const []),
+      FeedEntry(id: 'f5', userId: 'u3', author: _arjun, date: toKey(addDays(testNow, -2)), createdAt: _iso(8), drink: 'Cold Brew', cheers: 0, cheered: false, comments: const []),
+    ];
+    await _push(
+      t,
+      Ambient(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: TogetherScreen(
+            preview: TogetherPreview(
+              friends: [_mira, _arjun, kabir],
+              feed: feed,
+              parties: [Party(id: 'p1', name: 'Friday tasting', hostId: 'u2', venue: 'Bar Termini', date: todayKey(), inviteCode: 'FRI-7KQ2', going: 4)],
+              plans: [MyPlan(id: 'pl2', title: 'Sunday coffee crawl', date: toKey(addDays(testNow, 2)), time: '10:00', city: 'Bandra', drinks: const [], vibeTags: const [], joinPolicy: JoinPolicy.fof, status: PlanStatus.open, going: 2, pending: 1)],
+              compete: true,
+              circles: const [Circle(id: 'c1', name: 'The Bandra lot', createdBy: 'u2', inviteCode: 'BND-4KX', memberCount: 4), Circle(id: 'c2', name: 'Coffee people', createdBy: 'u3', inviteCode: 'COF-9QA', memberCount: 3)],
+              circle: CirclePreview(
+                detail: CircleDetail(
+                  [CircleMember(auth.meId ?? 'me', 'sekhi', 'Sekhi'), const CircleMember('u2', 'mira', 'Mira'), const CircleMember('u3', 'arjun', 'Arjun'), const CircleMember('u4', 'kabir', 'Kabir')],
+                  [
+                    SharedEntry(id: 's1', userId: 'u2', authorName: 'Mira', date: todayKey(), createdAt: _iso(21), drink: 'Mezcal Negroni', mood: 'smoky', venue: 'Soka, Bandra'),
+                    SharedEntry(id: 's2', userId: auth.meId ?? 'me', authorName: 'Sekhi', date: toKey(addDays(testNow, -1)), createdAt: _iso(19), drink: 'Paloma', mood: 'bright'),
+                    SharedEntry(id: 's3', userId: 'u4', authorName: 'Kabir', date: toKey(addDays(testNow, -2)), createdAt: _iso(20), drink: 'Hazy IPA'),
+                  ],
+                ),
+                challenges: [Challenge(id: 'ch1', circleId: 'c1', createdBy: 'u2', kind: ChallengeKind.newDrinks, title: 'Try something new', startsOn: toKey(addDays(testNow, -5)), endsOn: toKey(addDays(testNow, 9)), participantIds: [auth.meId ?? 'me', 'u2', 'u4'])],
+                boards: {'ch1': [const BoardRow('u2', 'Mira', 4), BoardRow(auth.meId ?? 'me', 'Sekhi', 3), const BoardRow('u4', 'Kabir', 1)]},
+              ),
+              board: [const PointRow('u2', 'Mira', 12, 4), PointRow(auth.meId ?? 'me', 'Sekhi', 9, 2), const PointRow('u3', 'Arjun', 4, 0)],
+            ),
+          ),
+        ),
+      ),
+    );
+    await _shot(t, 's20_together');
+    final list = find.byType(Scrollable).first;
+    await t.drag(list, const Offset(0, -560));
+    await t.pumpAndSettle();
+    await _shot(t, 's21_together_week');
+    await t.drag(list, const Offset(0, -600));
+    await t.pumpAndSettle();
+    await _shot(t, 's22_together_feed');
+    await t.drag(list, const Offset(0, 4000));
+    await t.pumpAndSettle();
+    await t.tap(find.text('BOARD'));
+    await t.pumpAndSettle();
+    await _shot(t, 's23_together_board_tab');
+    await t.tap(find.text('PARTIES'));
+    await t.pumpAndSettle();
+    await _shot(t, 's24_together_parties');
+    await t.tap(find.text('CIRCLES'));
+    await t.pumpAndSettle();
+    await _shot(t, 's25_together_circles');
+    await t.tap(find.bySemanticsLabel(RegExp(r'^The Bandra lot')));
+    await t.pumpAndSettle();
+    await _shot(t, 's26_circle');
+    await t.drag(find.byType(Scrollable).first, const Offset(0, -500));
+    await t.pumpAndSettle();
+    await _shot(t, 's27_circle_challenges');
+    navigatorKey.currentState!.pop();
+    await t.pumpAndSettle();
+    await t.tap(find.text('FEED'));
+    await t.pumpAndSettle();
+    await t.tap(find.bySemanticsLabel(RegExp(r'^Mira, @mira')));
+    await t.pumpAndSettle();
+    await t.drag(find.byType(Scrollable).last, const Offset(0, -300));
+    await t.pumpAndSettle();
+    await _shot(t, 's28_friend_sheet');
+  });
+
   _tourTest('feed + plan cards (sample data)', (t) async {
     await _boot(t);
     await _push(
@@ -195,13 +275,10 @@ void main() {
 
   _tourTest('share cards', (t) async {
     await _boot(t);
-    showShareCard(navigatorKey.currentContext!, entryStore.entries.last);
-    await t.pumpAndSettle();
+    // an entry as a card: the studio, with no photo (the warm backdrop)
+    await _push(t, PhotoStudio(story: NightStory.fromEntry(entryStore.entries.last)));
     await _shot(t, 's17_share_card');
-    await t.tap(find.text('POSTER'));
-    await t.pumpAndSettle();
-    await _shot(t, 's18_share_poster');
-    Navigator.of(navigatorKey.currentContext!).pop();
+    navigatorKey.currentState!.pop();
     await t.pumpAndSettle();
     showScoreCard(navigatorKey.currentContext!, const Score(name: 'you', sparks: 9, vibe: 2, context: 'Friday tasting', rank: 2, of: 3));
     await t.pumpAndSettle();
@@ -225,24 +302,66 @@ void main() {
   _tourTest('taste card', (t) async {
     await _boot(t);
     await _push(t, const TasteCardScreen());
-    await _shot(t, 'o4_taste_card');
+    await _shot(t, 'o4_passport');
+    final list = find.byType(Scrollable).first;
+    await t.drag(list, const Offset(0, -520));
+    await t.pumpAndSettle();
+    await _shot(t, 'o4b_week');
+    await t.drag(list, const Offset(0, -560));
+    await t.pumpAndSettle();
+    await _shot(t, 'o4c_stamps');
+    await t.drag(list, const Offset(0, -900));
+    await t.pumpAndSettle();
+    await _shot(t, 'o4d_at_the_bar');
+    await t.drag(list, const Offset(0, 4000));
+    await t.pumpAndSettle();
+    await t.tap(find.bySemanticsLabel(RegExp(r'^Classic cocktails')));
+    await t.pumpAndSettle();
+    await _shot(t, 'o4e_collection');
+    navigatorKey.currentState!.pop();
+    await t.pumpAndSettle();
+    await t.tap(find.byTooltip('Share your passport'));
+    await t.pumpAndSettle();
+    await _shot(t, 'o4f_share');
+    navigatorKey.currentState!.pop();
+    await t.pumpAndSettle();
+    t.widget<GroupTile>(find.widgetWithText(GroupTile, 'Ranks and miles', skipOffstage: false)).onTap!();
+    await t.pumpAndSettle();
+    await _shot(t, 'o4g_ranks');
+    navigatorKey.currentState!.pop();
+    await t.pumpAndSettle();
+    t.widget<GroupTile>(find.widgetWithText(GroupTile, 'What the bar sees', skipOffstage: false)).onTap!();
+    await t.pumpAndSettle();
+    await _shot(t, 'o4h_bar_page');
     await t.ensureVisible(find.byType(BdToggle).first);
     await t.pumpAndSettle();
     await t.tap(find.byType(BdToggle).first);
-    await t.pumpAndSettle();
-    await t.drag(find.byType(Scrollable).hitTestable().first, const Offset(0, 2000));
     await t.pumpAndSettle();
     await _shot(t, 'o5_taste_card_dry');
   });
 
   _tourTest('photo overlays', (t) async {
     await _boot(t);
-    const story = NightStory(dateKey: '2026-09-26', title: "Mira's birthday", venue: 'Soka, Bandra', mood: 'electric', withPeople: 6);
+    const story = NightStory(
+      dateKey: '2026-09-26',
+      title: "Mira's birthday",
+      venue: 'Soka, Bandra',
+      mood: 'electric',
+      note: 'Mira blew out the candles twice. The bartender made us a smoky one off-menu.',
+      withPeople: 3,
+      who: ['Mira', 'Arjun', 'Kabir'],
+      time: '21:40',
+      newToYou: 2,
+      lines: [StoryLine('Mezcal Negroni', qty: 2, price: 650), StoryLine('Paloma', price: 520), StoryLine('Truffle fries', price: 380), StoryLine('Lime soda', qty: 2, price: 150)],
+      total: 2500,
+    );
+    final image = MemoryImage(File('test/fixtures/night.jpg').readAsBytesSync());
+    await _push(t, const Scaffold(body: SizedBox()));
+    await t.runAsync(() => precacheImage(image, navigatorKey.currentContext!));
+    navigatorKey.currentState!.pop();
+    await t.pumpAndSettle();
     for (var i = 0; i < overlayNames.length; i++) {
-      await _push(t, const Scaffold(body: Center(child: SizedBox(width: 360, height: 450, child: OverlayFrame(photo: null, story: story, overlay: 0)))));
-      navigatorKey.currentState!.pop();
-      await t.pumpAndSettle();
-      await _push(t, Scaffold(body: Center(child: SizedBox(width: 360, height: 450, child: OverlayFrame(photo: null, story: story, overlay: i)))));
+      await _push(t, Scaffold(body: Center(child: SizedBox(width: 360, height: 450, child: OverlayFrame(photo: null, image: image, story: story, overlay: i)))));
       await expectLater(find.byType(OverlayFrame), matchesGoldenFile('tour/p${(i + 1).toString().padLeft(2, '0')}_overlay.png'));
       navigatorKey.currentState!.pop();
       await t.pumpAndSettle();
@@ -255,6 +374,10 @@ void main() {
     await _boot(t, dark: false);
     await _push(t, _Preview(title: 'Feed', children: [for (final f in _feed()) ...[FeedCard(item: f), const SizedBox(height: S.m)]]));
     await _shot(t, 's15_feed_light');
+    await _push(t, const TasteCardScreen());
+    await _shot(t, 's30_passport_light');
+    navigatorKey.currentState!.pop();
+    await t.pumpAndSettle();
     await _push(t, _partyPreview());
     await _shot(t, 's16_party_light');
   });

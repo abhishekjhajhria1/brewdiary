@@ -45,7 +45,7 @@ class VenuesScreen extends StatelessWidget {
           onRefresh: () => s.refreshVenues(),
           children: [
             const DemoNote(),
-            if (s.error != null) Padding(padding: const EdgeInsets.only(bottom: S.l), child: Text(s.error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+            if (s.error != null) ErrorLine(s.error!, padding: const EdgeInsets.only(bottom: S.l), style: T.sans(bd, size: 14, color: bd.accentText)),
             if (s.enrolments.isNotEmpty) ...[
               Text('A code to type'.toUpperCase(), style: T.section(bd)),
               const SizedBox(height: S.m),
@@ -133,10 +133,10 @@ class VenuesScreen extends StatelessWidget {
               await Session.instance.refreshVenues();
               if (ctx.mounted) {
                 Navigator.pop(ctx);
-                toast(context, 'Asked to join $name — a manager will say yes.');
+                toast(context, 'Asked to join $name — a manager will say yes.', tone: ToastTone.success);
               }
             } on BackendError catch (e) {
-              if (ctx.mounted) toast(ctx, e.message);
+              if (ctx.mounted) toast(ctx, e.message, tone: ToastTone.error);
             } finally {
               if (ctx.mounted) set(() => busy = false);
             }
@@ -177,7 +177,7 @@ Future<void> claimCodeSheet(BuildContext context, MyEnrolment e) async {
             final v = Session.instance.venues.where((x) => x.id == r.venueId).firstOrNull;
             if (ctx.mounted) Navigator.pop(ctx);
             if (v != null) Session.instance.select(v);
-            if (context.mounted) toast(context, 'Welcome to ${r.venueName ?? e.venueName} — you\'re ${_a(roleLabel(r.role ?? e.role, e.venueKind))}.');
+            if (context.mounted) toast(context, 'Welcome to ${r.venueName ?? e.venueName} — you\'re ${_a(roleLabel(r.role ?? e.role, e.venueKind))}.', tone: ToastTone.success);
             return;
           }
           set(() {

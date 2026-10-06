@@ -31,6 +31,7 @@ import 'ui/screens/together_intro.dart';
 import 'ui/screens/together_screen.dart';
 import 'ui/screens/you_screen.dart';
 import 'ui/theme.dart';
+import 'ui/widgets/app_lock.dart';
 import 'ui/widgets/common.dart';
 import 'ui/widgets/moments.dart';
 import 'ui/widgets/page.dart';
@@ -63,7 +64,7 @@ class BrewdiaryApp extends StatelessWidget {
             // Honour the person's text size, within the range the layouts are built for.
             child: MediaQuery(
               data: mq.copyWith(textScaler: mq.textScaler.clamp(minScaleFactor: .9, maxScaleFactor: 1.3)),
-              child: KeyboardScope(inset: mq.viewInsets.bottom, child: child!),
+              child: AppLockGate(child: KeyboardScope(inset: mq.viewInsets.bottom, child: child!)),
             ),
           );
         },
@@ -90,7 +91,13 @@ class _Root extends StatelessWidget {
         }
         // The scaffold resizes for the keyboard (so a focused field scrolls into
         // view); the ambient layer stays outside it so the background never jumps.
-        return Ambient(child: Scaffold(backgroundColor: Colors.transparent, body: body));
+        // Passing the age gate cross-fades into the app rather than cutting to it.
+        return Ambient(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: AnimatedSwitcher(duration: context.reduceMotion ? Duration.zero : Motion.slow, child: KeyedSubtree(key: ValueKey(body.runtimeType), child: body)),
+          ),
+        );
       },
     );
   }
@@ -200,8 +207,9 @@ class _ShellState extends State<Shell> {
       final what = uri.pathSegments.firstOrNull;
       final def = extras.where((d) => d.entryDrink.toLowerCase() == what).firstOrNull;
       if (def == null) return;
-      entryStore.addEntry(date: todayKey(), drink: def.entryDrink, type: def.entryType);
-      toast(ctx, 'Logged one ${def.unit} for today.');
+      final e = entryStore.addEntry(date: todayKey(), drink: def.entryDrink, type: def.entryType);
+      // A home-screen tap can be a pocket tap: say what happened, and offer it back.
+      toast(ctx, 'Logged one ${def.unit} for today.', tone: ToastTone.success, action: 'Undo', onAction: () => entryStore.deleteEntry(e.id));
     } else if (uri.host == 'split') {
       if (auth.isAuthed && db != null) {
         navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const SplitScreen()));
@@ -259,7 +267,7 @@ class _ShellState extends State<Shell> {
         // signing in starts from a clean slate.
         return Stack(children: [
           Positioned.fill(
-            child: IndexedStack(
+            child: FadeThroughStack(
               key: ValueKey(auth.meId ?? 'guest'),
               index: tabs.indexOf(_tab),
               children: [
@@ -369,7 +377,7 @@ class _TabBar extends StatelessWidget {
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () {
-                            if (t != current) HapticFeedback.selectionClick();
+                            if (t != current) Haptics.tick();
                             onSelect(t);
                           },
                           child: Stack(alignment: Alignment.topCenter, children: [
@@ -386,11 +394,16 @@ class _TabBar extends StatelessWidget {
                             ),
                             Positioned.fill(
                               // Text-only, in the website's spaced capitals: the amber mark says where you are.
-                              child: Center(
-                                child: AnimatedDefaultTextStyle(
-                                  duration: Motion.fast,
-                                  style: T.sans(bd, size: 11.5, spacing: 11.5 * .16, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint),
-                                  child: Text(_labels[t]!.toUpperCase(), maxLines: 1),
+                              // Large text: the label shrinks to fit instead of being cut off.
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: AnimatedDefaultTextStyle(
+                                    duration: Motion.fast,
+                                    style: T.sans(bd, size: 11.5, spacing: 11.5 * .16, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint),
+                                    child: Text(_labels[t]!.toUpperCase(), maxLines: 1),
+                                  ),
                                 ),
                               ),
                             ),

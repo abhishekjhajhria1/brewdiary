@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import {
   SYSTEM_PROMPT,
   contextBlock,
+  sanitizeContext,
   fallbackReply,
   type BartenderContext,
   type ChatMessage,
@@ -97,7 +98,7 @@ export async function POST(req: Request) {
       .filter(isChatMessage)
       .slice(-MAX_MSGS)
       .map((m: ChatMessage) => ({ role: m.role, content: m.content.slice(0, MAX_MSG_CHARS) }));
-    context = body.context;
+    context = sanitizeContext(body.context);
   } catch {
     return new Response("Bad request", { status: 400 });
   }

@@ -237,9 +237,9 @@ class _WeekView extends StatelessWidget {
   Future<void> _publish(BuildContext context) async {
     try {
       final n = await Backend.i.publishRota(venue.id, monday, _next);
-      if (context.mounted) toast(context, n == 0 ? 'Nothing new to publish.' : 'Published $n ${n == 1 ? 'shift' : 'shifts'}: the team can see them now.');
+      if (context.mounted) toast(context, n == 0 ? 'Nothing new to publish.' : 'Published $n ${n == 1 ? 'shift' : 'shifts'}: the team can see them now.', tone: n == 0 ? ToastTone.plain : ToastTone.success);
     } on BackendError catch (e) {
-      if (context.mounted) toast(context, e.message);
+      if (context.mounted) toast(context, e.message, tone: ToastTone.error);
     }
   }
 
@@ -247,9 +247,9 @@ class _WeekView extends StatelessWidget {
     final from = DateTime(monday.year, monday.month, monday.day - 7);
     try {
       final n = await Backend.i.copyRota(venue.id, from, monday, 7, tz: venueTimeZone(venue.country, venue.region));
-      if (context.mounted) toast(context, n == 0 ? 'Nothing to copy: last week was empty, or it\'s already here.' : 'Copied $n ${n == 1 ? 'shift' : 'shifts'} as drafts. Anyone off or busy became an open shift.');
+      if (context.mounted) toast(context, n == 0 ? 'Nothing to copy: last week was empty, or it\'s already here.' : 'Copied $n ${n == 1 ? 'shift' : 'shifts'} as drafts. Anyone off or busy became an open shift.', tone: n == 0 ? ToastTone.plain : ToastTone.success);
     } on BackendError catch (e) {
-      if (context.mounted) toast(context, e.message);
+      if (context.mounted) toast(context, e.message, tone: ToastTone.error);
     }
   }
 

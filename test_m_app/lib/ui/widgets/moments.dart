@@ -6,7 +6,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
@@ -327,7 +326,7 @@ Future<void> showStreakCheer(BuildContext context, int milestone, {bool yearLink
   final stamp = '$milestone@${todayKey()}';
   if (Prefs.getString(_cheerKey) == stamp) return;
   await Prefs.setString(_cheerKey, stamp);
-  HapticFeedback.mediumImpact();
+  Haptics.knock();
   if (!context.mounted) return;
   final seeYear = await showBdSheet<bool>(context, builder: (_) => _StreakCheer(milestone: milestone, yearLink: yearLink && CalendarViewStore.instance.view == CalendarView.month));
   if (seeYear == true && CalendarViewStore.instance.view == CalendarView.month) CalendarViewStore.instance.toggle();
@@ -357,11 +356,8 @@ class _StreakCheer extends StatelessWidget {
           const SizedBox(height: S.s),
           Label(label, align: TextAlign.center, color: bd.accentText),
           const SizedBox(height: S.xs),
-          Text(
-            '$milestone',
-            textAlign: TextAlign.center,
-            style: T.serif(bd, size: 88, height: 1, color: bd.accent).copyWith(fontFeatures: T.tnum),
-          ),
+          // The number counts up to the milestone as the sheet arrives.
+          CountUp(milestone, textAlign: TextAlign.center, duration: const Duration(milliseconds: 900), style: T.serif(bd, size: 88, height: 1, color: bd.accent)),
           const SizedBox(height: S.m),
           Text(title, textAlign: TextAlign.center, style: T.serif(bd, size: 26, height: 1.15)),
           const SizedBox(height: S.s),

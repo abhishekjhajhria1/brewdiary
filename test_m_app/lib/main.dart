@@ -11,8 +11,10 @@ import 'data/auth.dart';
 import 'data/base.dart';
 import 'data/entries.dart';
 import 'data/reminder.dart';
+import 'data/settings.dart';
 import 'data/wishlist.dart';
 import 'ui/home_widget.dart';
+import 'ui/widgets/motion.dart' show Haptics;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +27,10 @@ Future<void> main() async {
   entryStore.wire();
   wishlist.wire();
   ReminderStore.instance.restore();
+  // Haptics follow the Settings switch, from the first frame on.
+  void haptics() => Haptics.enabled = HapticsStore.instance.on;
+  haptics();
+  HapticsStore.instance.addListener(haptics);
   HomeWidget.wire();
 
   // Phones stay upright; foldables and tablets (600dp+ on the short side) rotate freely.

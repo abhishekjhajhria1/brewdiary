@@ -40,7 +40,12 @@ class InboxScreen extends StatelessWidget {
                 if (items == null) return const Skeleton(height: 200);
                 if (items.isEmpty) return const EmptyNote('Nothing waiting. When a table orders or calls from its QR, it lands here.');
                 return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  for (final i in items) Padding(padding: const EdgeInsets.only(bottom: S.m), child: i.kind == 'order' ? _OrderCard(venue: venue, item: i) : _CallCard(item: i)),
+                  for (final (n, i) in items.indexed)
+                    Reveal(
+                      key: ValueKey(i.id),
+                      index: n,
+                      child: Padding(padding: const EdgeInsets.only(bottom: S.m), child: i.kind == 'order' ? _OrderCard(venue: venue, item: i) : _CallCard(item: i)),
+                    ),
                   Text('Staff never see who asked — only the table.', style: T.caption(bd)),
                 ]);
               },

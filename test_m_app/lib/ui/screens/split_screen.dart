@@ -98,7 +98,7 @@ class SplitScreen extends StatelessWidget {
                       Text(_money(e.amount), style: T.row(bd).copyWith(fontFeatures: T.tnum)),
                       if (e.payerId == me?.id)
                         IconBtn(Ph.dotsThree, tooltip: 'More for ${e.description}', color: bd.muted, onTap: () => showActions(context, title: e.description, actions: [
-                              SheetAction('Remove this expense', icon: Ph.trash, destructive: true, onTap: () => SplitApi.deleteExpense(e.id)),
+                              SheetAction('Remove this expense', icon: Ph.trash, destructive: true, onTap: () => attempt(context, () => SplitApi.deleteExpense(e.id))),
                             ])),
                     ]),
                   ),
@@ -156,7 +156,7 @@ class _AddExpenseState extends State<_AddExpense> {
       ]),
       const SizedBox(height: S.s),
       Text(valid ? '${_money(amt / _parts.length)} each · ${_parts.length} people' : 'Pick at least two people to split between.', style: T.caption(bd, color: valid ? bd.accentText : bd.faint)),
-      if (_error != null) Padding(padding: const EdgeInsets.only(top: S.m), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+      if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.m), style: T.sans(bd, size: 14, color: bd.accentText)),
       const SizedBox(height: S.xxl),
       BdButton('Add expense', busy: _busy, onTap: !valid
           ? null

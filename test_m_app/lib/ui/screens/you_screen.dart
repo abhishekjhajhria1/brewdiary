@@ -2,23 +2,26 @@
 // (only once asked for), your year, the to-try list, your words, photos, your home
 // bar, the journey so far, and a searchable history. Settings live on their own
 // page behind the gear (settings_screen.dart).
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/game.dart';
 import 'package:brewdiary_core/drinks.dart';
 import 'package:brewdiary_core/types.dart';
+import '../../data/auth.dart';
 import '../../data/entries.dart';
 import '../../data/settings.dart';
 import '../../data/wishlist.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/game.dart' show RankEmblem;
 import '../widgets/moments.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
+import '../widgets/photo_viewer.dart';
 import '../widgets/pickers.dart';
 import 'photo_studio.dart';
 import 'settings_screen.dart';
@@ -77,7 +80,9 @@ class _YouScreenState extends State<YouScreen> {
           titleNote: '${s.longest} night best',
           onRefresh: entryStore.reload,
           children: [
-            StreakStrip(stats: s),
+            _Identity(entries: entries),
+            const SizedBox(height: S.m),
+            StreakStrip(stats: s, nights: loggedDates(entryStore.entries).length),
             _BalanceCard(entries: entries),
             if (yr.total > 0) ...[
               const SectionHeader('Your year'),
@@ -115,18 +120,27 @@ class _YouScreenState extends State<YouScreen> {
                 mainAxisSpacing: 6,
                 crossAxisSpacing: 6,
                 children: [
-                  for (final p in photos)
+                  for (final (i, p) in photos.indexed)
                     Semantics(
                       button: true,
                       label: 'Photo from ${formatDayLongYear(p.date)}',
                       excludeSemantics: true,
+                      // Tap: the photo, big, with the rest to swipe through. Hold: that night.
                       child: Pressable(
-                        onTap: () => _openDay(p.date),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(rCell + 2),
-                          child: ColoredBox(
-                            color: bd.glass,
-                            child: p.photo.isLocal ? Image.file(File(p.photo.url), fit: BoxFit.cover) : Image.network(p.photo.url, fit: BoxFit.cover),
+                        haptic: false,
+                        onTap: () => showPhotoViewer(
+                          context,
+                          [for (final x in photos) (url: x.photo.url, label: 'Photo from ${formatDayLongYear(x.date)}')],
+                          initial: i,
+                          scope: 'you',
+                          action: (label: 'Open that night', onTap: (k) => _openDay(photos[k].date)),
+                        ),
+                        onLongPress: () => _openDay(p.date),
+                        child: Hero(
+                          tag: photoHeroTag(p.photo.url, 'you'),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(rCell + 2),
+                            child: ColoredBox(color: bd.glass, child: PhotoImage(p.photo.url)),
                           ),
                         ),
                       ),
@@ -138,16 +152,6 @@ class _YouScreenState extends State<YouScreen> {
             const _Pantry(),
             const SizedBox(height: S.m),
             _JourneyTile(entries: entries),
-            const SizedBox(height: S.m),
-            Group(children: [
-              GroupTile(
-                icon: Ph.identificationBadge,
-                title: 'Your taste passport',
-                subtitle: 'Stamps for everywhere you\'ve been, and what you\'re into.',
-                chevron: true,
-                onTap: () => showTasteCard(context),
-              ),
-            ]),
             SectionHeader('History', trailing: Text('${filtered.length}', style: T.caption(bd).copyWith(fontFeatures: T.tnum))),
             GlassField(
               controller: _query,
@@ -324,7 +328,7 @@ class _ToTryState extends State<_ToTry> {
                   title: w.drink,
                   subtitle: 'Tried it? Tap to log it',
                   onTap: () => showBdSheet(context, title: 'Log to your diary', builder: (_) => _LogWish(item: w)),
-                  trailing: IconBtn(Ph.x, tooltip: 'Remove ${w.drink}', size: 18, color: bd.faint, onTap: () => wishlist.remove(w.id)),
+                  trailing: IconBtn(Ph.x, tooltip: 'Remove ${w.drink}', size: 18, color: bd.faint, onTap: () => attempt(context, () => wishlist.remove(w.id))),
                 ),
             ]),
           ] else if (_pick == null)
@@ -366,7 +370,7 @@ class _LogWishState extends State<_LogWish> {
         entryStore.addEntry(date: toKey(_date), drink: widget.item.drink, type: canonicalize(widget.item.drink).type);
         wishlist.remove(widget.item.id);
         Navigator.pop(context);
-        toast(context, 'Logged ${widget.item.drink} — and off the list.');
+        toast(context, 'Logged ${widget.item.drink} — and off the list.', tone: ToastTone.success);
       }),
     ]);
   }
@@ -424,7 +428,7 @@ class _PantryState extends State<_Pantry> {
               Wrap(spacing: S.s, children: [for (final it in items) BdChip(it, icon: PhBold.x, onTap: () => PantryStore.instance.remove(it))]),
             ],
             const SizedBox(height: S.s),
-            Text('Ninkasi will use this to suggest what you can make at home — coming soon.', style: T.caption(bd)),
+            Text('Ninkasi builds from this when you ask what you can make at home.', style: T.caption(bd)),
           ]),
         );
       },
@@ -479,5 +483,53 @@ class _JourneyTile extends StatelessWidget {
         }),
       ),
     ]);
+  }
+}
+
+/// Who this diary belongs to — your initial, name and handle, and your passport
+/// rank. Tap it for the passport.
+class _Identity extends StatelessWidget {
+  final List<Entry> entries;
+  const _Identity({required this.entries});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final p = auth.profile;
+    final g = passportGame(entries);
+    final name = (p?.name.trim().isNotEmpty ?? false) ? p!.name.trim() : 'Your diary';
+    String? since;
+    if (entries.isNotEmpty) {
+      final d = parseKey(entries.map((e) => e.date).reduce((a, b) => a.compareTo(b) < 0 ? a : b));
+      since = 'since ${monthNames[d.month - 1].substring(0, 3)} ${d.year}';
+    }
+    final line = [if ((p?.handle ?? '').isNotEmpty) '@${p!.handle}' else 'on this phone', ?since].join(' · ');
+    return Glass(
+      onTap: () => showTasteCard(context),
+      semanticLabel: '$name, $line. Taste passport: ${g.rank.title}, ${g.miles} miles',
+      padding: const EdgeInsets.all(S.l),
+      child: Row(children: [
+        Container(
+          width: 56,
+          height: 56,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: bd.accent.withValues(alpha: .16), border: Border.all(color: bd.accent.withValues(alpha: .45))),
+          child: Text(name.characters.first.toUpperCase(), style: T.serif(bd, size: 26, color: bd.accentText)),
+        ),
+        const SizedBox(width: S.m),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.serif(bd, size: 24, height: 1.1)),
+            const SizedBox(height: 3),
+            Text(line, maxLines: 2, overflow: TextOverflow.ellipsis, style: T.caption(bd)),
+          ]),
+        ),
+        const SizedBox(width: S.s),
+        Column(children: [
+          RankEmblem(g.rank.index, size: 38),
+          const SizedBox(height: 4),
+          Text(g.rank.title, style: T.sans(bd, size: 11, weight: FontWeight.w600, color: bd.accentText)),
+        ]),
+      ]),
+    );
   }
 }

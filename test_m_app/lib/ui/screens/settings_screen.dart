@@ -23,15 +23,19 @@ import 'package:brewdiary_core/types.dart';
 import '../../data/auth.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';
+import '../../data/export.dart';
 import '../../data/friends.dart';
 import '../../data/reminder.dart';
 import '../../data/safety.dart';
 import '../../data/settings.dart';
 import '../theme.dart';
+import '../export/diary_book.dart';
+import '../widgets/app_lock.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
 import '../widgets/pickers.dart';
 import 'landing_screen.dart' show showAuthSheet;
+import 'taste_card.dart' show TasteShareSettings;
 import 'profile_screen.dart';
 
 /// Settings on a page of its own (kept for links); in the app they live inline at
@@ -70,6 +74,10 @@ class SettingsBody extends StatelessWidget {
           if (cloud) ...[
             const _Header('Together and privacy'),
             const _PrivacyGroup(),
+            if (auth.isAuthed) ...[
+              const _Header('At the bar'),
+              const TasteShareSettings(),
+            ],
           ],
           const _Header('Your data'),
           _DataGroup(cloud: cloud),
@@ -170,7 +178,7 @@ class _HandleSheetState extends State<_HandleSheet> {
     if (!mounted) return;
     if (res.ok) {
       Navigator.pop(context);
-      toast(context, 'You are @$_candidate now.');
+      toast(context, 'You are @$_candidate now.', tone: ToastTone.success);
       return;
     }
     setState(() {
@@ -254,7 +262,7 @@ class _ProfilePrivacySheetState extends State<_ProfilePrivacySheet> {
               GroupTile(
                 title: _visibilityLabel[v]!,
                 trailing: vis == v ? Icon(PhBold.check, size: 18, color: bd.accentText) : null,
-                onTap: () => ProfileApi.setVisibility(v),
+                onTap: () => attempt(context, () => ProfileApi.setVisibility(v)),
               ),
           ]),
           if (vis != ProfileVisibility.friends) ...[
@@ -276,7 +284,7 @@ class _ProfilePrivacySheetState extends State<_ProfilePrivacySheet> {
             await ProfileApi.setSocialHandle(_link.text);
             if (!context.mounted) return;
             setState(() => _saving = false);
-            toast(context, 'Saved.');
+            toast(context, 'Saved.', tone: ToastTone.success);
           }),
         ]);
       },
@@ -332,7 +340,6 @@ class _TrustSheet extends StatelessWidget {
             GroupTile(title: 'Days logged', trailing: Text('${signals.activeDays}', style: T.row(bd, color: bd.muted))),
             GroupTile(title: 'Friends', trailing: Text('${signals.friends}', style: T.row(bd, color: bd.muted))),
             GroupTile(title: 'Friends who vouch for you', trailing: Text('${signals.vouches}', style: T.row(bd, color: bd.muted))),
-            GroupTile(title: 'Photo-ID verification', trailing: Text('Coming soon', style: T.caption(bd))),
           ]),
         ]);
       },
@@ -346,7 +353,7 @@ class _AppearanceGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: ThemeStore.instance,
+      listenable: Listenable.merge([ThemeStore.instance, HapticsStore.instance]),
       builder: (context, _) => Group(
         footer: 'System follows your phone’s light or dark setting.',
         children: [
@@ -356,6 +363,19 @@ class _AppearanceGroup extends StatelessWidget {
               options: const [(ThemeMode.dark, 'Dark'), (ThemeMode.light, 'Light'), (ThemeMode.system, 'System')],
               value: ThemeStore.instance.mode,
               onChanged: ThemeStore.instance.set,
+            ),
+          ),
+          SettingRow(
+            title: 'Haptics',
+            hint: 'A small tap under your finger when you log, choose or confirm.',
+            trailing: BdToggle(
+              on: HapticsStore.instance.on,
+              label: 'Haptics',
+              onChanged: (v) {
+                HapticsStore.instance.set(v);
+                Haptics.enabled = v;
+                if (v) Haptics.tap(); // turning them on answers, so you feel what you chose
+              },
             ),
           ),
         ],
@@ -383,7 +403,7 @@ class _ReminderGroup extends StatelessWidget {
             label: 'Nightly reminder',
             onChanged: (v) async {
               final ok = await r.setOn(v);
-              if (!ok && context.mounted) toast(context, 'Notifications are off for brewdiary — allow them in your phone settings.');
+              if (!ok && context.mounted) toast(context, 'Notifications are off for brewdiary — allow them in your phone settings.', tone: ToastTone.error);
             },
           ),
         ),
@@ -492,7 +512,7 @@ class _ReconfirmAgeState extends State<_ReconfirmAge> {
           }
         },
       ),
-      if (_error != null) Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+      if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.s), style: T.sans(bd, size: 14, color: bd.accentText)),
       const SizedBox(height: S.xxl),
       BdButton('Confirm and move', onTap: _dob == null
           ? null
@@ -604,7 +624,7 @@ class _NinkasiGroup extends StatelessWidget {
       builder: (context, _) => Group(children: [
         SettingRow(
           title: 'Help train Ninkasi',
-          hint: 'Keep your chats with Ninkasi on this phone to teach her your taste${t.count > 0 ? ' · ${t.count} saved' : ''}.',
+          hint: 'Your chats help her learn — kept on this phone for your book, and sent without your name to brewdiary\'s training set${t.count > 0 ? ' · ${t.count} saved' : ''}.',
           trailing: BdToggle(on: t.collecting, label: 'Help train Ninkasi', onChanged: t.setCollecting),
         ),
         if (t.count > 0)
@@ -667,7 +687,7 @@ class _PrivacyGroupState extends State<_PrivacyGroup> {
               SettingRow(
                 title: 'Anonymous taste trends',
                 hint: 'Count my logs in the “what’s pouring” trends — counts only, never my name or notes.',
-                trailing: BdToggle(on: settings.shareTrends, label: 'Anonymous taste trends', onChanged: ProfileApi.setShareTrends),
+                trailing: BdToggle(on: settings.shareTrends, label: 'Anonymous taste trends', onChanged: (v) => attempt(context, () => ProfileApi.setShareTrends(v))),
               ),
               if (settings.shareTrends)
                 settings.trendsGeo != null
@@ -675,7 +695,7 @@ class _PrivacyGroupState extends State<_PrivacyGroup> {
                         icon: Ph.mapPin,
                         title: 'Area set',
                         subtitle: 'A rough ~40 km cell — never your exact spot.',
-                        trailing: TextAction('Clear', onTap: () => ProfileApi.setTrendsGeo(null)),
+                        trailing: TextAction('Clear', onTap: () => attempt(context, () => ProfileApi.setTrendsGeo(null))),
                       )
                     : GroupTile(
                         icon: Ph.navigationArrow,
@@ -693,7 +713,7 @@ class _PrivacyGroupState extends State<_PrivacyGroup> {
                       : SettingRow(
                           title: 'Neighbourhood maps',
                           hint: 'Also count me where I go out (the venue rooms I join) — only in groups of 5+ people across 3+ venues. Never my name, never which venue.',
-                          trailing: BdToggle(on: on, label: 'Neighbourhood maps', onChanged: ProfileApi.setShareNightsOut),
+                          trailing: BdToggle(on: on, label: 'Neighbourhood maps', onChanged: (v) => attempt(context, () => ProfileApi.setShareNightsOut(v))),
                         ),
                 ),
               SettingRow(
@@ -778,7 +798,7 @@ class _BlockedSheet extends StatelessWidget {
             const EmptyNote('Nobody is blocked.')
           else
             Group(children: [
-              for (final p in people) GroupTile(title: p.name, subtitle: '@${p.handle}', trailing: TextAction('Unblock', onTap: () => SafetyApi.unblock(p.id))),
+              for (final p in people) GroupTile(title: p.name, subtitle: '@${p.handle}', trailing: TextAction('Unblock', onTap: () => attempt(context, () => SafetyApi.unblock(p.id)))),
             ]),
         ]);
       },
@@ -837,6 +857,89 @@ class _VenueBooksSheetState extends State<_VenueBooksSheet> {
 }
 
 // ── your data ────────────────────────────────────────────────────────────────
+/// "Lock brewdiary": Face ID, a fingerprint or the phone's PIN to open the diary.
+class _LockRow extends StatefulWidget {
+  const _LockRow();
+  @override
+  State<_LockRow> createState() => _LockRowState();
+}
+
+class _LockRowState extends State<_LockRow> {
+  bool? _available;
+
+  @override
+  void initState() {
+    super.initState();
+    AppLockStore.instance.available().then((v) {
+      if (mounted) setState(() => _available = v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppLockStore.instance;
+    if (_available == false) return const SizedBox.shrink();
+    return SettingRow(
+      title: 'Lock brewdiary',
+      hint: 'Face ID, a fingerprint or your phone\'s PIN to open it; hidden in the app switcher.',
+      trailing: BdToggle(on: store.enabled, label: 'Lock brewdiary', onChanged: (v) async {
+        final ok = await store.setEnabled(v);
+        if (!mounted) return;
+        if (!ok) toast(this.context, "Couldn't confirm it's you — the lock stays off.", tone: ToastTone.error);
+        setState(() {});
+      }),
+    );
+  }
+}
+
+/// Type the emailed code; pops true once it's confirmed.
+class _CodeSheet extends StatefulWidget {
+  final String email;
+  const _CodeSheet({required this.email});
+  @override
+  State<_CodeSheet> createState() => _CodeSheetState();
+}
+
+class _CodeSheetState extends State<_CodeSheet> {
+  final _code = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _go() async {
+    if (_busy || _code.text.trim().length < 6) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final r = await auth.verifyEmailCode(widget.email, _code.text);
+    if (!mounted) return;
+    if (r.ok) return Navigator.pop(context, true);
+    setState(() {
+      _busy = false;
+      _error = r.error;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text('We sent a code to ${widget.email}.', style: T.bodyMuted(bd)),
+      const SizedBox(height: S.m),
+      GlassField(controller: _code, hint: '6-digit code', keyboard: TextInputType.number, autofocus: true, maxLength: 8, action: TextInputAction.done, onSubmitted: (_) => _go(), onChanged: (_) => setState(() {})),
+      if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.s), style: T.caption(bd, color: bd.accentText)),
+      const SizedBox(height: S.m),
+      BdButton(_busy ? 'Checking…' : 'Confirm', busy: _busy, onTap: _code.text.trim().length >= 6 ? _go : null),
+    ]);
+  }
+}
+
 /// Export/import, the demo, and the rights: a copy of everything, or deletion.
 class _DataGroup extends StatefulWidget {
   final bool cloud;
@@ -865,11 +968,56 @@ class _DataGroupState extends State<_DataGroup> {
       if (data is! List) throw const FormatException();
       final clean = data.map(Entry.tryParse).whereType<Entry>().toList();
       if (!mounted) return;
-      if (await confirm(context, title: 'Replace your diary?', body: 'This swaps your diary for the ${clean.length} entries in that file.', yes: 'Replace')) {
-        entryStore.replaceAll(clean);
-      }
+      if (!await confirm(context, title: 'Add these entries?', body: 'The ${clean.length} entries in that file join your diary. Nothing in it is removed or changed.', yes: 'Add them')) return;
+      final n = await entryStore.importEntries(clean);
+      if (mounted) toast(context, n == 0 ? 'Those are already in your diary.' : 'Added $n ${n == 1 ? 'entry' : 'entries'}.', tone: n == 0 ? ToastTone.plain : ToastTone.success);
     } catch (_) {
-      if (mounted) toast(context, "That file couldn't be read.");
+      if (mounted) toast(context, "That file couldn't be read.", tone: ToastTone.error);
+    }
+  }
+
+  /// A fresh diary: everything logged is kept (055), the diary starts empty. In the
+  /// cloud it takes a code emailed to you — the database checks it was just used.
+  Future<void> _freshDiary() async {
+    final email = db?.auth.currentUser?.email;
+    final cloudAccount = widget.cloud && auth.isAuthed && email != null;
+    final kept = await entryStore.archivedCount();
+    if (!mounted) return;
+    final yes = await confirm(
+      context,
+      title: 'Start a fresh diary?',
+      body: cloudAccount
+          ? "Everything you've logged stays safely with your account${kept > 0 ? ', with the $kept entries already put away' : ''} — you'll just see an empty diary. To be sure it's you, we'll email a code to $email."
+          : "Everything you've logged is kept on this phone — you'll just see an empty diary.",
+      yes: cloudAccount ? 'Email me a code' : 'Start fresh',
+      no: 'Keep my diary',
+    );
+    if (!yes || !mounted) return;
+    if (cloudAccount) {
+      final sent = await auth.sendEmailCode(email);
+      if (!mounted) return;
+      if (!sent.ok) return toast(context, sent.error ?? "Couldn't send the code — try again.", tone: ToastTone.error);
+      final ok = await showBdSheet<bool>(context, title: 'Enter the code', builder: (_) => _CodeSheet(email: email));
+      if (ok != true || !mounted) return;
+    }
+    final err = await entryStore.clearDiary();
+    if (!mounted) return;
+    toast(context, err ?? 'A fresh diary. Everything before is kept.', tone: err == null ? ToastTone.success : ToastTone.error);
+  }
+
+  /// The diary, Together, Split, venues and the Ninkasi chats, set as a PDF book.
+  Future<void> _exportBook() async {
+    setState(() => _busy = true);
+    try {
+      final bytes = await buildDiaryBook(await ExportBundle.collect(), await BookFonts.load());
+      final dir = await getTemporaryDirectory();
+      final f = File('${dir.path}/brewdiary-diary-${todayKey()}.pdf');
+      await f.writeAsBytes(bytes);
+      await SharePlus.instance.share(ShareParams(files: [XFile(f.path, mimeType: 'application/pdf')], subject: 'My brewdiary'));
+    } catch (_) {
+      if (mounted) toast(context, "Couldn't make the book — try again.", tone: ToastTone.error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -879,7 +1027,7 @@ class _DataGroupState extends State<_DataGroup> {
     if (r.json != null) await _share(r.json!, 'brewdiary-everything');
     if (!mounted) return;
     setState(() => _busy = false);
-    if (r.error != null) toast(context, r.error!);
+    if (r.error != null) toast(context, r.error!, tone: ToastTone.error);
   }
 
   Future<void> _deleteAccount() async {
@@ -895,7 +1043,7 @@ class _DataGroupState extends State<_DataGroup> {
     final err = await AccountApi.deleteAccount();
     if (!mounted) return;
     setState(() => _busy = false);
-    if (err != null) toast(context, err);
+    if (err != null) toast(context, err, tone: ToastTone.error);
   }
 
   @override
@@ -903,15 +1051,21 @@ class _DataGroupState extends State<_DataGroup> {
     return Group(
       footer: widget.cloud ? 'Deleting your account is immediate and permanent — the diary, the photos, the points, all of it.' : null,
       children: [
-        GroupTile(icon: Ph.export, title: 'Export my diary', subtitle: 'A JSON file of every entry', onTap: _exportDiary),
+        const _LockRow(),
+        GroupTile(
+          icon: Ph.bookOpen,
+          title: _busy ? 'Making your book…' : 'Your diary, as a book',
+          subtitle: 'A PDF of every night, the people, the places and your talks with Ninkasi',
+          onTap: _busy ? null : _exportBook,
+        ),
+        GroupTile(icon: Ph.export, title: 'Back up my diary', subtitle: 'A file you can import again', onTap: _exportDiary),
         GroupTile(icon: Ph.fileArrowUp, title: 'Import a diary file', onTap: _import),
-        if (widget.cloud) GroupTile(icon: Ph.downloadSimple, title: 'Download everything we hold', onTap: _busy ? null : _exportEverything),
-        GroupTile(icon: Ph.arrowsClockwise, title: 'Reseed the demo month', onTap: () async {
-          if (await confirm(context, title: 'Reseed the demo?', body: 'Your diary is replaced with a sample month.', yes: 'Reseed')) entryStore.reseed();
-        }),
-        GroupTile(icon: Ph.eraser, title: 'Reset diary', destructive: true, onTap: () async {
-          if (await confirm(context, title: 'Reset your diary?', body: 'Every entry is removed. This cannot be undone.', yes: 'Reset')) entryStore.resetAll();
-        }),
+        if (widget.cloud) GroupTile(icon: Ph.downloadSimple, title: 'Everything as a data file', subtitle: 'Machine-readable (JSON), for moving it elsewhere', onTap: _busy ? null : _exportEverything),
+        if (!widget.cloud)
+          GroupTile(icon: Ph.arrowsClockwise, title: 'Reseed the demo month', onTap: () async {
+            if (await confirm(context, title: 'Reseed the demo?', body: 'A sample month replaces what you see; your own entries are kept on this phone.', yes: 'Reseed')) entryStore.reseed();
+          }),
+        GroupTile(icon: Ph.eraser, title: 'Start a fresh diary', subtitle: 'Everything is kept — you just see an empty diary', onTap: _busy ? null : _freshDiary),
         if (widget.cloud) GroupTile(icon: Ph.trash, title: 'Delete my account', destructive: true, onTap: _busy ? null : _deleteAccount),
       ],
     );

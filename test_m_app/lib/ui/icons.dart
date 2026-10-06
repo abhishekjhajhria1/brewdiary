@@ -82,6 +82,7 @@ abstract final class Ph {
   static const heart = IconData(0xe2a8, fontFamily: 'Phosphor');
   static const house = IconData(0xe2c2, fontFamily: 'Phosphor');
   static const identificationBadge = IconData(0xe6f6, fontFamily: 'Phosphor');
+  static const fingerprint = IconData(0xe23e, fontFamily: 'Phosphor');
   static const identificationCard = IconData(0xe2c8, fontFamily: 'Phosphor');
   static const image = IconData(0xe2ca, fontFamily: 'Phosphor');
   static const images = IconData(0xe836, fontFamily: 'Phosphor');
@@ -167,6 +168,8 @@ abstract final class PhFill {
   static const heart = IconData(0xe2a8, fontFamily: 'PhosphorFill');
   static const mapPin = IconData(0xe316, fontFamily: 'PhosphorFill');
   static const martini = IconData(0xe31c, fontFamily: 'PhosphorFill');
+  static const crown = IconData(0xe614, fontFamily: 'PhosphorFill');
+  static const sealCheck = IconData(0xe606, fontFamily: 'PhosphorFill');
   static const sparkle = IconData(0xe6a2, fontFamily: 'PhosphorFill');
   static const star = IconData(0xe46a, fontFamily: 'PhosphorFill');
   static const userCircle = IconData(0xe4c4, fontFamily: 'PhosphorFill');

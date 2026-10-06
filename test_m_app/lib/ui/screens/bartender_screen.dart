@@ -7,9 +7,12 @@
 import 'package:flutter/material.dart';
 
 import 'package:brewdiary_core/bartender.dart';
+import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/types.dart';
 import '../../data/auth.dart';
 import '../../data/bartender_api.dart';
+import '../../data/chats.dart';
 import '../../data/base.dart';
 import '../../data/entries.dart';
 import '../../data/friends.dart';
@@ -42,6 +45,10 @@ class _BartenderScreenState extends State<BartenderScreen> {
   final _scroll = ScrollController();
   bool _busy = false;
   bool _offline = false;
+
+  /// How many messages were already there when this conversation was opened: those
+  /// are simply shown; anything said after rises in.
+  int _seen = 0;
   bool _under = false; // content scrolled under the top bar → frost it
   List<String> _friendsPouring = const [];
   List<String> _trending = const [];
@@ -49,6 +56,8 @@ class _BartenderScreenState extends State<BartenderScreen> {
   @override
   void initState() {
     super.initState();
+    _messages.addAll(ChatStore.instance.current?.messages ?? const []);
+    _seen = _messages.length;
     if (auth.isAuthed && db != null) {
       FriendsApi.feed().then((f) => _friendsPouring = f.map((e) => e.drink).toSet().take(5).toList()).catchError((_) => <String>[]);
       DiscoverApi.tasteTrends().then((t) => _trending = t.where((x) => x.kind == 'drink').map((x) => x.name).take(5).toList()).catchError((_) => <String>[]);
@@ -72,11 +81,39 @@ class _BartenderScreenState extends State<BartenderScreen> {
 
   void _newChat() {
     if (_busy) return;
+    ChatStore.instance.startNew();
     setState(() {
       _messages.clear();
+      _seen = 0;
       _offline = false;
       _under = false;
     });
+  }
+
+  void _openChat(Chat c) {
+    ChatStore.instance.open(c.id);
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(c.messages);
+      _seen = _messages.length;
+      _offline = false;
+    });
+    _toBottom();
+  }
+
+  /// Every saved conversation: open one, rename it, or delete it.
+  Future<void> _chats() async {
+    if (_busy) return;
+    await showBdSheet<void>(context, title: 'Your chats with $ninkasiName', builder: (ctx) => _ChatList(onOpen: (c) {
+          Navigator.pop(ctx);
+          _openChat(c);
+        }, onNew: () {
+          Navigator.pop(ctx);
+          _newChat();
+        }, onDeletedCurrent: () {
+          if (mounted) setState(_messages.clear);
+        }));
   }
 
   Future<void> _send(String text) async {
@@ -84,6 +121,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
     if (content.isEmpty || _busy) return;
     final entries = entryStore.entries;
     final history = [..._messages, ChatMessage(ChatRole.user, content)];
+    Haptics.tap(); // it's away
     setState(() {
       _messages
         ..clear()
@@ -97,9 +135,11 @@ class _BartenderScreenState extends State<BartenderScreen> {
     final ctx = BartenderContext(
       recentDrinks: recentDrinks(entries, 6),
       moods: recentMoods(entries, 6),
-      total: entries.length,
+      total: loggedDates(entries).length,
       friendsPouring: _friendsPouring,
       trending: _trending,
+      homeBar: PantryStore.instance.items,
+      palate: [for (final n in palate(entries).take(4)) n.note],
     );
     final stream = BartenderApi.ask(history, ctx, collect: TrainingStore.instance.collecting);
     stream.mode.then((m) {
@@ -113,8 +153,12 @@ class _BartenderScreenState extends State<BartenderScreen> {
         setState(() => _messages[_messages.length - 1] = ChatMessage(ChatRole.assistant, acc));
       }
       TrainingStore.instance.log(user: content, assistant: acc);
+      await ChatStore.instance.save([...history, ChatMessage(ChatRole.assistant, acc)]);
     } catch (_) {
-      if (mounted) setState(() => _messages[_messages.length - 1] = const ChatMessage(ChatRole.assistant, 'The bar went quiet for a moment — ask me again, love.'));
+      if (mounted) {
+        Haptics.error();
+        setState(() => _messages[_messages.length - 1] = const ChatMessage(ChatRole.assistant, 'The bar went quiet for a moment — ask me again, love.'));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -157,9 +201,11 @@ class _BartenderScreenState extends State<BartenderScreen> {
                     ? const Align(key: ValueKey('w'), alignment: Alignment.centerLeft, child: Wordmark())
                     : Text(ninkasiName, key: const ValueKey('t'), style: T.sans(bd, size: 17, weight: FontWeight.w600)),
               ),
-              actions: _messages.isNotEmpty
-                  ? [IconBtn(Ph.notePencil, tooltip: 'New conversation', onTap: _busy ? null : _newChat)]
-                  : (widget.inShell ? (siteHeaderActions?.call(context) ?? const []) : const []),
+              actions: [
+                if (ChatStore.instance.chats.isNotEmpty) IconBtn(Ph.chatsCircle, tooltip: 'Your chats', onTap: _busy ? null : _chats),
+                if (_messages.isNotEmpty) IconBtn(Ph.notePencil, tooltip: 'New conversation', onTap: _busy ? null : _newChat)
+                else if (widget.inShell) ...(siteHeaderActions?.call(context) ?? const []),
+              ],
             ),
           ),
         ]),
@@ -183,23 +229,51 @@ class _BartenderScreenState extends State<BartenderScreen> {
         Semantics(header: true, child: Text(ninkasiName, style: T.largeTitle(bd))),
         const SizedBox(height: S.s),
         Text("Mistress of the bar, named for the goddess who brewed for the gods. Tell her the mood — she knows what you've been pouring.", style: T.bodyMuted(bd)),
+        const SizedBox(height: S.xl),
+        _SheKnows(entries: entryStore.entries),
+        if (ChatStore.instance.chats.isNotEmpty) ...[
+          const SizedBox(height: S.m),
+          () {
+            final last = ChatStore.instance.chats.first;
+            return Glass(
+              onTap: () => _openChat(last),
+              semanticLabel: 'Pick up where you left off: ${last.title}',
+              padding: const EdgeInsets.fromLTRB(S.l, S.m, S.m, S.m),
+              child: Row(children: [
+                Icon(Ph.chatsCircle, size: 20, color: bd.accentText),
+                const SizedBox(width: S.m),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Pick up where you left off', style: T.caption(bd)),
+                    Text(last.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.row(bd)),
+                  ]),
+                ),
+                Icon(Ph.caretRight, size: 16, color: bd.faint),
+              ]),
+            );
+          }(),
+        ],
         const SectionHeader('Try asking', padding: EdgeInsets.only(top: S.x3, bottom: S.m)),
         // The website's starters: glass pills, one tap to ask.
         Wrap(spacing: S.s, runSpacing: S.s, children: [
-          for (final s in starters)
-            Semantics(
-              button: true,
-              child: Pressable(
-                onTap: () => _send(s),
-                child: Container(
-                  constraints: const BoxConstraints(minHeight: S.tap),
-                  padding: const EdgeInsets.symmetric(horizontal: S.l, vertical: 11),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [bd.glassTop, bd.glass]),
-                    borderRadius: BorderRadius.circular(rCtl),
-                    border: Border.all(color: bd.glassBorder, width: .8),
+          for (final (i, s) in [if (PantryStore.instance.items.isNotEmpty) 'What can I make with what\'s at home?', ...starters].indexed)
+            Reveal(
+              index: i,
+              delay: const Duration(milliseconds: 120),
+              child: Semantics(
+                button: true,
+                child: Pressable(
+                  onTap: () => _send(s),
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: S.tap),
+                    padding: const EdgeInsets.symmetric(horizontal: S.l, vertical: 11),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [bd.glassTop, bd.glass]),
+                      borderRadius: BorderRadius.circular(rCtl),
+                      border: Border.all(color: bd.glassBorder, width: .8),
+                    ),
+                    child: Text(s, style: T.body(bd)),
                   ),
-                  child: Text(s, style: T.body(bd)),
                 ),
               ),
             ),
@@ -219,9 +293,10 @@ class _BartenderScreenState extends State<BartenderScreen> {
       padding: EdgeInsets.fromLTRB(side, top + S.s, side, S.s),
       itemCount: _messages.length,
       itemBuilder: (context, i) {
-        final m = _messages[_messages.length - 1 - i];
+        final index = _messages.length - 1 - i;
+        final m = _messages[index];
         final mine = m.role == ChatRole.user;
-        return Align(
+        final bubble = Align(
           alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: width * (mine ? .78 : .86)),
@@ -239,12 +314,21 @@ class _BartenderScreenState extends State<BartenderScreen> {
                   bottomRight: Radius.circular(mine ? 6 : 18),
                 ),
               ),
-              child: m.content.isEmpty
-                  ? TypingDots(color: bd.muted)
-                  : SelectableText(m.content, style: T.body(bd)),
+              child: AnimatedSize(
+                duration: context.reduceMotion ? Duration.zero : Motion.fast,
+                alignment: Alignment.topLeft,
+                child: AnimatedSwitcher(
+                  duration: context.reduceMotion ? Duration.zero : Motion.fast,
+                  child: m.content.isEmpty
+                      ? TypingDots(key: const ValueKey('dots'), color: bd.muted)
+                      : SelectableText(m.content, key: const ValueKey('text'), style: T.body(bd)),
+                ),
+              ),
             ),
           ),
         );
+        // Keyed by place in the conversation: what was said after it opened rises in.
+        return index >= _seen ? Reveal(key: ValueKey('m$index'), rise: 14, child: bubble) : KeyedSubtree(key: ValueKey('m$index'), child: bubble);
       },
     );
   }
@@ -294,17 +378,142 @@ class _BartenderScreenState extends State<BartenderScreen> {
               width: S.tap,
               height: S.tap,
               child: Center(
-                child: AnimatedContainer(
-                  duration: Motion.fast,
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: ready ? bd.accent : bd.ink.withValues(alpha: .1)),
-                  child: Icon(PhBold.arrowUp, size: 18, color: ready ? bd.accentContrast : bd.faint),
+                child: AnimatedScale(
+                  scale: ready ? 1 : .88,
+                  duration: Motion.med,
+                  curve: ready ? Curves.easeOutBack : Curves.easeOut,
+                  child: AnimatedContainer(
+                    duration: Motion.fast,
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: ready ? bd.accent : bd.ink.withValues(alpha: .1)),
+                    child: Icon(PhBold.arrowUp, size: 18, color: ready ? bd.accentContrast : bd.faint),
+                  ),
                 ),
               ),
             ),
           ),
         ),
+      ]),
+    );
+  }
+}
+
+/// The saved conversations, newest first.
+class _ChatList extends StatelessWidget {
+  final ValueChanged<Chat> onOpen;
+  final VoidCallback onNew;
+  final VoidCallback onDeletedCurrent;
+  const _ChatList({required this.onOpen, required this.onNew, required this.onDeletedCurrent});
+
+  Future<void> _manage(BuildContext context, Chat c) async {
+    final store = ChatStore.instance;
+    await showActions(context, title: c.title, actions: [
+      SheetAction('Rename', icon: Ph.pencilSimple, onTap: () async {
+        final name = TextEditingController(text: c.title);
+        final v = await showBdSheet<String>(context, title: 'Rename chat', builder: (ctx) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              GlassField(controller: name, autofocus: true, maxLength: 60, action: TextInputAction.done, onSubmitted: (t) => Navigator.pop(ctx, t)),
+              const SizedBox(height: S.m),
+              BdButton('Save', onTap: () => Navigator.pop(ctx, name.text)),
+            ]));
+        name.dispose();
+        if (v != null) await store.rename(c.id, v);
+      }),
+      SheetAction('Delete', icon: Ph.trash, destructive: true, onTap: () async {
+        if (!await confirm(context, title: 'Delete this chat?', body: 'It\'s removed from this phone.', yes: 'Delete')) return;
+        final wasCurrent = store.currentId == c.id;
+        await store.delete(c.id);
+        if (wasCurrent) onDeletedCurrent();
+      }),
+    ]);
+  }
+
+  String _when(DateTime d) {
+    final k = toKey(d);
+    if (k == todayKey()) return 'Today, ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    return formatDayLongYear(k);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return ListenableBuilder(
+      listenable: ChatStore.instance,
+      builder: (context, _) {
+        final store = ChatStore.instance;
+        final chats = store.chats;
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          BdButton('New chat', kind: BtnKind.secondary, icon: Ph.notePencil, onTap: onNew),
+          const SizedBox(height: S.m),
+          if (chats.isEmpty) const EmptyNote('No saved chats yet.'),
+          if (chats.isNotEmpty)
+            Group(children: [
+              for (final c in chats)
+                Pressable(
+                  onTap: () => onOpen(c),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: S.s),
+                    child: Row(children: [
+                      Icon(c.id == store.currentId ? PhFill.checkCircle : Ph.chatCircle, size: 20, color: c.id == store.currentId ? bd.accentText : bd.faint),
+                      const SizedBox(width: S.m),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.row(bd)),
+                          const SizedBox(height: 2),
+                          Text('${_when(c.updatedAt)} · ${(c.messages.length / 2).ceil()} ${c.messages.length <= 2 ? 'question' : 'questions'}', style: T.caption(bd)),
+                        ]),
+                      ),
+                      IconBtn(Ph.dotsThree, tooltip: 'Rename or delete ${c.title}', onTap: () => _manage(context, c)),
+                    ]),
+                  ),
+                ),
+            ]),
+          const SizedBox(height: S.s),
+          Text('Kept on this phone. They also go into your diary book.', style: T.caption(bd)),
+        ]);
+      },
+    );
+  }
+}
+
+/// What Ninkasi has to go on — said out loud, so her suggestions never feel like
+/// a trick. Only what the app sends her: recent drinks, your palate, your bar.
+class _SheKnows extends StatelessWidget {
+  final List<Entry> entries;
+  const _SheKnows({required this.entries});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final recent = recentDrinks(entries, 3);
+    final notes = [for (final n in palate(entries).take(3)) n.note];
+    final bar = PantryStore.instance.items;
+    final rows = <(String, String)>[
+      if (recent.isNotEmpty) ('Lately', recent.join(', ')),
+      if (notes.isNotEmpty) ('Your palate', notes.join(', ')),
+      if (bar.isNotEmpty) ('At home', bar.length <= 3 ? bar.join(', ') : '${bar.take(3).join(', ')} +${bar.length - 3}'),
+    ];
+    if (rows.isEmpty) {
+      return Text('Log a few drinks and she will pour from what you like.', style: T.caption(bd));
+    }
+    return Glass(
+      padding: const EdgeInsets.fromLTRB(S.l, S.m, S.l, S.m),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('SHE KNOWS', style: T.label(bd, color: bd.accentText)),
+        const SizedBox(height: S.s),
+        for (final r in rows)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(width: 92, child: Text(r.$1, style: T.sans(bd, size: 13.5, color: bd.muted))),
+              Expanded(child: Text(r.$2, style: T.sans(bd, size: 14.5))),
+            ]),
+          ),
+        const SizedBox(height: S.s),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Ph.lock, size: 12, color: bd.faint)),
+          const SizedBox(width: 6),
+          Expanded(child: Text('From your diary — never your notes or places.', style: T.caption(bd))),
+        ]),
       ]),
     );
   }

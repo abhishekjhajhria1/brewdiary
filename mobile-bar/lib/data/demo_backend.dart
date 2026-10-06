@@ -1896,6 +1896,44 @@ class DemoBackend implements Backend {
   Future<List<KudosLine>> myKudos(String venueId) async => const [KudosLine('looked after us', 6), KudosLine('great recommendation', 4), KudosLine('quick and kind', 2)];
 
   // ── guest book ────────────────────────────────────────────────────────────
+  /// Two guests opened the table link tonight; Meera's card code works for a demo punch.
+  static const demoGuestCode = 'K7P2QX';
+
+  @override
+  Future<List<GuestTonight>> guestsTonight(String venueId) async {
+    final now = DateTime.now();
+    return [
+      GuestTonight(
+        userId: 'g-anita',
+        name: 'Anita',
+        handle: 'anita',
+        tableLabel: 'T2',
+        taste: const GuestTaste(into: ['Negroni', 'Mezcal'], usually: ['Cocktails', 'Wine'], moods: ['slow'], flavours: ['bitter', 'smoky', 'citrus'], avoid: ['gin'], sweetness: 'dry'),
+        sharedAt: now.subtract(const Duration(minutes: 40)),
+      ),
+      GuestTonight(
+        userId: 'g-kabir',
+        name: 'Kabir',
+        handle: 'kabir',
+        tableLabel: 'T2',
+        taste: const GuestTaste(into: ['Lime soda', 'Kombucha'], usually: ['Soft drinks'], alcoholFreeOften: true, dryTonight: true, allergies: ['peanuts']),
+        sharedAt: now.subtract(const Duration(minutes: 35)),
+      ),
+      GuestTonight(
+        userId: 'g-zoya',
+        name: 'Zoya',
+        handle: 'zoya',
+        tableLabel: null,
+        taste: const GuestTaste(into: ['Hazy IPA'], usually: ['Beer'], moods: ['bright']),
+        sharedAt: now.subtract(const Duration(minutes: 10)),
+      ),
+    ];
+  }
+
+  @override
+  Future<ProfileHit?> findGuestByCode(String venueId, String code) async =>
+      code.trim().toUpperCase() == demoGuestCode ? _people.firstWhere((p) => p.id == 'g-meera') : null;
+
   @override
   Future<GuestCard?> guestCard(String venueId, String guestId) async => _cards['$venueId|$guestId'] ?? const GuestCard();
 
