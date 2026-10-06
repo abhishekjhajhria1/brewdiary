@@ -6,7 +6,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -22,6 +21,7 @@ import '../../data/parties.dart';
 import '../theme.dart';
 import 'common.dart';
 import 'game.dart';
+import 'photo_viewer.dart';
 import '../screens/photo_studio.dart';
 
 Future<void> showLogSheet(
@@ -67,9 +67,14 @@ class _LogSheetState extends State<LogSheet> {
   Timer? _deleteTimer;
   String? _shareFor;
 
+  /// What the day already held when the sheet opened: those rows are simply there;
+  /// anything logged after slides in.
+  late final Set<String> _openedWith = {for (final e in _dayEntries) e.id};
+
   @override
   void initState() {
     super.initState();
+    _openedWith; // read now, before anything is added
     _drinkFocus.addListener(() => setState(() {}));
     // On an empty day, go straight to typing once the sheet has settled. A day
     // that already has entries opens on them instead (to review, edit, share).
@@ -150,7 +155,7 @@ class _LogSheetState extends State<LogSheet> {
 
   void _submit() {
     if (_drink.text.trim().isEmpty) return;
-    HapticFeedback.lightImpact();
+    Haptics.success();
     final who = _who.text.trim().isEmpty ? null : _who.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
     if (_editingId != null) {
       final prev = entryStore.entries.where((e) => e.id == _editingId).firstOrNull;
@@ -191,7 +196,7 @@ class _LogSheetState extends State<LogSheet> {
   /// A dry day is a thing you DID — it keeps the streak and earns a spark, but is
   /// never counted as a drink. Only offered on a day with nothing logged yet.
   void _logDryDay() {
-    HapticFeedback.lightImpact();
+    Haptics.success();
     final before = passportGame(entryStore.entries);
     entryStore.addEntry(date: widget.dateKey, drink: dryDayLabel, type: DrinkType.none, mood: _clean(_mood));
     _celebrate(before);
@@ -204,7 +209,8 @@ class _LogSheetState extends State<LogSheet> {
   void _celebrate(PassportGame before) {
     final u = unlocksBetween(before, passportGame(entryStore.entries));
     if (u.isEmpty) return;
-    HapticFeedback.mediumImpact();
+    // The save already tapped success; only a new rank earns the bigger knock.
+    if (u.rankUp != null) Haptics.knock();
     _unlockTimer?.cancel();
     setState(() => _unlocks = u);
     _unlockTimer = Timer(const Duration(milliseconds: 4200), () {
@@ -260,7 +266,7 @@ class _LogSheetState extends State<LogSheet> {
       }
       setState(() => _photos = [..._photos, ...added].take(4).toList());
     } catch (e) {
-      if (mounted) toast(context, "Couldn't open your photos.");
+      if (mounted) toast(context, "Couldn't open your photos.", tone: ToastTone.error);
     }
   }
 
@@ -319,33 +325,29 @@ class _LogSheetState extends State<LogSheet> {
             const SizedBox(height: S.l),
           ],
 
-          if (_pendingDelete != null) ...[
-            Container(
-              padding: const EdgeInsets.fromLTRB(S.l, 2, 4, 2),
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(rCtl), color: bd.ink.withValues(alpha: .06), border: Border.all(color: bd.line, width: .8)),
-              child: Row(children: [
-                Icon(Ph.trash, size: 17, color: bd.muted),
-                const SizedBox(width: S.s),
-                Expanded(
-                  child: Text.rich(
-                    TextSpan(children: [
-                      TextSpan(text: 'Removed ', style: T.sans(bd, size: 14, color: bd.muted)),
-                      TextSpan(text: _pendingDelete!.drink, style: T.sans(bd, size: 14)),
-                    ]),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+          Appear(
+            visible: _pendingDelete != null,
+            child: _pendingDelete == null
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: S.l),
+                    child: _UndoRow(key: ValueKey(_pendingDelete!.id), drink: _pendingDelete!.drink, onUndo: _undoRemove),
                   ),
-                ),
-                TextAction('Undo', accent: true, onTap: _undoRemove),
-              ]),
-            ),
-            const SizedBox(height: S.l),
-          ],
+          ),
 
-          if (visible.isNotEmpty) ...[
-            Group(children: [for (final e in visible) _entryRow(e)]),
-            const SizedBox(height: S.xxl),
-          ],
+          AnimatedSize(
+            duration: context.reduceMotion ? Duration.zero : Motion.slow,
+            curve: Easing.emphasizedDecelerate,
+            alignment: Alignment.topCenter,
+            child: visible.isEmpty
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: S.xxl),
+                    child: Group(children: [
+                      for (final e in visible) _openedWith.contains(e.id) ? KeyedSubtree(key: ValueKey(e.id), child: _entryRow(e)) : Reveal(key: ValueKey(e.id), child: _entryRow(e)),
+                    ]),
+                  ),
+          ),
 
           // What
           Label(_editingId != null ? 'Editing — what was it?' : 'What did you drink?'),
@@ -359,50 +361,71 @@ class _LogSheetState extends State<LogSheet> {
             onChanged: (_) => setState(() => _picked = false),
             onSubmitted: (_) => _submit(),
           ),
-          if (showCanon)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Pressable(
-                onTap: () => _pick(canon.canonical),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: S.tap),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text('≈ ', style: T.sans(bd, size: 14, color: bd.muted)),
-                    Text(canon.canonical, style: T.sans(bd, size: 14, weight: FontWeight.w600)),
-                    Text(' · tap to use', style: T.sans(bd, size: 14, color: bd.muted)),
-                  ]),
-                ),
-              ),
-            ),
-          if (showSuggestions)
-            Padding(
-              padding: const EdgeInsets.only(top: S.s),
-              child: Glass(
-                radius: rCtl,
-                padding: const EdgeInsets.symmetric(horizontal: S.l),
-                child: Hairlines(children: [
-                  for (final sug in suggestions)
-                    Pressable(
-                      onTap: () => _pick(sug),
-                      child: Container(
-                        constraints: const BoxConstraints(minHeight: 48),
-                        alignment: Alignment.centerLeft,
-                        child: Row(children: [
-                          Expanded(child: Text(sug, style: T.row(bd))),
-                          Icon(Ph.arrowUpRight, size: 15, color: bd.faint),
+          Appear(
+            visible: showCanon,
+            child: !showCanon
+                ? const SizedBox.shrink()
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: Pressable(
+                      onTap: () => _pick(canon.canonical),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: S.tap),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Text('≈ ', style: T.sans(bd, size: 14, color: bd.muted)),
+                          Text(canon.canonical, style: T.sans(bd, size: 14, weight: FontWeight.w600)),
+                          Text(' · tap to use', style: T.sans(bd, size: 14, color: bd.muted)),
                         ]),
                       ),
                     ),
-                ]),
-              ),
-            )
-          else if (typing.isEmpty && widget.recentDrinks.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: S.xs),
-              child: Wrap(spacing: S.s, children: [
-                for (final r in widget.recentDrinks) BdChip(r, active: _drink.text == r, onTap: () => _pick(r)),
-              ]),
+                  ),
+          ),
+          // Your own drinks as you type, or your recent ones before you do: one
+          // gives way to the other with a fade, and the sheet's height follows.
+          AnimatedSize(
+            duration: context.reduceMotion ? Duration.zero : Motion.med,
+            curve: Easing.emphasizedDecelerate,
+            alignment: Alignment.topCenter,
+            child: AnimatedSwitcher(
+              duration: context.reduceMotion ? Duration.zero : Motion.fast,
+              layoutBuilder: (current, previous) => Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
+              child: showSuggestions
+                  ? Padding(
+                      key: const ValueKey('suggest'),
+                      padding: const EdgeInsets.only(top: S.s),
+                      child: Glass(
+                        radius: rCtl,
+                        padding: const EdgeInsets.symmetric(horizontal: S.l),
+                        child: Hairlines(children: [
+                          for (final sug in suggestions)
+                            Pressable(
+                              onTap: () => _pick(sug),
+                              child: Container(
+                                constraints: const BoxConstraints(minHeight: 48),
+                                alignment: Alignment.centerLeft,
+                                child: Row(children: [
+                                  Expanded(child: Text(sug, style: T.row(bd))),
+                                  Icon(Ph.arrowUpRight, size: 15, color: bd.faint),
+                                ]),
+                              ),
+                            ),
+                        ]),
+                      ),
+                    )
+                  : (typing.isEmpty && widget.recentDrinks.isNotEmpty)
+                      ? Padding(
+                          key: const ValueKey('recent'),
+                          padding: const EdgeInsets.only(top: S.xs),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: Wrap(spacing: S.s, children: [
+                              for (final r in widget.recentDrinks) BdChip(r, active: _drink.text == r, onTap: () => _pick(r)),
+                            ]),
+                          ),
+                        )
+                      : const SizedBox(key: ValueKey('none'), width: double.infinity),
             ),
+          ),
 
           // Mood
           const SizedBox(height: S.xl),
@@ -419,62 +442,72 @@ class _LogSheetState extends State<LogSheet> {
 
           // Optionals
           const SizedBox(height: S.m),
-          if (!_showMore)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextAction('Add a note, photo, place, who, kind', icon: Ph.plusCircle, onTap: () => setState(() => _showMore = true)),
-            )
-          else
-            Container(
-              margin: const EdgeInsets.only(top: S.s),
-              padding: const EdgeInsets.only(top: S.xl),
-              decoration: BoxDecoration(border: Border(top: BorderSide(color: bd.line, width: .8))),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                const Label('Note'),
-                const SizedBox(height: S.s),
-                GlassField(controller: _note, hint: 'A line about the moment…', maxLines: 3),
-                const SizedBox(height: S.xl),
-                Row(children: [
-                  const Label('Photos'),
-                  const Spacer(),
-                  if (auth.isAuthed && db != null) Text('kept for a year', style: T.caption(context.bd)),
-                ]),
-                const SizedBox(height: S.s),
-                Wrap(spacing: S.s, runSpacing: S.s, children: [
-                  for (final p in _photos) _photoTile(p),
-                  if (_photos.length < 4)
-                    Semantics(
-                      button: true,
-                      label: 'Add a photo',
-                      excludeSemantics: true,
-                      child: Pressable(
-                        onTap: _addPhotos,
-                        child: Container(
-                          width: 72,
-                          height: 72,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(color: bd.glass, borderRadius: BorderRadius.circular(rCtl), border: Border.all(color: bd.lineStrong, width: .8)),
-                          child: Icon(Ph.camera, size: 24, color: bd.muted),
-                        ),
-                      ),
-                    ),
-                ]),
-                const SizedBox(height: S.xl),
-                const Label('Where'),
-                const SizedBox(height: S.s),
-                GlassField(controller: _venue, hint: 'Home, a bar, a city…', icon: Ph.mapPin, caps: TextCapitalization.words),
-                const SizedBox(height: S.xl),
-                const Label('Who with'),
-                const SizedBox(height: S.s),
-                GlassField(controller: _who, hint: 'Names, separated by commas', icon: Ph.users, caps: TextCapitalization.words),
-                const SizedBox(height: S.xl),
-                const Label('Kind'),
-                const SizedBox(height: S.xs),
-                Wrap(spacing: S.s, children: [
-                  for (final t in drinkTypes) BdChip(t.$2, active: _type == t.$1, onTap: () => setState(() => _type = _type == t.$1 ? null : t.$1)),
-                ]),
-              ]),
+          AnimatedSize(
+            duration: context.reduceMotion ? Duration.zero : Motion.slow,
+            curve: Easing.emphasizedDecelerate,
+            alignment: Alignment.topCenter,
+            child: AnimatedSwitcher(
+              duration: context.reduceMotion ? Duration.zero : Motion.med,
+              layoutBuilder: (current, previous) => Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
+              child: !_showMore
+                  ? Align(
+                      key: const ValueKey('less'),
+                      alignment: Alignment.centerLeft,
+                      child: TextAction('Add a note, photo, place, who, kind', icon: Ph.plusCircle, onTap: () => setState(() => _showMore = true)),
+                    )
+                  : Container(
+                      key: const ValueKey('more'),
+                      margin: const EdgeInsets.only(top: S.s),
+                      padding: const EdgeInsets.only(top: S.xl),
+                      decoration: BoxDecoration(border: Border(top: BorderSide(color: bd.line, width: .8))),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      const Label('Note'),
+                      const SizedBox(height: S.s),
+                      GlassField(controller: _note, hint: 'A line about the moment…', maxLines: 3),
+                      const SizedBox(height: S.xl),
+                      Row(children: [
+                        const Label('Photos'),
+                        const Spacer(),
+                        if (auth.isAuthed && db != null) Text('kept for a year', style: T.caption(context.bd)),
+                      ]),
+                      const SizedBox(height: S.s),
+                      Wrap(spacing: S.s, runSpacing: S.s, children: [
+                        for (final p in _photos) _photoTile(p),
+                        if (_photos.length < 4)
+                          Semantics(
+                            button: true,
+                            label: 'Add a photo',
+                            excludeSemantics: true,
+                            child: Pressable(
+                              onTap: _addPhotos,
+                              child: Container(
+                                width: 72,
+                                height: 72,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(color: bd.glass, borderRadius: BorderRadius.circular(rCtl), border: Border.all(color: bd.lineStrong, width: .8)),
+                                child: Icon(Ph.camera, size: 24, color: bd.muted),
+                              ),
+                            ),
+                          ),
+                      ]),
+                      const SizedBox(height: S.xl),
+                      const Label('Where'),
+                      const SizedBox(height: S.s),
+                      GlassField(controller: _venue, hint: 'Home, a bar, a city…', icon: Ph.mapPin, caps: TextCapitalization.words),
+                      const SizedBox(height: S.xl),
+                      const Label('Who with'),
+                      const SizedBox(height: S.s),
+                      GlassField(controller: _who, hint: 'Names, separated by commas', icon: Ph.users, caps: TextCapitalization.words),
+                      const SizedBox(height: S.xl),
+                      const Label('Kind'),
+                      const SizedBox(height: S.xs),
+                      Wrap(spacing: S.s, children: [
+                        for (final t in drinkTypes) BdChip(t.$2, active: _type == t.$1, onTap: () => setState(() => _type = _type == t.$1 ? null : t.$1)),
+                      ]),
+                    ]),
+                  ),
             ),
+          ),
 
           const SizedBox(height: S.xxl),
           if (_editingId != null)
@@ -489,10 +522,13 @@ class _LogSheetState extends State<LogSheet> {
               curve: Motion.curve,
               child: _unlocks == null ? const SizedBox(width: double.infinity) : Padding(padding: const EdgeInsets.only(bottom: S.m), child: UnlockStrip(_unlocks!)),
             ),
+            // "Logged ✓" lands in amber for a moment — a confirmation, not a greyed-out button.
             BdButton(
               _justLogged ? 'Logged' : 'Log',
               icon: _justLogged ? PhBold.check : null,
-              onTap: _drink.text.trim().isEmpty ? null : _submit,
+              kind: _justLogged ? BtnKind.accent : BtnKind.primary,
+              // Typing the next one during the flash? It logs straight away.
+              onTap: _drink.text.trim().isNotEmpty ? _submit : (_justLogged ? () {} : null),
             ),
           ],
           if (dayIsEmpty) ...[
@@ -508,47 +544,65 @@ class _LogSheetState extends State<LogSheet> {
 
   Widget _photoTile(Photo p) {
     final bd = context.bd;
-    return SizedBox(
-      width: 72,
-      height: 72,
-      child: Stack(children: [
-        Positioned.fill(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(rCtl),
-            child: ColoredBox(
-              color: bd.glass, // shows while a remote photo loads
-              child: p.isLocal ? Image.file(File(p.url), fit: BoxFit.cover) : Image.network(p.url, fit: BoxFit.cover),
-            ),
-          ),
-        ),
-        Positioned(
-          right: 0,
-          top: 0,
-          child: Semantics(
-            button: true,
-            label: 'Remove photo',
-            excludeSemantics: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _photos = _photos.where((x) => x.id != p.id).toList()),
-              child: SizedBox(
-                width: 40,
-                height: 40,
-                child: Align(
-                  alignment: Alignment.topRight,
-                  child: Container(
-                    margin: const EdgeInsets.all(5),
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: .6), shape: BoxShape.circle),
-                    child: const Icon(PhBold.x, size: 12, color: Colors.white),
+    final i = _photos.indexOf(p);
+    // Tap to see it big (it grows out of its square); the cross takes it off the entry.
+    return Reveal(
+      key: ValueKey(p.id),
+      rise: 0,
+      child: SizedBox(
+        width: 72,
+        height: 72,
+        child: Stack(children: [
+          Positioned.fill(
+            child: Semantics(
+              button: true,
+              label: 'Photo ${i + 1} — open',
+              excludeSemantics: true,
+              child: Pressable(
+                haptic: false,
+                onTap: () => showPhotoViewer(context, [for (final x in _photos) (url: x.url, label: null)], initial: i, scope: 'log'),
+                child: Hero(
+                  tag: photoHeroTag(p.url, 'log'),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(rCtl),
+                    child: ColoredBox(color: bd.glass, child: PhotoImage(p.url)), // the glass shows while a remote photo loads
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ]),
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Semantics(
+              button: true,
+              label: 'Remove photo',
+              excludeSemantics: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  Haptics.tick();
+                  setState(() => _photos = _photos.where((x) => x.id != p.id).toList());
+                },
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: Container(
+                      margin: const EdgeInsets.all(5),
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(color: Colors.black.withValues(alpha: .6), shape: BoxShape.circle),
+                      child: const Icon(PhBold.x, size: 12, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 
@@ -607,7 +661,10 @@ class _LogSheetState extends State<LogSheet> {
         ),
         IconBtn(Ph.dotsThree, tooltip: 'More for ${e.drink}', color: bd.muted, onTap: () => _entryActions(e)),
       ]),
-      if (_shareFor == e.id && signedIn) Padding(padding: const EdgeInsets.only(bottom: S.m), child: _ShareRow(entry: e, dateKey: widget.dateKey)),
+      Appear(
+        visible: _shareFor == e.id && signedIn,
+        child: _shareFor == e.id && signedIn ? Padding(padding: const EdgeInsets.only(bottom: S.m), child: _ShareRow(entry: e, dateKey: widget.dateKey)) : const SizedBox.shrink(),
+      ),
     ]);
   }
 }
@@ -657,6 +714,54 @@ class _ShareRow extends StatelessWidget {
             ]),
           ]);
         },
+      ),
+    );
+  }
+}
+
+/// "Removed Negroni · Undo", with a hairline that drains over the five seconds you
+/// have to change your mind — the time limit, shown rather than kept secret.
+class _UndoRow extends StatelessWidget {
+  final String drink;
+  final VoidCallback onUndo;
+  const _UndoRow({super.key, required this.drink, required this.onUndo});
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(rCtl),
+      child: Container(
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(rCtl), color: bd.ink.withValues(alpha: .06), border: Border.all(color: bd.line, width: .8)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(S.l, 2, 4, 0),
+            child: Row(children: [
+              Icon(Ph.trash, size: 17, color: bd.muted),
+              const SizedBox(width: S.s),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(children: [
+                    TextSpan(text: 'Removed ', style: T.sans(bd, size: 14, color: bd.muted)),
+                    TextSpan(text: drink, style: T.sans(bd, size: 14)),
+                  ]),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              TextAction('Undo', accent: true, onTap: onUndo),
+            ]),
+          ),
+          if (!context.reduceMotion)
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 1, end: 0),
+              duration: const Duration(seconds: 5),
+              builder: (context, v, _) => Align(
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(widthFactor: v, child: Container(height: 2, color: bd.accent.withValues(alpha: .7))),
+              ),
+            ),
+        ]),
       ),
     );
   }

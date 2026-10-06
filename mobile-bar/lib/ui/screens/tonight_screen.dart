@@ -214,7 +214,7 @@ class _GuestRow extends StatelessWidget {
         const SizedBox(height: S.xl),
         BdButton('Record', onTap: () async {
           final n = double.tryParse(amount.text.replaceAll(',', '').trim());
-          if (n == null || n <= 0) return toast(ctx, 'Type the amount.');
+          if (n == null || n <= 0) return toast(ctx, 'Type the amount.', tone: ToastTone.error);
           final ok = await runAction(ctx, () => Backend.i.recordSpend(room.id, guest.id, n), done: 'Recorded ${money(n, venue.currency, round: false)}.');
           if (ok && ctx.mounted) Navigator.pop(ctx);
         }),

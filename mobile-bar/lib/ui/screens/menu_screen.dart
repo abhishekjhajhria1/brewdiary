@@ -158,8 +158,8 @@ class MenuScreen extends StatelessWidget {
           const SizedBox(height: S.xl),
           BdButton('Save', onTap: () async {
             final p = price.text.trim().isEmpty ? null : double.tryParse(price.text.replaceAll(',', '').trim());
-            if (name.text.trim().isEmpty) return toast(ctx, 'Give it a name.');
-            if (price.text.trim().isNotEmpty && (p == null || p < 0)) return toast(ctx, 'That price doesn\'t look right.');
+            if (name.text.trim().isEmpty) return toast(ctx, 'Give it a name.', tone: ToastTone.error);
+            if (price.text.trim().isNotEmpty && (p == null || p < 0)) return toast(ctx, 'That price doesn\'t look right.', tone: ToastTone.error);
             final next = MenuItem(
               id: item?.id ?? newId(),
               section: section.text.trim().isEmpty ? 'Menu' : section.text.trim(),

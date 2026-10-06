@@ -4,6 +4,7 @@
 // seated one to see it. The inbox (a guest's order from the table, "bill please"), the
 // bar and kitchen tickets, the waitlist and tonight's room are one tap away.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -70,6 +71,19 @@ class FloorScreen extends StatefulWidget {
 class _FloorScreenState extends State<FloorScreen> {
   Timer? _tick;
 
+  /// What the inbox held at the last read: a new order or call on the 20-second
+  /// heartbeat earns one "look up" buzz (and the banner's pulse), never a stream of them.
+  int? _asks;
+  Object? _lastRead;
+
+  void _heard(FloorData f) {
+    if (identical(f.inbox, _lastRead)) return; // once per read, not per rebuild
+    _lastRead = f.inbox;
+    final n = f.inbox.length;
+    if (_asks != null && n > _asks!) Haptics.warning();
+    _asks = n;
+  }
+
   Venue get v => widget.venue;
 
   @override
@@ -105,8 +119,9 @@ class _FloorScreenState extends State<FloorScreen> {
           retry: true,
           builder: (context, f, loading) {
             if (f == null) return const Skeleton(height: 320);
+            _heard(f);
             return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              if (f.inbox.isNotEmpty) _InboxBanner(items: f.inbox, onTap: () => _push(InboxScreen(venue: v))),
+              Appear(visible: f.inbox.isNotEmpty, child: f.inbox.isEmpty ? const SizedBox.shrink() : _InboxBanner(items: f.inbox, onTap: () => _push(InboxScreen(venue: v)))),
               _Shortcuts(venue: v, waiting: f.waiting, onPush: _push),
               const SizedBox(height: S.l),
               if (f.tables.isEmpty)
@@ -224,7 +239,14 @@ class _TableTile extends StatelessWidget {
       excludeSemantics: true,
       child: Pressable(
         onTap: onTap,
-        child: Container(
+        scale: .96,
+        // A table that starts asking (or whose food is ready) rings out a few times.
+        child: Pulse(
+          active: state == TableState.attention || state == TableState.ready,
+          color: color,
+          child: AnimatedContainer(
+          duration: Motion.slow,
+          curve: Motion.curve,
           height: 104,
           padding: const EdgeInsets.all(S.m),
           decoration: BoxDecoration(
@@ -250,6 +272,7 @@ class _TableTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ]),
+          ),
         ),
       ),
     );
@@ -274,9 +297,9 @@ class _InboxBanner extends StatelessWidget {
           padding: const EdgeInsets.all(S.l),
           decoration: BoxDecoration(color: bd.accent.withValues(alpha: .16), borderRadius: BorderRadius.circular(rTile), border: Border.all(color: bd.accent.withValues(alpha: .6))),
           child: Row(children: [
-            Icon(Ph.bellRinging, color: bd.accentText),
+            _Ring(key: ValueKey(items.length), child: Icon(Ph.bellRinging, color: bd.accentText)),
             const SizedBox(width: S.m),
-            Expanded(child: Text(text, style: T.sans(bd, size: 15.5, weight: FontWeight.w600))),
+            Expanded(child: RollingText(text, style: T.sans(bd, size: 15.5, weight: FontWeight.w600))),
             Text('Open', style: T.sans(bd, size: 14, weight: FontWeight.w600, color: bd.accentText)),
           ]),
         ),
@@ -327,4 +350,39 @@ class _OpenTabsWithoutTable extends StatelessWidget {
       ]),
     ]);
   }
+}
+
+/// A bell that swings a few times when it appears (keyed by the count, so each new
+/// ask rings it again), then hangs still.
+class _Ring extends StatefulWidget {
+  final Widget child;
+  const _Ring({super.key, required this.child});
+  @override
+  State<_Ring> createState() => _RingState();
+}
+
+class _RingState extends State<_Ring> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_c.isAnimating && _c.value == 0 && !context.reduceMotion) _c.forward();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        child: widget.child,
+        builder: (context, child) {
+          final t = _c.value;
+          return Transform.rotate(angle: math.sin(t * math.pi * 6) * .35 * (1 - t), alignment: Alignment.topCenter, child: child);
+        },
+      );
 }

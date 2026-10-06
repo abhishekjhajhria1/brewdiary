@@ -192,7 +192,10 @@ class MenuView extends StatefulWidget {
 
   /// The venue's menu slug, when opened from `bwdy.site/m/<slug>`.
   final String? slug;
-  const MenuView({super.key, required this.menu, this.table, this.slug});
+
+  /// Draw the table's ordering controls without the cloud (tests and screenshots).
+  final bool previewOrdering;
+  const MenuView({super.key, required this.menu, this.table, this.slug, this.previewOrdering = false});
   @override
   State<MenuView> createState() => MenuViewState();
 }
@@ -204,7 +207,21 @@ class MenuViewState extends State<MenuView> {
   List<MyRequest> _mine = const [];
   Timer? _poll;
 
-  bool get _ordering => widget.table?.tableService == true && auth.isAuthed && db != null;
+  bool get _ordering => widget.table?.tableService == true && ((auth.isAuthed && db != null) || widget.previewOrdering);
+
+  /// When each kind of call last went through: the chip says "called" for a while
+  /// (so nobody taps it five times wondering), and the 15-second poll clears it.
+  final Map<String, DateTime> _calledAt = {};
+  static const _callHolds = Duration(seconds: 45);
+  bool _called(String kind) => _calledAt[kind] != null && DateTime.now().difference(_calledAt[kind]!) < _callHolds;
+
+  void _changeQty(MenuItem it, int delta) {
+    Haptics.tick();
+    setState(() {
+      final q = ((_basket[it.id] ?? 0) + delta).clamp(0, 20);
+      q <= 0 ? _basket.remove(it.id) : _basket[it.id] = q;
+    });
+  }
 
   TasteShare? _shared;
   bool _sharing = false;
@@ -276,10 +293,10 @@ class MenuViewState extends State<MenuView> {
       await TableApi.order(t.code, [for (final e in _basket.entries) {'item': e.key, 'qty': e.value}]);
       if (!mounted) return;
       setState(() => _basket.clear());
-      toast(context, 'Sent — the staff will confirm it.');
+      toast(context, 'Sent — the staff will confirm it.', tone: ToastTone.success);
       await _refreshMine();
     } catch (e) {
-      if (mounted) toast(context, tableError(e));
+      if (mounted) toast(context, tableError(e), tone: ToastTone.error);
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -288,17 +305,19 @@ class MenuViewState extends State<MenuView> {
   Future<void> _call(String kind) async {
     final t = widget.table;
     if (t == null) return;
+    if (_called(kind)) return toast(context, 'Already asked — they\'re on their way.');
     try {
       await TableApi.call(t.code, kind);
-      if (mounted) toast(context, switch (kind) { 'bill' => 'They\'re bringing the bill.', 'water' => 'Water\'s on its way.', _ => 'Someone\'s coming over.' });
+      if (mounted) setState(() => _calledAt[kind] = DateTime.now());
+      if (mounted) toast(context, switch (kind) { 'bill' => 'They\'re bringing the bill.', 'water' => 'Water\'s on its way.', _ => 'Someone\'s coming over.' }, tone: ToastTone.success);
     } catch (e) {
-      if (mounted) toast(context, tableError(e));
+      if (mounted) toast(context, tableError(e), tone: ToastTone.error);
     }
   }
 
   void _log(MenuItem item) {
     entryStore.addEntry(date: todayKey(), drink: item.name, type: item.drinkType, venue: widget.menu.venueName);
-    toast(context, 'Logged ${item.name} — in today\'s square.');
+    toast(context, 'Logged ${item.name} — in today\'s square.', tone: ToastTone.success);
   }
 
   @override
@@ -336,14 +355,17 @@ class MenuViewState extends State<MenuView> {
               if (it.price != null) Text(formatMoney(it.price!, menu.currency), style: T.row(bd).copyWith(fontFeatures: T.tnum)),
               if (_ordering)
                 Row(mainAxisSize: MainAxisSize.min, children: [
-                  if ((_basket[it.id] ?? 0) > 0) ...[
-                    IconBtn(Ph.minus, tooltip: 'One fewer ${it.name}', onTap: () => setState(() {
-                          final q = (_basket[it.id] ?? 0) - 1;
-                          q <= 0 ? _basket.remove(it.id) : _basket[it.id] = q;
-                        })),
-                    Text('${_basket[it.id]}', style: T.row(bd).copyWith(fontFeatures: T.tnum)),
-                  ],
-                  IconBtn(Ph.plus, tooltip: 'Add ${it.name}', onTap: () => setState(() => _basket[it.id] = ((_basket[it.id] ?? 0) + 1).clamp(1, 20))),
+                  AnimatedSize(
+                    duration: context.reduceMotion ? Duration.zero : Motion.med,
+                    curve: Easing.emphasizedDecelerate,
+                    child: (_basket[it.id] ?? 0) > 0
+                        ? Row(mainAxisSize: MainAxisSize.min, children: [
+                            IconBtn(Ph.minus, tooltip: 'One fewer ${it.name}', onTap: () => _changeQty(it, -1)),
+                            SizedBox(width: 22, child: RollingNumber(_basket[it.id] ?? 0, textAlign: TextAlign.center, style: T.row(bd))),
+                          ])
+                        : const SizedBox.shrink(),
+                  ),
+                  IconBtn(Ph.plus, tooltip: 'Add ${it.name}', onTap: () => _changeQty(it, 1)),
                 ])
               else if (it.kind != 'food')
                 TextAction('Log it', accent: true, size: 13, onTap: () => _log(it)),
@@ -351,7 +373,9 @@ class MenuViewState extends State<MenuView> {
           ]),
         );
 
-    return SubPage(
+    final count = _basket.values.fold<int>(0, (a, b) => a + b);
+    final total = _basket.entries.fold<double>(0, (s, e) => s + (byId[e.key]?.price ?? 0) * e.value);
+    final page = SubPage(
       title: menu.venueName,
       actions: [IconBtn(Ph.identificationBadge, tooltip: 'Show my taste passport', onTap: () => showTasteCard(context))],
       subtitle: [if (widget.table != null) 'Table ${widget.table!.tableLabel}', if (menu.venueCity != null) menu.venueCity!, menu.isStore ? 'On the shelf' : 'The menu'].join(' · '),
@@ -382,9 +406,9 @@ class MenuViewState extends State<MenuView> {
               if (_ordering) ...[
                 SectionHeader('At table ${widget.table!.tableLabel}'),
                 Wrap(spacing: S.s, runSpacing: S.s, children: [
-                  BdChip('Call staff', icon: Ph.handWaving, onTap: () => _call('staff')),
-                  BdChip('Bill please', icon: Ph.receipt, onTap: () => _call('bill')),
-                  BdChip('Water', icon: Ph.drop, onTap: () => _call('water')),
+                  BdChip(_called('staff') ? 'Staff called' : 'Call staff', active: _called('staff'), icon: _called('staff') ? PhBold.check : Ph.handWaving, onTap: () => _call('staff')),
+                  BdChip(_called('bill') ? 'Bill asked for' : 'Bill please', active: _called('bill'), icon: _called('bill') ? PhBold.check : Ph.receipt, onTap: () => _call('bill')),
+                  BdChip(_called('water') ? 'Water asked for' : 'Water', active: _called('water'), icon: _called('water') ? PhBold.check : Ph.drop, onTap: () => _call('water')),
                 ]),
                 if (_mine.isNotEmpty) ...[
                   const SizedBox(height: S.l),
@@ -395,28 +419,82 @@ class MenuViewState extends State<MenuView> {
                         subtitle: r.statusWords,
                         trailing: r.status == 'pending'
                             ? TextAction('Cancel', faint: true, size: 13, onTap: () async {
-                                await TableApi.withdraw(r.id);
+                                try {
+                                  await TableApi.withdraw(r.id);
+                                  if (context.mounted) toast(context, 'Cancelled.');
+                                } catch (e) {
+                                  if (context.mounted) toast(context, tableError(e), tone: ToastTone.error);
+                                }
                                 await _refreshMine();
                               })
                             : null,
                       ),
                   ]),
                 ],
-                if (_basket.isNotEmpty) ...[
-                  const SizedBox(height: S.l),
-                  BdButton(
-                    _sending ? 'Sending…' : 'Send ${_basket.values.fold<int>(0, (a, b) => a + b)} to the staff · ${formatMoney(_basket.entries.fold<double>(0, (s, e) => s + (byId[e.key]?.price ?? 0) * e.value), menu.currency)}',
-                    busy: _sending,
-                    onTap: _send,
-                  ),
-                ],
               ],
+              // Room for the basket bar, so it never sits on the last item.
+              if (_basket.isNotEmpty) const SizedBox(height: 76),
               const SizedBox(height: S.xl),
               Text(
                 "Opening a menu tells ${menu.venueName} nothing about you. Prices are the venue's own.${_ordering ? ' An order waits for the staff to confirm it; they see the table, never your name.' : ''}",
                 style: T.caption(bd),
               ),
             ]),
+    );
+    if (!_ordering) return page;
+    // The basket rides up from the bottom the moment there's something in it —
+    // wherever you are in a long menu, what you've picked and the way to send it
+    // are under your thumb.
+    return Stack(children: [
+      page,
+      Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: IgnorePointer(
+          ignoring: _basket.isEmpty,
+          child: AnimatedSlide(
+            offset: _basket.isEmpty ? const Offset(0, 1.3) : Offset.zero,
+            duration: context.reduceMotion ? Duration.zero : Motion.slow,
+            curve: _basket.isEmpty ? Curves.easeInCubic : Easing.emphasizedDecelerate,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(sideGutter(context), 0, sideGutter(context), MediaQuery.paddingOf(context).bottom + S.m),
+              // Above the page's Scaffold, so it brings its own Material for text and ink.
+              child: Material(type: MaterialType.transparency, child: _BasketBar(count: count, total: formatMoney(total, menu.currency), busy: _sending, onSend: _send)),
+            ),
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+/// "3 to send · ₹1,150 — Send to the staff": the basket, under your thumb.
+class _BasketBar extends StatelessWidget {
+  final int count;
+  final String total;
+  final bool busy;
+  final VoidCallback onSend;
+  const _BasketBar({required this.count, required this.total, required this.busy, required this.onSend});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    return Semantics(
+      container: true,
+      label: '$count to send, $total',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(S.l, S.s, S.s, S.s),
+        decoration: BoxDecoration(color: bd.sheet, borderRadius: BorderRadius.circular(rTile), border: Border.all(color: bd.glassBorder, width: .8)),
+        child: Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              RollingText('$count to send', style: T.sans(bd, size: 15, weight: FontWeight.w600)),
+              RollingText(total, style: T.caption(bd).copyWith(fontFeatures: T.tnum)),
+            ]),
+          ),
+          BdButton(busy ? 'Sending…' : 'Send to the staff', kind: BtnKind.accent, expand: false, height: 46, busy: busy, onTap: onSend),
+        ]),
+      ),
     );
   }
 }
@@ -471,7 +549,7 @@ class _TableMenuSheetState extends State<_TableMenuSheet> {
   void _open() {
     final typed = _code.text.trim().toLowerCase();
     final slug = menuSlugFrom(Uri.parse('https://bwdy.site/m/${Uri.encodeComponent(typed)}'));
-    if (slug == null) return toast(context, 'That code doesn\'t look right — it\'s printed under the QR.');
+    if (slug == null) return toast(context, 'That code doesn\'t look right — it\'s printed under the QR.', tone: ToastTone.error);
     final nav = Navigator.of(context);
     nav.pop();
     nav.push(MaterialPageRoute(builder: (_) => MenuScreen(slug: slug)));

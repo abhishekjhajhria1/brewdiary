@@ -105,7 +105,7 @@ class FloorSetupScreen extends StatelessWidget {
         BdButton('Save', onTap: () async {
           final raw = ctl.text.trim();
           final n = raw.isEmpty ? 0 : int.tryParse(raw);
-          if (n == null || n < 0 || n > 20000) return toast(ctx, 'A number from 1 to 20,000, or leave it empty.');
+          if (n == null || n < 0 || n > 20000) return toast(ctx, 'A number from 1 to 20,000, or leave it empty.', tone: ToastTone.error);
           final ok = await runAction(ctx, () => Backend.i.updateVenue(v.id, capacity: n));
           if (ok && ctx.mounted) Navigator.pop(ctx);
         }),

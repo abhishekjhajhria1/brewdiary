@@ -45,6 +45,10 @@ class _BartenderScreenState extends State<BartenderScreen> {
   final _scroll = ScrollController();
   bool _busy = false;
   bool _offline = false;
+
+  /// How many messages were already there when this conversation was opened: those
+  /// are simply shown; anything said after rises in.
+  int _seen = 0;
   bool _under = false; // content scrolled under the top bar → frost it
   List<String> _friendsPouring = const [];
   List<String> _trending = const [];
@@ -53,6 +57,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
   void initState() {
     super.initState();
     _messages.addAll(ChatStore.instance.current?.messages ?? const []);
+    _seen = _messages.length;
     if (auth.isAuthed && db != null) {
       FriendsApi.feed().then((f) => _friendsPouring = f.map((e) => e.drink).toSet().take(5).toList()).catchError((_) => <String>[]);
       DiscoverApi.tasteTrends().then((t) => _trending = t.where((x) => x.kind == 'drink').map((x) => x.name).take(5).toList()).catchError((_) => <String>[]);
@@ -79,6 +84,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
     ChatStore.instance.startNew();
     setState(() {
       _messages.clear();
+      _seen = 0;
       _offline = false;
       _under = false;
     });
@@ -90,6 +96,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
       _messages
         ..clear()
         ..addAll(c.messages);
+      _seen = _messages.length;
       _offline = false;
     });
     _toBottom();
@@ -114,6 +121,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
     if (content.isEmpty || _busy) return;
     final entries = entryStore.entries;
     final history = [..._messages, ChatMessage(ChatRole.user, content)];
+    Haptics.tap(); // it's away
     setState(() {
       _messages
         ..clear()
@@ -147,7 +155,10 @@ class _BartenderScreenState extends State<BartenderScreen> {
       TrainingStore.instance.log(user: content, assistant: acc);
       await ChatStore.instance.save([...history, ChatMessage(ChatRole.assistant, acc)]);
     } catch (_) {
-      if (mounted) setState(() => _messages[_messages.length - 1] = const ChatMessage(ChatRole.assistant, 'The bar went quiet for a moment — ask me again, love.'));
+      if (mounted) {
+        Haptics.error();
+        setState(() => _messages[_messages.length - 1] = const ChatMessage(ChatRole.assistant, 'The bar went quiet for a moment — ask me again, love.'));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -245,20 +256,24 @@ class _BartenderScreenState extends State<BartenderScreen> {
         const SectionHeader('Try asking', padding: EdgeInsets.only(top: S.x3, bottom: S.m)),
         // The website's starters: glass pills, one tap to ask.
         Wrap(spacing: S.s, runSpacing: S.s, children: [
-          for (final s in [if (PantryStore.instance.items.isNotEmpty) 'What can I make with what\'s at home?', ...starters])
-            Semantics(
-              button: true,
-              child: Pressable(
-                onTap: () => _send(s),
-                child: Container(
-                  constraints: const BoxConstraints(minHeight: S.tap),
-                  padding: const EdgeInsets.symmetric(horizontal: S.l, vertical: 11),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [bd.glassTop, bd.glass]),
-                    borderRadius: BorderRadius.circular(rCtl),
-                    border: Border.all(color: bd.glassBorder, width: .8),
+          for (final (i, s) in [if (PantryStore.instance.items.isNotEmpty) 'What can I make with what\'s at home?', ...starters].indexed)
+            Reveal(
+              index: i,
+              delay: const Duration(milliseconds: 120),
+              child: Semantics(
+                button: true,
+                child: Pressable(
+                  onTap: () => _send(s),
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: S.tap),
+                    padding: const EdgeInsets.symmetric(horizontal: S.l, vertical: 11),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [bd.glassTop, bd.glass]),
+                      borderRadius: BorderRadius.circular(rCtl),
+                      border: Border.all(color: bd.glassBorder, width: .8),
+                    ),
+                    child: Text(s, style: T.body(bd)),
                   ),
-                  child: Text(s, style: T.body(bd)),
                 ),
               ),
             ),
@@ -278,9 +293,10 @@ class _BartenderScreenState extends State<BartenderScreen> {
       padding: EdgeInsets.fromLTRB(side, top + S.s, side, S.s),
       itemCount: _messages.length,
       itemBuilder: (context, i) {
-        final m = _messages[_messages.length - 1 - i];
+        final index = _messages.length - 1 - i;
+        final m = _messages[index];
         final mine = m.role == ChatRole.user;
-        return Align(
+        final bubble = Align(
           alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: width * (mine ? .78 : .86)),
@@ -298,12 +314,21 @@ class _BartenderScreenState extends State<BartenderScreen> {
                   bottomRight: Radius.circular(mine ? 6 : 18),
                 ),
               ),
-              child: m.content.isEmpty
-                  ? TypingDots(color: bd.muted)
-                  : SelectableText(m.content, style: T.body(bd)),
+              child: AnimatedSize(
+                duration: context.reduceMotion ? Duration.zero : Motion.fast,
+                alignment: Alignment.topLeft,
+                child: AnimatedSwitcher(
+                  duration: context.reduceMotion ? Duration.zero : Motion.fast,
+                  child: m.content.isEmpty
+                      ? TypingDots(key: const ValueKey('dots'), color: bd.muted)
+                      : SelectableText(m.content, key: const ValueKey('text'), style: T.body(bd)),
+                ),
+              ),
             ),
           ),
         );
+        // Keyed by place in the conversation: what was said after it opened rises in.
+        return index >= _seen ? Reveal(key: ValueKey('m$index'), rise: 14, child: bubble) : KeyedSubtree(key: ValueKey('m$index'), child: bubble);
       },
     );
   }
@@ -353,12 +378,17 @@ class _BartenderScreenState extends State<BartenderScreen> {
               width: S.tap,
               height: S.tap,
               child: Center(
-                child: AnimatedContainer(
-                  duration: Motion.fast,
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: ready ? bd.accent : bd.ink.withValues(alpha: .1)),
-                  child: Icon(PhBold.arrowUp, size: 18, color: ready ? bd.accentContrast : bd.faint),
+                child: AnimatedScale(
+                  scale: ready ? 1 : .88,
+                  duration: Motion.med,
+                  curve: ready ? Curves.easeOutBack : Curves.easeOut,
+                  child: AnimatedContainer(
+                    duration: Motion.fast,
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: ready ? bd.accent : bd.ink.withValues(alpha: .1)),
+                    child: Icon(PhBold.arrowUp, size: 18, color: ready ? bd.accentContrast : bd.faint),
+                  ),
                 ),
               ),
             ),

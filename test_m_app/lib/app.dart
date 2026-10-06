@@ -91,7 +91,13 @@ class _Root extends StatelessWidget {
         }
         // The scaffold resizes for the keyboard (so a focused field scrolls into
         // view); the ambient layer stays outside it so the background never jumps.
-        return Ambient(child: Scaffold(backgroundColor: Colors.transparent, body: body));
+        // Passing the age gate cross-fades into the app rather than cutting to it.
+        return Ambient(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: AnimatedSwitcher(duration: context.reduceMotion ? Duration.zero : Motion.slow, child: KeyedSubtree(key: ValueKey(body.runtimeType), child: body)),
+          ),
+        );
       },
     );
   }
@@ -201,8 +207,9 @@ class _ShellState extends State<Shell> {
       final what = uri.pathSegments.firstOrNull;
       final def = extras.where((d) => d.entryDrink.toLowerCase() == what).firstOrNull;
       if (def == null) return;
-      entryStore.addEntry(date: todayKey(), drink: def.entryDrink, type: def.entryType);
-      toast(ctx, 'Logged one ${def.unit} for today.');
+      final e = entryStore.addEntry(date: todayKey(), drink: def.entryDrink, type: def.entryType);
+      // A home-screen tap can be a pocket tap: say what happened, and offer it back.
+      toast(ctx, 'Logged one ${def.unit} for today.', tone: ToastTone.success, action: 'Undo', onAction: () => entryStore.deleteEntry(e.id));
     } else if (uri.host == 'split') {
       if (auth.isAuthed && db != null) {
         navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const SplitScreen()));
@@ -260,7 +267,7 @@ class _ShellState extends State<Shell> {
         // signing in starts from a clean slate.
         return Stack(children: [
           Positioned.fill(
-            child: IndexedStack(
+            child: FadeThroughStack(
               key: ValueKey(auth.meId ?? 'guest'),
               index: tabs.indexOf(_tab),
               children: [
@@ -370,7 +377,7 @@ class _TabBar extends StatelessWidget {
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () {
-                            if (t != current) HapticFeedback.selectionClick();
+                            if (t != current) Haptics.tick();
                             onSelect(t);
                           },
                           child: Stack(alignment: Alignment.topCenter, children: [

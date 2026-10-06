@@ -101,7 +101,7 @@ class _HostPartyState extends State<_HostParty> {
       DateField(label: 'When', value: _date, first: DateTime(now.year, now.month, now.day), last: DateTime(now.year + 2, 12, 31), onChanged: (d) => setState(() => _date = d)),
       const SizedBox(height: S.xl),
       LineField(controller: _venue, label: 'Where (optional)', hint: 'A bar, a flat…', caps: TextCapitalization.words),
-      if (_error != null) Padding(padding: const EdgeInsets.only(top: S.m), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+      if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.m), style: T.sans(bd, size: 14, color: bd.accentText)),
       const SizedBox(height: S.xxl),
       BdButton('Host it', busy: _busy, onTap: _name.text.trim().isEmpty ? null : _submit),
       const SizedBox(height: S.s),
@@ -144,7 +144,7 @@ class _JoinPartyState extends State<_JoinParty> {
       return;
     }
     Navigator.pop(context);
-    if (r.pending) toast(context, 'Request sent to ${r.name} — the host will let you in.');
+    if (r.pending) toast(context, 'Request sent to ${r.name} — the host will let you in.', tone: ToastTone.success);
     widget.onJoined(r.id!);
   }
 

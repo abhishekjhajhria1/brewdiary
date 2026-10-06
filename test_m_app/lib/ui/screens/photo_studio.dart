@@ -189,7 +189,7 @@ class _PhotoStudioState extends State<PhotoStudio> {
       final x = await ImagePicker().pickImage(source: source, maxWidth: 2000, imageQuality: 88);
       if (x != null) setState(() => _photo = x.path);
     } catch (_) {
-      if (mounted) toast(context, "Couldn't open photos — check brewdiary's permission in Settings.");
+      if (mounted) toast(context, "Couldn't open photos — check brewdiary's permission in Settings.", tone: ToastTone.error);
     }
   }
 
@@ -207,7 +207,7 @@ class _PhotoStudioState extends State<PhotoStudio> {
       await file.writeAsBytes(bytes.buffer.asUint8List());
       await SharePlus.instance.share(ShareParams(files: [XFile(file.path, mimeType: 'image/png')]));
     } catch (_) {
-      if (mounted) toast(context, "Couldn't make the image — try again.");
+      if (mounted) toast(context, "Couldn't make the image — try again.", tone: ToastTone.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

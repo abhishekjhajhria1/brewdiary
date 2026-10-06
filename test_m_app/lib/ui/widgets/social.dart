@@ -207,7 +207,7 @@ class _ReportSheetState extends State<_ReportSheet> {
       _busy = false;
       _sent = err == null;
     });
-    if (err != null) toast(context, err);
+    if (err != null) toast(context, err, tone: ToastTone.error);
   }
 
   @override

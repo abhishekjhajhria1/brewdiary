@@ -85,7 +85,7 @@ class _CircleFormState extends State<_CircleForm> {
     if (!mounted) return;
     if (err == null) {
       Navigator.pop(context);
-      toast(context, widget.join ? "You're in." : 'Circle started — share its code from the circle page.');
+      toast(context, widget.join ? "You're in." : 'Circle started — share its code from the circle page.', tone: ToastTone.success);
       return;
     }
     setState(() {
@@ -312,10 +312,10 @@ class _ChallengeCard extends StatelessWidget {
                   Text('${shortDay(challenge.startsOn)} – ${shortDay(challenge.endsOn)}${ended ? ' · ended' : ''}', style: T.caption(bd)),
                 ]),
               ),
-              if (!ended && me != null) joined ? TextAction('Leave', onTap: () => ChallengesApi.leave(challenge.id)) : TextAction('Join in', accent: true, onTap: () => ChallengesApi.join(challenge.id)),
+              if (!ended && me != null) joined ? TextAction('Leave', onTap: () => attempt(context, () => ChallengesApi.leave(challenge.id))) : TextAction('Join in', accent: true, onTap: () => attempt(context, () => ChallengesApi.join(challenge.id), done: "You're in.")),
               if (creator)
                 IconBtn(Ph.dotsThree, tooltip: 'More for $heading', color: bd.muted, onTap: () => showActions(context, title: heading, actions: [
-                      SheetAction('Remove challenge', icon: Ph.trash, destructive: true, onTap: () => ChallengesApi.delete(challenge.id)),
+                      SheetAction('Remove challenge', icon: Ph.trash, destructive: true, onTap: () => attempt(context, () => ChallengesApi.delete(challenge.id))),
                     ])),
             ]),
             if (challenge.kind.isFreeform && challenge.rule != null)
@@ -338,7 +338,7 @@ class _ChallengeCard extends StatelessWidget {
                           style: T.sans(bd, size: 15, color: challenge.winnerId == r.userId ? bd.accentText : (r.userId == me ? bd.ink : bd.muted)),
                         ),
                       ),
-                      if (creator) TextAction(challenge.winnerId == r.userId ? 'Clear' : 'Pick winner', onTap: () => ChallengesApi.setWinner(challenge.id, challenge.winnerId == r.userId ? null : r.userId)),
+                      if (creator) TextAction(challenge.winnerId == r.userId ? 'Clear' : 'Pick winner', onTap: () => attempt(context, () => ChallengesApi.setWinner(challenge.id, challenge.winnerId == r.userId ? null : r.userId))),
                     ]),
                   )
                 else

@@ -158,7 +158,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
       try {
         await SharePlus.instance.share(ShareParams(text: csv, subject: 'Payroll — ${v.name}'));
       } catch (_) {
-        if (context.mounted) toast(context, 'Couldn\'t share the file — try again.');
+        if (context.mounted) toast(context, 'Couldn\'t share the file — try again.', tone: ToastTone.error);
       }
     }
   }
@@ -172,10 +172,10 @@ Future<void> payRateSheet(BuildContext context, Venue venue, {required String us
   try {
     current = (await Backend.i.payRates(venue.id))[userId];
   } on BackendError catch (e) {
-    if (context.mounted) toast(context, e.message);
+    if (context.mounted) toast(context, e.message, tone: ToastTone.error);
     return;
   } catch (_) {
-    if (context.mounted) toast(context, 'Couldn\'t load their rate — try again.');
+    if (context.mounted) toast(context, 'Couldn\'t load their rate — try again.', tone: ToastTone.error);
     return;
   }
   if (!context.mounted) return;

@@ -88,6 +88,22 @@ class MoreScreen extends StatelessWidget {
             hint: 'Bars are dark — this is the default.',
             trailing: BdToggle(on: ThemeStore.instance.isDark, label: 'Dark theme', onChanged: (_) => ThemeStore.instance.toggle()),
           ),
+          ListenableBuilder(
+            listenable: HapticsStore.instance,
+            builder: (context, _) => SettingRow(
+              title: 'Haptics',
+              hint: 'A tap under your finger when an order goes, a sale rings up, or something didn\'t work.',
+              trailing: BdToggle(
+                on: HapticsStore.instance.on,
+                label: 'Haptics',
+                onChanged: (v) {
+                  HapticsStore.instance.set(v);
+                  Haptics.enabled = v;
+                  if (v) Haptics.tap(); // turning them on answers, so you feel what you chose
+                },
+              ),
+            ),
+          ),
           if (s.venues.length > 1 || true) GroupTile(icon: Ph.storefront, title: 'Switch venue', chevron: true, onTap: s.leaveVenue),
           GroupTile(icon: Ph.signOut, title: 'Sign out', onTap: () async {
             final yes = await confirm(context, title: 'Sign out?', body: 'You\'ll need your email to get back in.', yes: 'Sign out');

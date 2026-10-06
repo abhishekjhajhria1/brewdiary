@@ -183,7 +183,7 @@ class TeamScreen extends StatelessWidget {
             final c = await Backend.i.reissueCode(e.id);
             if (context.mounted) await showCodeSheet(context, venue: venue, name: e.name, email: e.email, role: e.role, code: c);
           } on BackendError catch (x) {
-            if (context.mounted) toast(context, x.message);
+            if (context.mounted) toast(context, x.message, tone: ToastTone.error);
           }
         }),
         SheetAction('Cancel their code', icon: Ph.prohibit, destructive: true, onTap: () async {
@@ -382,7 +382,7 @@ class TeamScreen extends StatelessWidget {
               final i = await Backend.i.createInvite(venue.id, role);
               set(() => invite = i);
             } on BackendError catch (e) {
-              if (ctx.mounted) toast(ctx, e.message);
+              if (ctx.mounted) toast(ctx, e.message, tone: ToastTone.error);
             }
           }),
         ]);
@@ -443,7 +443,7 @@ Future<void> addEmployeeSheet(BuildContext context, Venue venue) async {
                   final c = await Backend.i.enrolStaff(venue.id, name: name.text, email: email.text, phone: phone.text, role: role);
                   set(() => made = c);
                 } on BackendError catch (e) {
-                  if (ctx.mounted) toast(ctx, e.message);
+                  if (ctx.mounted) toast(ctx, e.message, tone: ToastTone.error);
                 } finally {
                   if (ctx.mounted) set(() => busy = false);
                 }

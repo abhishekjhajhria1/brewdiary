@@ -448,49 +448,98 @@ class RankRoad extends StatelessWidget {
 // ── the taste map ───────────────────────────────────────────────────────────
 /// Every drink family as a square, one row per collection — the mosaic, for
 /// taste. A first taste fills a square; a gilded one glows. Tap a row to open it.
-class TasteMap extends StatelessWidget {
+class TasteMap extends StatefulWidget {
   final List<CollectionState> collections;
   final Set<String> gilded;
   final void Function(CollectionState)? onOpen;
   final bool compact;
-  const TasteMap({super.key, required this.collections, required this.gilded, this.onOpen, this.compact = false});
+
+  /// Fill the squares in, row by row, when it first appears (the passport page).
+  /// Off for anything captured as an image — the share poster must be whole.
+  final bool animate;
+  const TasteMap({super.key, required this.collections, required this.gilded, this.onOpen, this.compact = false, this.animate = false});
+  @override
+  State<TasteMap> createState() => _TasteMapState();
+}
+
+class _TasteMapState extends State<TasteMap> with SingleTickerProviderStateMixin {
+  late final AnimationController _fill = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100), value: widget.animate ? 0 : 1);
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started || !widget.animate) return;
+    _started = true;
+    if (context.reduceMotion) {
+      _fill.value = 1;
+    } else {
+      _fill.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _fill.dispose();
+    super.dispose();
+  }
+
+  /// How far square [i] of row [row] has filled in: each row starts a beat after
+  /// the one above, each square a moment after the one before it.
+  double _appear(int row, int i) {
+    final t = _fill.value;
+    if (t >= 1) return 1;
+    final start = row * .07 + i * .03;
+    return Curves.easeOutBack.transform(((t - start) / .32).clamp(0.0, 1.0));
+  }
+
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
+    final collections = widget.collections;
+    final compact = widget.compact;
     return LayoutBuilder(builder: (context, c) {
       final label = compact ? 0.0 : 74.0;
       final count = compact ? 0.0 : 38.0;
       const gap = 4.0;
       final most = collections.fold<int>(0, (m, x) => math.max(m, x.total));
       final cell = ((c.maxWidth - label - count - (most - 1) * gap) / most).clamp(8.0, 22.0);
-      return Column(children: [
-        for (final col in collections)
-          Semantics(
-            button: onOpen != null,
-            label: '${col.collection.title}, ${col.have} of ${col.total}',
-            excludeSemantics: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onOpen == null ? null : () => onOpen!(col),
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: compact ? 2 : 6),
-                child: Row(children: [
-                  if (!compact)
-                    SizedBox(
-                      width: label,
-                      child: Text(shortCollection(col.collection.id), maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 13, color: col.complete ? bd.accentText : bd.muted, weight: col.complete ? FontWeight.w600 : FontWeight.w400)),
-                    ),
-                  for (var i = 0; i < col.collection.families.length; i++) ...[
-                    if (i > 0) const SizedBox(width: gap),
-                    _Square(size: cell, filled: col.tried.containsKey(col.collection.families[i]), gilded: gilded.contains(col.collection.families[i])),
-                  ],
-                  const Spacer(),
-                  if (!compact) Text('${col.have}/${col.total}', style: T.sans(bd, size: 12.5, color: col.have == 0 ? bd.faint : bd.muted).copyWith(fontFeatures: T.tnum)),
-                ]),
+      return AnimatedBuilder(
+        animation: _fill,
+        builder: (context, _) => Column(children: [
+          for (final (row, col) in collections.indexed)
+            Semantics(
+              button: widget.onOpen != null,
+              label: '${col.collection.title}, ${col.have} of ${col.total}',
+              excludeSemantics: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onOpen == null
+                    ? null
+                    : () {
+                        Haptics.tick();
+                        widget.onOpen!(col);
+                      },
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: compact ? 2 : 6),
+                  child: Row(children: [
+                    if (!compact)
+                      SizedBox(
+                        width: label,
+                        child: Text(shortCollection(col.collection.id), maxLines: 1, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 13, color: col.complete ? bd.accentText : bd.muted, weight: col.complete ? FontWeight.w600 : FontWeight.w400)),
+                      ),
+                    for (var i = 0; i < col.collection.families.length; i++) ...[
+                      if (i > 0) const SizedBox(width: gap),
+                      _Square(size: cell, filled: col.tried.containsKey(col.collection.families[i]), gilded: widget.gilded.contains(col.collection.families[i]), appear: _appear(row, i)),
+                    ],
+                    const Spacer(),
+                    if (!compact) Text('${col.have}/${col.total}', style: T.sans(bd, size: 12.5, color: col.have == 0 ? bd.faint : bd.muted).copyWith(fontFeatures: T.tnum)),
+                  ]),
+                ),
               ),
             ),
-          ),
-      ]);
+        ]),
+      );
     });
   }
 }
@@ -512,19 +561,33 @@ class _Square extends StatelessWidget {
   final double size;
   final bool filled;
   final bool gilded;
-  const _Square({required this.size, required this.filled, required this.gilded});
+
+  /// 0 → 1 as a filled square fills in (its outline shows until it lands).
+  final double appear;
+  const _Square({required this.size, required this.filled, required this.gilded, this.appear = 1});
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    return Container(
+    final radius = BorderRadius.circular(size * .22);
+    final outline = Container(width: size, height: size, decoration: BoxDecoration(borderRadius: radius, border: Border.all(color: bd.lineStrong, width: .9)));
+    if (!filled) return outline;
+    final a = appear.clamp(0.0, 1.0);
+    final fill = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: filled ? bd.accent.withValues(alpha: gilded ? 1 : .62) : null,
-        borderRadius: BorderRadius.circular(size * .22),
-        border: filled ? null : Border.all(color: bd.lineStrong, width: .9),
-        boxShadow: filled && gilded ? [BoxShadow(color: bd.accent.withValues(alpha: .7), blurRadius: size * .5)] : null,
+        color: bd.accent.withValues(alpha: gilded ? 1 : .62),
+        borderRadius: radius,
+        boxShadow: gilded ? [BoxShadow(color: bd.accent.withValues(alpha: .7 * a), blurRadius: size * .5)] : null,
       ),
+    );
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(children: [
+        Opacity(opacity: 1 - a, child: outline),
+        Opacity(opacity: a, child: Transform.scale(scale: .35 + .65 * appear, child: fill)),
+      ]),
     );
   }
 }
@@ -720,16 +783,25 @@ class UnlockStrip extends StatelessWidget {
           border: Border.all(color: bd.accent.withValues(alpha: .5), width: .8),
         ),
         child: Row(children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(color: bd.accent, borderRadius: BorderRadius.circular(10), boxShadow: gild ? [BoxShadow(color: bd.accent.withValues(alpha: .7), blurRadius: 10)] : null),
-            child: Icon(u.rankUp != null ? PhFill.crown : (gild ? PhFill.sparkle : (u.events.isNotEmpty ? mileIcon(u.events.first.source) : PhFill.star)), size: 17, color: bd.accentContrast),
+          // The badge pops in as the strip opens.
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: context.reduceMotion ? 1 : .4, end: 1),
+            duration: const Duration(milliseconds: 520),
+            curve: Curves.easeOutBack,
+            builder: (context, v, child) => Transform.scale(scale: v, child: child),
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(color: bd.accent, borderRadius: BorderRadius.circular(10), boxShadow: gild ? [BoxShadow(color: bd.accent.withValues(alpha: .7), blurRadius: 10)] : null),
+              child: Icon(u.rankUp != null ? PhFill.crown : (gild ? PhFill.sparkle : (u.events.isNotEmpty ? mileIcon(u.events.first.source) : PhFill.star)), size: 17, color: bd.accentContrast),
+            ),
           ),
           const SizedBox(width: S.m),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(u.miles > 0 ? '+${u.miles} miles${gild ? ' · gilded!' : ''}' : 'On your passport', style: T.sans(bd, size: 14, weight: FontWeight.w700, color: bd.accentText)),
+              u.miles > 0
+                  ? CountUp(u.miles, duration: const Duration(milliseconds: 600), format: (v) => '+${v.round()} miles${gild ? ' · gilded!' : ''}', style: T.sans(bd, size: 14, weight: FontWeight.w700, color: bd.accentText))
+                  : Text('On your passport', style: T.sans(bd, size: 14, weight: FontWeight.w700, color: bd.accentText)),
               Text(lines.join(' · '), maxLines: 2, overflow: TextOverflow.ellipsis, style: T.sans(bd, size: 12.5, color: bd.ink, height: 1.3)),
             ]),
           ),
@@ -746,7 +818,7 @@ Future<void> showRankUp(BuildContext context, Rank rank) => showBdSheet<void>(
         final bd = context.bd;
         return Column(children: [
           const SizedBox(height: S.s),
-          RankEmblem(rank.index, size: 112),
+          _Landing(child: RankEmblem(rank.index, size: 112)),
           const SizedBox(height: S.l),
           Text('RANK ${_roman[rank.index]}', style: T.label(bd, color: bd.accentText)),
           const SizedBox(height: S.s),
@@ -759,6 +831,79 @@ Future<void> showRankUp(BuildContext context, Rank rank) => showBdSheet<void>(
       },
     );
 
+/// The new rank's emblem arriving: it springs up from small and one ring goes out
+/// from it, like the ripple when a day is logged — once, then still.
+class _Landing extends StatefulWidget {
+  final Widget child;
+  const _Landing({required this.child});
+  @override
+  State<_Landing> createState() => _LandingState();
+}
+
+class _LandingState extends State<_Landing> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100));
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (context.reduceMotion) {
+      _c.value = 1;
+    } else {
+      // Let the sheet rise first.
+      _c.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.bd.accent;
+    return AnimatedBuilder(
+      animation: _c,
+      child: widget.child,
+      builder: (context, child) {
+        final t = _c.value;
+        final pop = Curves.elasticOut.transform(((t - .18) / .82).clamp(0.0, 1.0));
+        final ring = Curves.easeOutCubic.transform(((t - .3) / .7).clamp(0.0, 1.0));
+        return CustomPaint(
+          painter: _RingOut(ring, accent),
+          child: Opacity(opacity: (t / .2).clamp(0.0, 1.0), child: Transform.scale(scale: .55 + .45 * pop, child: child)),
+        );
+      },
+    );
+  }
+}
+
+class _RingOut extends CustomPainter {
+  final double t;
+  final Color color;
+  _RingOut(this.t, this.color);
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (t <= 0 || t >= 1) return;
+    final r = size.shortestSide / 2;
+    canvas.drawCircle(
+      size.center(Offset.zero),
+      r * (.9 + .7 * t),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5 * (1 - t) + .5
+        ..color = color.withValues(alpha: .55 * (1 - t)),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RingOut old) => old.t != t || old.color != color;
+}
+
 // ── a thin line to the next rank ────────────────────────────────────────────
 class RankLine extends StatelessWidget {
   final double value;
@@ -766,12 +911,19 @@ class RankLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
+    final target = value.clamp(0.0, 1.0);
     return SizedBox(
       height: 3,
       child: LayoutBuilder(
         builder: (context, c) => Stack(children: [
           Container(decoration: BoxDecoration(color: bd.line, borderRadius: BorderRadius.circular(2))),
-          Container(width: (c.maxWidth * value.clamp(0, 1)).clamp(3.0, c.maxWidth), decoration: BoxDecoration(color: bd.accent, borderRadius: BorderRadius.circular(2))),
+          // It draws out to where you are when it appears, and on from there after a save.
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: target),
+            duration: context.reduceMotion ? Duration.zero : const Duration(milliseconds: 900),
+            curve: Easing.emphasizedDecelerate,
+            builder: (context, v, _) => Container(width: (c.maxWidth * v).clamp(3.0, c.maxWidth), decoration: BoxDecoration(color: bd.accent, borderRadius: BorderRadius.circular(2))),
+          ),
         ]),
       ),
     );

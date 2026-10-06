@@ -69,6 +69,7 @@ const _roomLabel = {_Room.feed: 'Feed', _Room.plans: 'Plans', _Room.circles: 'Ci
 
 class _TogetherScreenState extends State<TogetherScreen> {
   _Room _room = _Room.feed;
+  int _dir = 1;
 
   @override
   void initState() {
@@ -132,16 +133,27 @@ class _TogetherScreenState extends State<TogetherScreen> {
         Segmented<_Room>(
           options: [for (final r in rooms) (r, _roomLabel[r]!)],
           value: room,
-          onChanged: (r) => setState(() => _room = r),
+          onChanged: (r) => setState(() {
+            _dir = rooms.indexOf(r) >= rooms.indexOf(room) ? 1 : -1;
+            _room = r;
+          }),
         ),
         const SizedBox(height: S.xs),
-        switch (room) {
-          _Room.feed => _feedRoom(data, friends, feed, loading: loading),
-          _Room.plans => const PlansSection(),
-          _Room.circles => CirclesSection(preview: widget.preview?.circles, previewDetail: widget.preview?.circle),
-          _Room.parties => PartiesSection(preview: widget.preview?.parties),
-          _Room.board => _FriendsBoard(preview: widget.preview?.board),
-        },
+        // A room slides in from the side you moved toward, like turning tabs.
+        SlideSwitcher(
+          direction: _dir,
+          shift: .06,
+          child: KeyedSubtree(
+            key: ValueKey(room),
+            child: switch (room) {
+              _Room.feed => _feedRoom(data, friends, feed, loading: loading),
+              _Room.plans => const PlansSection(),
+              _Room.circles => CirclesSection(preview: widget.preview?.circles, previewDetail: widget.preview?.circle),
+              _Room.parties => PartiesSection(preview: widget.preview?.parties),
+              _Room.board => _FriendsBoard(preview: widget.preview?.board),
+            },
+          ),
+        ),
         const SizedBox(height: S.x3),
         // The website's foot: a hairline, a sentence, and "Split →".
         Semantics(
@@ -188,10 +200,12 @@ class _TogetherScreenState extends State<TogetherScreen> {
       else if (feed.isEmpty)
         _QuietFeed(hasFriends: friends.isNotEmpty)
       else
-        for (var i = 0; i < feed.length; i++) ...[
-          if (i > 0) const SizedBox(height: S.m),
-          FeedCard(item: feed[i]),
-        ],
+        for (var i = 0; i < feed.length; i++)
+          Reveal(
+            key: ValueKey(feed[i].id),
+            index: i,
+            child: Padding(padding: EdgeInsets.only(top: i == 0 ? 0 : S.m), child: FeedCard(item: feed[i])),
+          ),
     ]);
   }
 }
@@ -502,42 +516,76 @@ class _QuietFeed extends StatelessWidget {
   }
 }
 
-class _Requests extends StatelessWidget {
+class _Requests extends StatefulWidget {
   const _Requests();
+  @override
+  State<_Requests> createState() => _RequestsState();
+}
+
+class _RequestsState extends State<_Requests> {
+  /// Requests answered on this screen: they fold away at once, before the server
+  /// replies, and come back if it says no.
+  final Set<String> _answered = {};
+
+  Future<void> _answer(FriendRequest r, {required bool accept}) async {
+    setState(() => _answered.add(r.friendshipId));
+    try {
+      if (accept) {
+        await FriendsApi.accept(r.friendshipId);
+        if (mounted) toast(context, 'You and ${r.profile.name} are friends now.', tone: ToastTone.success);
+      } else {
+        await FriendsApi.decline(r.friendshipId);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _answered.remove(r.friendshipId));
+      toast(context, "That didn't go through — try again.", tone: ToastTone.error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
     return Loader<List<FriendRequest>>(
       refresh: friendsRev,
       load: FriendsApi.requests,
-      builder: (context, reqs, _) {
-        if (reqs == null || reqs.isEmpty) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.only(bottom: S.xl),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            const SectionHeader('Friend requests', padding: EdgeInsets.only(bottom: S.m)),
-            for (final r in reqs)
-              Padding(
-                padding: const EdgeInsets.only(bottom: S.s),
-                child: Glass(
-                  padding: const EdgeInsets.fromLTRB(S.l, 2, 4, 2),
-                  child: Row(children: [
-                    Expanded(
-                      child: Text.rich(
-                        TextSpan(children: [
-                          TextSpan(text: r.profile.name, style: T.row(bd)),
-                          TextSpan(text: '  @${r.profile.handle}', style: T.row(bd, color: bd.faint)),
-                        ]),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+      builder: (context, all, _) {
+        final reqs = (all ?? const <FriendRequest>[]).where((r) => !_answered.contains(r.friendshipId)).toList();
+        return Appear(
+          visible: reqs.isNotEmpty,
+          child: reqs.isEmpty
+              ? const SizedBox.shrink()
+              : Padding(
+                  padding: const EdgeInsets.only(bottom: S.xl),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    const SectionHeader('Friend requests', padding: EdgeInsets.only(bottom: S.m)),
+                    for (final r in all ?? const <FriendRequest>[])
+                      Appear(
+                        key: ValueKey(r.friendshipId),
+                        visible: !_answered.contains(r.friendshipId),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: S.s),
+                          child: Glass(
+                            padding: const EdgeInsets.fromLTRB(S.l, 2, 4, 2),
+                            child: Row(children: [
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(children: [
+                                    TextSpan(text: r.profile.name, style: T.row(bd)),
+                                    TextSpan(text: '  @${r.profile.handle}', style: T.row(bd, color: bd.faint)),
+                                  ]),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              TextAction('Accept', accent: true, onTap: () => _answer(r, accept: true)),
+                              TextAction('Ignore', faint: true, onTap: () => _answer(r, accept: false)),
+                            ]),
+                          ),
+                        ),
                       ),
-                    ),
-                    TextAction('Accept', accent: true, onTap: () => FriendsApi.accept(r.friendshipId)),
-                    TextAction('Ignore', faint: true, onTap: () => FriendsApi.decline(r.friendshipId)),
                   ]),
                 ),
-              ),
-          ]),
         );
       },
     );
@@ -593,7 +641,7 @@ class _FriendSearchState extends State<FriendSearch> {
     final err = await FriendsApi.sendRequest(id);
     if (err != null && mounted) {
       setState(() => _requested.remove(id));
-      toast(context, err);
+      toast(context, err, tone: ToastTone.error);
     }
   }
 
@@ -707,17 +755,59 @@ class _FeedCardState extends State<FeedCard> {
   bool _saved = false;
   final _draft = TextEditingController();
 
+  // Your cheers shows the moment you tap it (the server catches up behind), and
+  // your comment appears at once, faint until it's saved.
+  bool? _cheered;
+  int _cheerSeq = 0;
+  final List<String> _posting = [];
+
+  bool get _isCheered => _cheered ?? widget.item.cheered;
+  int get _cheers => widget.item.cheers + ((_cheered == null || _cheered == widget.item.cheered) ? 0 : (_cheered! ? 1 : -1));
+
+  @override
+  void didUpdateWidget(covariant FeedCard old) {
+    super.didUpdateWidget(old);
+    // The server's word has arrived: drop what was only shown.
+    if (_cheered != null && widget.item.cheered == _cheered) _cheered = null;
+    _posting.removeWhere((body) => widget.item.comments.any((c) => c.body == body && c.userId == auth.meId));
+  }
+
   @override
   void dispose() {
     _draft.dispose();
     super.dispose();
   }
 
-  void _post() {
-    if (_draft.text.trim().isEmpty) return;
-    FriendsApi.addComment(widget.item.id, _draft.text);
+  Future<void> _cheer() async {
+    final was = _isCheered;
+    setState(() {
+      _cheered = !was;
+      if (!was) _cheerSeq++;
+    });
+    try {
+      await FriendsApi.toggleCheers(widget.item.id, was);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _cheered = null);
+      toast(context, "Couldn't send that — check your connection.", tone: ToastTone.error);
+    }
+  }
+
+  Future<void> _post() async {
+    final body = _draft.text.trim();
+    if (body.isEmpty) return;
     _draft.clear();
-    setState(() {});
+    setState(() => _posting.add(body));
+    try {
+      await FriendsApi.addComment(widget.item.id, body);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _posting.remove(body);
+        if (_draft.text.isEmpty) _draft.text = body; // nothing lost: it's back in the box
+      });
+      toast(context, "Your comment didn't send — it's back in the box.", tone: ToastTone.error);
+    }
   }
 
   @override
@@ -795,13 +885,7 @@ class _FeedCardState extends State<FeedCard> {
         const SizedBox(height: S.m),
         Container(height: .8, color: bd.line),
         Row(children: [
-          action(
-            item.cheers > 0 ? '${item.cheers}' : 'Cheers',
-            icon: item.cheered ? PhFill.cheers : Ph.cheers,
-            active: item.cheered,
-            semantics: item.cheered ? 'Cheered, ${item.cheers}' : 'Cheers${item.cheers > 0 ? ', ${item.cheers}' : ''}',
-            onTap: () => FriendsApi.toggleCheers(item.id, item.cheered),
-          ),
+          _CheersButton(cheered: _isCheered, count: _cheers, pop: _cheerSeq, onTap: _cheer),
           action(item.comments.isNotEmpty ? '${item.comments.length}' : 'Comment', icon: Ph.chatCircle, semantics: item.comments.isNotEmpty ? 'Comments, ${item.comments.length}' : 'Comment', onTap: () => setState(() => _showComments = !_showComments)),
           const Spacer(),
           action(_saved ? 'On your list' : 'To try', icon: _saved ? Ph.check : Ph.plus, active: _saved, semantics: _saved ? 'On your to-try list' : 'Save to your to-try list', onTap: _saved
@@ -811,42 +895,116 @@ class _FeedCardState extends State<FeedCard> {
                   setState(() => _saved = true);
                 }),
         ]),
-        if (_showComments)
-          Container(
-            margin: const EdgeInsets.only(top: S.xs, bottom: S.m),
-            padding: const EdgeInsets.only(left: S.l),
-            decoration: BoxDecoration(border: Border(left: BorderSide(color: bd.line, width: 1))),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              for (final c in item.comments)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: S.s),
-                  child: Text.rich(TextSpan(children: [
-                    TextSpan(text: '${c.authorName} ', style: T.sans(bd, size: 14)),
-                    TextSpan(text: c.body, style: T.sans(bd, size: 14, color: bd.muted, height: 1.45)),
-                  ])),
+        Appear(
+          visible: _showComments,
+          child: !_showComments
+              ? const SizedBox.shrink()
+              : Container(
+                  margin: const EdgeInsets.only(top: S.xs, bottom: S.m),
+                  padding: const EdgeInsets.only(left: S.l),
+                  decoration: BoxDecoration(border: Border(left: BorderSide(color: bd.line, width: 1))),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    for (final c in item.comments)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: S.s),
+                        child: Text.rich(TextSpan(children: [
+                          TextSpan(text: '${c.authorName} ', style: T.sans(bd, size: 14)),
+                          TextSpan(text: c.body, style: T.sans(bd, size: 14, color: bd.muted, height: 1.45)),
+                        ])),
+                      ),
+                    for (final body in _posting)
+                      Reveal(
+                        key: ValueKey('posting:$body'),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: S.s),
+                          child: Opacity(
+                            opacity: .6,
+                            child: Text.rich(TextSpan(children: [
+                              TextSpan(text: '${auth.profile?.name ?? 'You'} ', style: T.sans(bd, size: 14)),
+                              TextSpan(text: body, style: T.sans(bd, size: 14, color: bd.muted, height: 1.45)),
+                            ])),
+                          ),
+                        ),
+                      ),
+                    Row(children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _draft,
+                          onChanged: (_) => setState(() {}),
+                          onSubmitted: (_) => _post(),
+                          textInputAction: TextInputAction.send,
+                          style: T.sans(bd, size: 14),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            hintText: 'Add a comment…',
+                            hintStyle: T.sans(bd, size: 14, color: bd.faint),
+                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: bd.lineStrong)),
+                            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: bd.ink)),
+                          ),
+                        ),
+                      ),
+                      TextAction('POST', faint: _draft.text.trim().isEmpty, size: 12, onTap: _draft.text.trim().isEmpty ? null : _post),
+                    ]),
+                  ]),
                 ),
-              Row(children: [
-                Expanded(
-                  child: TextField(
-                    controller: _draft,
-                    onChanged: (_) => setState(() {}),
-                    onSubmitted: (_) => _post(),
-                    textInputAction: TextInputAction.send,
-                    style: T.sans(bd, size: 14),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: 'Add a comment…',
-                      hintStyle: T.sans(bd, size: 14, color: bd.faint),
-                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: bd.lineStrong)),
-                      focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: bd.ink)),
-                    ),
-                  ),
-                ),
-                TextAction('POST', faint: _draft.text.trim().isEmpty, size: 12, onTap: _draft.text.trim().isEmpty ? null : _post),
-              ]),
-            ]),
-          ),
+        ),
       ]),
+    );
+  }
+}
+
+/// Cheers: the glass fills and gives a little hop the moment you tap, the count
+/// rolls, and a tick says it took — before the server has even answered.
+class _CheersButton extends StatelessWidget {
+  final bool cheered;
+  final int count;
+
+  /// Bumped each time you cheer (not un-cheer), to play the hop.
+  final int pop;
+  final VoidCallback onTap;
+  const _CheersButton({required this.cheered, required this.count, required this.pop, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final color = cheered ? bd.accentText : bd.muted;
+    return Semantics(
+      button: true,
+      toggled: cheered,
+      label: cheered ? 'Cheered, $count' : 'Cheers${count > 0 ? ', $count' : ''}',
+      excludeSemantics: true,
+      child: Pressable(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: S.tap),
+          child: Padding(
+            padding: const EdgeInsets.only(right: S.l),
+            child: Center(
+              widthFactor: 1,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                TweenAnimationBuilder<double>(
+                  key: ValueKey(pop),
+                  tween: Tween(begin: pop == 0 || context.reduceMotion ? 1 : 0, end: 1),
+                  duration: const Duration(milliseconds: 560),
+                  builder: (context, t, child) {
+                    // Up and over: a quick lift and tilt, then it settles.
+                    final hop = t >= 1 ? 0.0 : (1 - t) * (1 - t) * 4 * t;
+                    return Transform.translate(
+                      offset: Offset(0, -5 * hop),
+                      child: Transform.rotate(angle: -.35 * hop, child: Transform.scale(scale: 1 + .35 * hop, child: child)),
+                    );
+                  },
+                  child: Icon(cheered ? PhFill.cheers : Ph.cheers, size: 18, color: color),
+                ),
+                const SizedBox(width: 6),
+                count > 0
+                    ? RollingNumber(count, style: T.sans(bd, size: 14, weight: cheered ? FontWeight.w600 : FontWeight.w400, color: color))
+                    : Text('Cheers', style: T.sans(bd, size: 14, color: color)),
+              ]),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -976,10 +1134,10 @@ class _VouchRow extends StatelessWidget {
               SettingRow(
                 title: has ? 'You vouch for ${friend.name}' : 'Vouch for ${friend.name}',
                 trailing: has
-                    ? BdButton('Undo', kind: BtnKind.secondary, expand: false, height: 40, onTap: () => VouchApi.unvouch(friend.id))
+                    ? BdButton('Undo', kind: BtnKind.secondary, expand: false, height: 40, onTap: () => attempt(context, () => VouchApi.unvouch(friend.id)))
                     : BdButton('Vouch', expand: false, height: 40, icon: Ph.sealCheck, onTap: () async {
                         final err = await VouchApi.vouch(friend.id);
-                        if (err != null && context.mounted) toast(context, err);
+                        if (err != null && context.mounted) toast(context, err, tone: ToastTone.error);
                       }),
               ),
             ],

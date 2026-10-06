@@ -217,8 +217,8 @@ class StockScreen extends StatelessWidget {
               barcode: barcode.text,
               active: active,
             );
-            if (item.price < 0) return toast(ctx, 'Give it a price.');
-            if (alcohol && item.size == null) return toast(ctx, 'Give the bottle size in ml.');
+            if (item.price < 0) return toast(ctx, 'Give it a price.', tone: ToastTone.error);
+            if (alcohol && item.size == null) return toast(ctx, 'Give the bottle size in ml.', tone: ToastTone.error);
             final ok = await runAction(ctx, () => Backend.i.saveProduct(venue.id, item, isNew: p == null), done: 'Saved.');
             if (ok && ctx.mounted) Navigator.pop(ctx);
           }),

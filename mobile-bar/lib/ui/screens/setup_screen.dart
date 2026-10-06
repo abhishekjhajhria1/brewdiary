@@ -45,7 +45,7 @@ class _SetupScreenState extends State<SetupScreen> {
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
       if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
-        if (mounted) toast(context, 'Location is off for this app — you can allow it in Settings.');
+        if (mounted) toast(context, 'Location is off for this app — you can allow it in Settings.', tone: ToastTone.error);
         return;
       }
       final pos = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.low));
@@ -54,7 +54,7 @@ class _SetupScreenState extends State<SetupScreen> {
       final cell = venueCell(pos.latitude, pos.longitude);
       if (mounted) await runAction(context, () => Backend.i.updateVenue(v.id, geohash: cell), done: 'Location set.');
     } catch (_) {
-      if (mounted) toast(context, 'Couldn\'t get a location — try again outside or near a window.');
+      if (mounted) toast(context, 'Couldn\'t get a location — try again outside or near a window.', tone: ToastTone.error);
     } finally {
       if (mounted) setState(() => _locating = false);
     }

@@ -107,12 +107,12 @@ class _PassportBody extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _Identity(game: g, name: auth.profile?.name, entries: entries),
       const SizedBox(height: S.xl),
-      _Figures(items: [('${g.families}', 'of $total tastes'), ('${p.places}', 'places'), ('${p.dryNights}', 'dry nights'), ('${g.feats.where((f) => f.earned).length}', 'feats')]),
+      _Figures(items: [(g.families, 'of $total tastes'), (p.places, 'places'), (p.dryNights, 'dry nights'), (g.feats.where((f) => f.earned).length, 'feats')]),
 
       SectionHeader('Taste map', trailing: Text('${g.families} / $total', style: T.caption(bd).copyWith(fontFeatures: T.tnum))),
       Glass(
         padding: const EdgeInsets.fromLTRB(S.l, S.m, S.l, S.m),
-        child: TasteMap(collections: g.collections, gilded: g.gilded, onOpen: (c) => _openCollection(context, c, g)),
+        child: TasteMap(collections: g.collections, gilded: g.gilded, animate: true, onOpen: (c) => _openCollection(context, c, g)),
       ),
       const SizedBox(height: S.s),
       Text('A first taste fills a square; about one in six comes out gilded. Tap a row to see what\'s in it.', style: T.caption(bd)),
@@ -188,10 +188,12 @@ class _Identity extends StatelessWidget {
               const SizedBox(height: 6),
               Text((name ?? '').trim().isEmpty ? 'Your passport' : name!.trim(), maxLines: 1, overflow: TextOverflow.ellipsis, style: T.serif(bd, size: 42, height: 1.0)),
               const SizedBox(height: 4),
-              Text.rich(TextSpan(children: [
-                TextSpan(text: g.rank.title, style: T.serif(bd, size: 20, italic: true, color: bd.accentText)),
-                TextSpan(text: '   ${g.miles} miles', style: T.sans(bd, size: 14, color: bd.muted).copyWith(fontFeatures: T.tnum)),
-              ])),
+              Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+                Flexible(child: Text(g.rank.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.serif(bd, size: 20, italic: true, color: bd.accentText))),
+                const SizedBox(width: 12),
+                // The miles count up as the page opens.
+                CountUp(g.miles, format: (v) => '${v.round()} miles', style: T.sans(bd, size: 14, color: bd.muted)),
+              ]),
             ]),
           ),
           RankEmblem(g.rank.index, size: 54),
@@ -211,7 +213,7 @@ class _Identity extends StatelessWidget {
 
 /// A row of small figures with hairlines between them.
 class _Figures extends StatelessWidget {
-  final List<(String, String)> items;
+  final List<(int, String)> items;
   const _Figures({required this.items});
   @override
   Widget build(BuildContext context) {
@@ -221,7 +223,7 @@ class _Figures extends StatelessWidget {
         if (i > 0) Container(width: .8, height: 26, color: bd.line),
         Expanded(
           child: Column(children: [
-            Text(items[i].$1, style: T.serif(bd, size: 24, height: 1).copyWith(fontFeatures: T.tnum)),
+            CountUp(items[i].$1, style: T.serif(bd, size: 24, height: 1)),
             const SizedBox(height: 4),
             Text(items[i].$2, textAlign: TextAlign.center, style: T.sans(bd, size: 11.5, color: bd.muted)),
           ]),
@@ -238,7 +240,7 @@ void _wish(BuildContext context, String family) {
     return;
   }
   WishlistStore.instance.add(family);
-  toast(context, '$family is on your to-try list.');
+  toast(context, '$family is on your to-try list.', tone: ToastTone.success);
 }
 
 Set<String> get _listed => {for (final w in WishlistStore.instance.items) w.drink.toLowerCase()};
@@ -326,7 +328,7 @@ class _PosterSheetState extends State<_PosterSheet> {
       await file.writeAsBytes(bytes.buffer.asUint8List());
       await SharePlus.instance.share(ShareParams(files: [XFile(file.path, mimeType: 'image/png')], text: 'My taste passport on brewdiary'));
     } catch (_) {
-      if (mounted) toast(context, "Couldn't make the image — try again.");
+      if (mounted) toast(context, "Couldn't make the image — try again.", tone: ToastTone.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -702,7 +704,7 @@ class NextStampsList extends StatelessWidget {
                     ? Text('On your list', style: T.caption(bd))
                     : TextAction('To try', accent: true, onTap: () {
                         WishlistStore.instance.add(n.family);
-                        toast(context, '${n.family} is on your to-try list.');
+                        toast(context, '${n.family} is on your to-try list.', tone: ToastTone.success);
                       }),
               ),
           ]),

@@ -17,16 +17,20 @@ String money(num amount, String currency, {bool round = true}) => formatMoney(am
 /// telling you" are different facts, and showing 0 for both leaks the first.
 String countOrHidden(int? n) => n == null ? '—' : '$n';
 
-/// Run [f]; on success show [done] (if any), on failure the backend's plain sentence.
-Future<bool> runAction(BuildContext context, Future<void> Function() f, {String? done}) async {
+/// Run [f]; on success show [done] (if any) with a success tap, on failure the
+/// backend's plain sentence with an error buzz, so a busy hand feels whether it went
+/// through without reading the screen. [undo] puts a way back on the success toast.
+Future<bool> runAction(BuildContext context, Future<void> Function() f, {String? done, String? undo, Future<void> Function()? onUndo}) async {
   try {
     await f();
-    if (done != null && context.mounted) toast(context, done);
+    if (done != null && context.mounted) {
+      toast(context, done, tone: ToastTone.success, action: onUndo == null ? null : (undo ?? 'Undo'), onAction: onUndo == null ? null : () => runAction(context, onUndo));
+    }
     return true;
   } on BackendError catch (e) {
-    if (context.mounted) toast(context, e.message);
+    if (context.mounted) toast(context, e.message, tone: ToastTone.error);
   } catch (_) {
-    if (context.mounted) toast(context, 'Something went wrong — try again.');
+    if (context.mounted) toast(context, 'Something went wrong — try again.', tone: ToastTone.error);
   }
   return false;
 }
@@ -46,7 +50,8 @@ class StatTile extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         Label(label),
         const SizedBox(height: 6),
-        Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.serif(bd, size: 28, color: accent ? bd.accentText : bd.ink).copyWith(fontFeatures: T.tnum)),
+        // A refresh rolls a changed figure to its new value instead of swapping it.
+        RollingText(value, style: T.serif(bd, size: 28, color: accent ? bd.accentText : bd.ink).copyWith(fontFeatures: T.tnum)),
         if (hint != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(hint!, style: T.caption(bd))),
       ]),
     );

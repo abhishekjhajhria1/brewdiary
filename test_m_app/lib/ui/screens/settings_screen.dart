@@ -178,7 +178,7 @@ class _HandleSheetState extends State<_HandleSheet> {
     if (!mounted) return;
     if (res.ok) {
       Navigator.pop(context);
-      toast(context, 'You are @$_candidate now.');
+      toast(context, 'You are @$_candidate now.', tone: ToastTone.success);
       return;
     }
     setState(() {
@@ -262,7 +262,7 @@ class _ProfilePrivacySheetState extends State<_ProfilePrivacySheet> {
               GroupTile(
                 title: _visibilityLabel[v]!,
                 trailing: vis == v ? Icon(PhBold.check, size: 18, color: bd.accentText) : null,
-                onTap: () => ProfileApi.setVisibility(v),
+                onTap: () => attempt(context, () => ProfileApi.setVisibility(v)),
               ),
           ]),
           if (vis != ProfileVisibility.friends) ...[
@@ -284,7 +284,7 @@ class _ProfilePrivacySheetState extends State<_ProfilePrivacySheet> {
             await ProfileApi.setSocialHandle(_link.text);
             if (!context.mounted) return;
             setState(() => _saving = false);
-            toast(context, 'Saved.');
+            toast(context, 'Saved.', tone: ToastTone.success);
           }),
         ]);
       },
@@ -353,7 +353,7 @@ class _AppearanceGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: ThemeStore.instance,
+      listenable: Listenable.merge([ThemeStore.instance, HapticsStore.instance]),
       builder: (context, _) => Group(
         footer: 'System follows your phone’s light or dark setting.',
         children: [
@@ -363,6 +363,19 @@ class _AppearanceGroup extends StatelessWidget {
               options: const [(ThemeMode.dark, 'Dark'), (ThemeMode.light, 'Light'), (ThemeMode.system, 'System')],
               value: ThemeStore.instance.mode,
               onChanged: ThemeStore.instance.set,
+            ),
+          ),
+          SettingRow(
+            title: 'Haptics',
+            hint: 'A small tap under your finger when you log, choose or confirm.',
+            trailing: BdToggle(
+              on: HapticsStore.instance.on,
+              label: 'Haptics',
+              onChanged: (v) {
+                HapticsStore.instance.set(v);
+                Haptics.enabled = v;
+                if (v) Haptics.tap(); // turning them on answers, so you feel what you chose
+              },
             ),
           ),
         ],
@@ -390,7 +403,7 @@ class _ReminderGroup extends StatelessWidget {
             label: 'Nightly reminder',
             onChanged: (v) async {
               final ok = await r.setOn(v);
-              if (!ok && context.mounted) toast(context, 'Notifications are off for brewdiary — allow them in your phone settings.');
+              if (!ok && context.mounted) toast(context, 'Notifications are off for brewdiary — allow them in your phone settings.', tone: ToastTone.error);
             },
           ),
         ),
@@ -499,7 +512,7 @@ class _ReconfirmAgeState extends State<_ReconfirmAge> {
           }
         },
       ),
-      if (_error != null) Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+      if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.s), style: T.sans(bd, size: 14, color: bd.accentText)),
       const SizedBox(height: S.xxl),
       BdButton('Confirm and move', onTap: _dob == null
           ? null
@@ -674,7 +687,7 @@ class _PrivacyGroupState extends State<_PrivacyGroup> {
               SettingRow(
                 title: 'Anonymous taste trends',
                 hint: 'Count my logs in the “what’s pouring” trends — counts only, never my name or notes.',
-                trailing: BdToggle(on: settings.shareTrends, label: 'Anonymous taste trends', onChanged: ProfileApi.setShareTrends),
+                trailing: BdToggle(on: settings.shareTrends, label: 'Anonymous taste trends', onChanged: (v) => attempt(context, () => ProfileApi.setShareTrends(v))),
               ),
               if (settings.shareTrends)
                 settings.trendsGeo != null
@@ -682,7 +695,7 @@ class _PrivacyGroupState extends State<_PrivacyGroup> {
                         icon: Ph.mapPin,
                         title: 'Area set',
                         subtitle: 'A rough ~40 km cell — never your exact spot.',
-                        trailing: TextAction('Clear', onTap: () => ProfileApi.setTrendsGeo(null)),
+                        trailing: TextAction('Clear', onTap: () => attempt(context, () => ProfileApi.setTrendsGeo(null))),
                       )
                     : GroupTile(
                         icon: Ph.navigationArrow,
@@ -700,7 +713,7 @@ class _PrivacyGroupState extends State<_PrivacyGroup> {
                       : SettingRow(
                           title: 'Neighbourhood maps',
                           hint: 'Also count me where I go out (the venue rooms I join) — only in groups of 5+ people across 3+ venues. Never my name, never which venue.',
-                          trailing: BdToggle(on: on, label: 'Neighbourhood maps', onChanged: ProfileApi.setShareNightsOut),
+                          trailing: BdToggle(on: on, label: 'Neighbourhood maps', onChanged: (v) => attempt(context, () => ProfileApi.setShareNightsOut(v))),
                         ),
                 ),
               SettingRow(
@@ -785,7 +798,7 @@ class _BlockedSheet extends StatelessWidget {
             const EmptyNote('Nobody is blocked.')
           else
             Group(children: [
-              for (final p in people) GroupTile(title: p.name, subtitle: '@${p.handle}', trailing: TextAction('Unblock', onTap: () => SafetyApi.unblock(p.id))),
+              for (final p in people) GroupTile(title: p.name, subtitle: '@${p.handle}', trailing: TextAction('Unblock', onTap: () => attempt(context, () => SafetyApi.unblock(p.id)))),
             ]),
         ]);
       },
@@ -872,7 +885,7 @@ class _LockRowState extends State<_LockRow> {
       trailing: BdToggle(on: store.enabled, label: 'Lock brewdiary', onChanged: (v) async {
         final ok = await store.setEnabled(v);
         if (!mounted) return;
-        if (!ok) toast(this.context, "Couldn't confirm it's you — the lock stays off.");
+        if (!ok) toast(this.context, "Couldn't confirm it's you — the lock stays off.", tone: ToastTone.error);
         setState(() {});
       }),
     );
@@ -920,7 +933,7 @@ class _CodeSheetState extends State<_CodeSheet> {
       Text('We sent a code to ${widget.email}.', style: T.bodyMuted(bd)),
       const SizedBox(height: S.m),
       GlassField(controller: _code, hint: '6-digit code', keyboard: TextInputType.number, autofocus: true, maxLength: 8, action: TextInputAction.done, onSubmitted: (_) => _go(), onChanged: (_) => setState(() {})),
-      if (_error != null) Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_error!, style: T.caption(bd, color: bd.accentText))),
+      if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.s), style: T.caption(bd, color: bd.accentText)),
       const SizedBox(height: S.m),
       BdButton(_busy ? 'Checking…' : 'Confirm', busy: _busy, onTap: _code.text.trim().length >= 6 ? _go : null),
     ]);
@@ -957,9 +970,9 @@ class _DataGroupState extends State<_DataGroup> {
       if (!mounted) return;
       if (!await confirm(context, title: 'Add these entries?', body: 'The ${clean.length} entries in that file join your diary. Nothing in it is removed or changed.', yes: 'Add them')) return;
       final n = await entryStore.importEntries(clean);
-      if (mounted) toast(context, n == 0 ? 'Those are already in your diary.' : 'Added $n ${n == 1 ? 'entry' : 'entries'}.');
+      if (mounted) toast(context, n == 0 ? 'Those are already in your diary.' : 'Added $n ${n == 1 ? 'entry' : 'entries'}.', tone: n == 0 ? ToastTone.plain : ToastTone.success);
     } catch (_) {
-      if (mounted) toast(context, "That file couldn't be read.");
+      if (mounted) toast(context, "That file couldn't be read.", tone: ToastTone.error);
     }
   }
 
@@ -983,13 +996,13 @@ class _DataGroupState extends State<_DataGroup> {
     if (cloudAccount) {
       final sent = await auth.sendEmailCode(email);
       if (!mounted) return;
-      if (!sent.ok) return toast(context, sent.error ?? "Couldn't send the code — try again.");
+      if (!sent.ok) return toast(context, sent.error ?? "Couldn't send the code — try again.", tone: ToastTone.error);
       final ok = await showBdSheet<bool>(context, title: 'Enter the code', builder: (_) => _CodeSheet(email: email));
       if (ok != true || !mounted) return;
     }
     final err = await entryStore.clearDiary();
     if (!mounted) return;
-    toast(context, err ?? 'A fresh diary. Everything before is kept.');
+    toast(context, err ?? 'A fresh diary. Everything before is kept.', tone: err == null ? ToastTone.success : ToastTone.error);
   }
 
   /// The diary, Together, Split, venues and the Ninkasi chats, set as a PDF book.
@@ -1002,7 +1015,7 @@ class _DataGroupState extends State<_DataGroup> {
       await f.writeAsBytes(bytes);
       await SharePlus.instance.share(ShareParams(files: [XFile(f.path, mimeType: 'application/pdf')], subject: 'My brewdiary'));
     } catch (_) {
-      if (mounted) toast(context, "Couldn't make the book — try again.");
+      if (mounted) toast(context, "Couldn't make the book — try again.", tone: ToastTone.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1014,7 +1027,7 @@ class _DataGroupState extends State<_DataGroup> {
     if (r.json != null) await _share(r.json!, 'brewdiary-everything');
     if (!mounted) return;
     setState(() => _busy = false);
-    if (r.error != null) toast(context, r.error!);
+    if (r.error != null) toast(context, r.error!, tone: ToastTone.error);
   }
 
   Future<void> _deleteAccount() async {
@@ -1030,7 +1043,7 @@ class _DataGroupState extends State<_DataGroup> {
     final err = await AccountApi.deleteAccount();
     if (!mounted) return;
     setState(() => _busy = false);
-    if (err != null) toast(context, err);
+    if (err != null) toast(context, err, tone: ToastTone.error);
   }
 
   @override

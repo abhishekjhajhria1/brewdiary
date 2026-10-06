@@ -2,7 +2,6 @@
 // (only once asked for), your year, the to-try list, your words, photos, your home
 // bar, the journey so far, and a searchable history. Settings live on their own
 // page behind the gear (settings_screen.dart).
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -22,6 +21,7 @@ import '../widgets/game.dart' show RankEmblem;
 import '../widgets/moments.dart';
 import '../widgets/mosaic.dart';
 import '../widgets/page.dart';
+import '../widgets/photo_viewer.dart';
 import '../widgets/pickers.dart';
 import 'photo_studio.dart';
 import 'settings_screen.dart';
@@ -120,18 +120,27 @@ class _YouScreenState extends State<YouScreen> {
                 mainAxisSpacing: 6,
                 crossAxisSpacing: 6,
                 children: [
-                  for (final p in photos)
+                  for (final (i, p) in photos.indexed)
                     Semantics(
                       button: true,
                       label: 'Photo from ${formatDayLongYear(p.date)}',
                       excludeSemantics: true,
+                      // Tap: the photo, big, with the rest to swipe through. Hold: that night.
                       child: Pressable(
-                        onTap: () => _openDay(p.date),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(rCell + 2),
-                          child: ColoredBox(
-                            color: bd.glass,
-                            child: p.photo.isLocal ? Image.file(File(p.photo.url), fit: BoxFit.cover) : Image.network(p.photo.url, fit: BoxFit.cover),
+                        haptic: false,
+                        onTap: () => showPhotoViewer(
+                          context,
+                          [for (final x in photos) (url: x.photo.url, label: 'Photo from ${formatDayLongYear(x.date)}')],
+                          initial: i,
+                          scope: 'you',
+                          action: (label: 'Open that night', onTap: (k) => _openDay(photos[k].date)),
+                        ),
+                        onLongPress: () => _openDay(p.date),
+                        child: Hero(
+                          tag: photoHeroTag(p.photo.url, 'you'),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(rCell + 2),
+                            child: ColoredBox(color: bd.glass, child: PhotoImage(p.photo.url)),
                           ),
                         ),
                       ),
@@ -319,7 +328,7 @@ class _ToTryState extends State<_ToTry> {
                   title: w.drink,
                   subtitle: 'Tried it? Tap to log it',
                   onTap: () => showBdSheet(context, title: 'Log to your diary', builder: (_) => _LogWish(item: w)),
-                  trailing: IconBtn(Ph.x, tooltip: 'Remove ${w.drink}', size: 18, color: bd.faint, onTap: () => wishlist.remove(w.id)),
+                  trailing: IconBtn(Ph.x, tooltip: 'Remove ${w.drink}', size: 18, color: bd.faint, onTap: () => attempt(context, () => wishlist.remove(w.id))),
                 ),
             ]),
           ] else if (_pick == null)
@@ -361,7 +370,7 @@ class _LogWishState extends State<_LogWish> {
         entryStore.addEntry(date: toKey(_date), drink: widget.item.drink, type: canonicalize(widget.item.drink).type);
         wishlist.remove(widget.item.id);
         Navigator.pop(context);
-        toast(context, 'Logged ${widget.item.drink} — and off the list.');
+        toast(context, 'Logged ${widget.item.drink} — and off the list.', tone: ToastTone.success);
       }),
     ]);
   }

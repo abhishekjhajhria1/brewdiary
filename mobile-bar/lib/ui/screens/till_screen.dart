@@ -86,7 +86,11 @@ class _TillScreenState extends State<TillScreen> {
                       Text('@${_customer!.handle}', style: T.caption(bd)),
                     ]),
                   ),
-                  if (_punched) const ToneTag('punched', Tone.good),
+                  AnimatedSwitcher(
+                    duration: Motion.med,
+                    transitionBuilder: (c, a) => FadeTransition(opacity: a, child: ScaleTransition(scale: Tween(begin: .6, end: 1.0).chain(CurveTween(curve: Curves.easeOutBack)).animate(a), child: c)),
+                    child: _punched ? const ToneTag('punched', Tone.good, key: ValueKey('punched')) : const SizedBox.shrink(),
+                  ),
                 ]),
                 const SizedBox(height: S.m),
                 Wrap(spacing: S.s, runSpacing: S.s, children: [

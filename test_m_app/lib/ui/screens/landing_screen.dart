@@ -368,7 +368,7 @@ class _AuthSheetState extends State<_AuthSheet> {
             ),
             Padding(padding: const EdgeInsets.only(top: S.s), child: Text('Sent to ${_email.text.trim()}. It works for a few minutes.', style: T.caption(bd))),
           ],
-          if (_error != null) Padding(padding: const EdgeInsets.only(top: S.m), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+          if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.m), style: T.sans(bd, size: 14, color: bd.accentText)),
           const SizedBox(height: S.xxl),
           _codeSent
               ? BdButton(_signup ? 'Start my diary' : 'Sign in', busy: _busy, onTap: _code.text.trim().length >= 6 ? _verifyCode : null)
@@ -390,7 +390,7 @@ class _AuthSheetState extends State<_AuthSheet> {
           ),
           IconBtn(_showPassword ? Ph.eyeSlash : Ph.eye, size: 20, color: bd.faint, tooltip: _showPassword ? 'Hide password' : 'Show password', onTap: () => setState(() => _showPassword = !_showPassword)),
         ]),
-        if (_error != null) Padding(padding: const EdgeInsets.only(top: S.m), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+        if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.m), style: T.sans(bd, size: 14, color: bd.accentText)),
         const SizedBox(height: S.xxl),
         BdButton(_signup ? 'Start my diary' : 'Sign in', busy: _busy, onTap: ready ? _submit : null),
         ],
@@ -501,7 +501,7 @@ class _AgeGateScreenState extends State<AgeGateScreen> {
                     icon: Ph.calendarBlank,
                     onTap: _pickDob,
                   ),
-                  if (_error != null) Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+                  if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.s), style: T.sans(bd, size: 14, color: bd.accentText)),
                   const SizedBox(height: S.xxl),
                   BdButton('Enter', onTap: _enter),
                   const SizedBox(height: S.l),

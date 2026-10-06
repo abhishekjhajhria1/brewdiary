@@ -108,22 +108,39 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final onThisMonth = _y == now.year && _m == now.month - 1;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      if (month)
-        MonthCalendar(
-          year: _y,
-          month: _m,
-          counts: counts,
-          planKeys: planDays.keys.toSet(),
-          dryKeys: dryDates(entries),
-          onSelect: (k) => _open(k, planDays),
-          onPrev: () => _step(-1),
-          onNext: () => _step(1),
-          canNext: canNext,
-          onToday: onThisMonth ? null : _thisMonth,
-          beckonToday: entries.isEmpty,
-        )
-      else
-        YearMosaic(year: now.year, counts: counts, onSelect: (k) => _open(k, planDays)),
+      // Month ⇄ year: the new view settles in from a touch smaller as the old one
+      // fades, and everything below glides to its new place.
+      AnimatedSize(
+        duration: context.reduceMotion ? Duration.zero : Motion.slow,
+        curve: Easing.emphasizedDecelerate,
+        alignment: Alignment.topCenter,
+        child: AnimatedSwitcher(
+          duration: context.reduceMotion ? Duration.zero : Motion.slow,
+          switchInCurve: Easing.emphasizedDecelerate,
+          switchOutCurve: Curves.easeInCubic,
+          layoutBuilder: (current, previous) => Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
+          transitionBuilder: (c, a) => FadeTransition(
+            opacity: a.drive(CurveTween(curve: const Interval(.3, 1))),
+            child: ScaleTransition(scale: Tween(begin: .96, end: 1.0).animate(a), alignment: Alignment.topCenter, child: c),
+          ),
+          child: month
+              ? MonthCalendar(
+                  key: const ValueKey('month'),
+                  year: _y,
+                  month: _m,
+                  counts: counts,
+                  planKeys: planDays.keys.toSet(),
+                  dryKeys: dryDates(entries),
+                  onSelect: (k) => _open(k, planDays),
+                  onPrev: () => _step(-1),
+                  onNext: () => _step(1),
+                  canNext: canNext,
+                  onToday: onThisMonth ? null : _thisMonth,
+                  beckonToday: entries.isEmpty,
+                )
+              : YearMosaic(key: const ValueKey('year'), year: now.year, counts: counts, onSelect: (k) => _open(k, planDays)),
+        ),
+      ),
       if (entries.isEmpty) const EmptyNote('Tap a day to log your first drink — a coffee counts.', icon: Ph.handTap) else _Glance(stats: s, nights: loggedDates(entries).length),
       _PassportStrip(year: month ? _y : now.year, month0: month ? _m : null),
       const SizedBox(height: S.xxl),
@@ -250,7 +267,8 @@ class _Glance extends StatelessWidget {
     final bd = context.bd;
     Widget item(int n, String label, {bool accent = false}) => Expanded(
           child: Column(children: [
-            Text('$n', style: T.serif(bd, size: 24, height: 1, color: accent ? bd.accentText : bd.ink).copyWith(fontFeatures: T.tnum)),
+            // Rolls to its new value as the log sheet slides away.
+            RollingNumber(n, textAlign: TextAlign.center, style: T.serif(bd, size: 24, height: 1, color: accent ? bd.accentText : bd.ink)),
             const SizedBox(height: 4),
             Text(label, textAlign: TextAlign.center, style: T.sans(bd, size: 11.5, color: bd.muted)),
           ]),
@@ -381,7 +399,7 @@ class _DayCounter extends StatelessWidget {
               }),
         SizedBox(
           width: 40,
-          child: Text('$n', textAlign: TextAlign.center, style: T.sans(bd, size: 20, weight: FontWeight.w600).copyWith(fontFeatures: T.tnum)),
+          child: RollingNumber(n, textAlign: TextAlign.center, style: T.sans(bd, size: 20, weight: FontWeight.w600)),
         ),
         IconBtn(Ph.plus, tooltip: 'One more ${def.unit}', glass: true, color: bd.accentText, onTap: () => entryStore.addEntry(date: dateKey, drink: def.entryDrink, type: def.entryType)),
       ]),

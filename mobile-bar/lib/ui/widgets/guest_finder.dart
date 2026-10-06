@@ -60,6 +60,7 @@ class _GuestFinderState extends State<GuestFinder> {
   final _code = TextEditingController();
   bool _looking = false;
   String? _miss;
+  int _misses = 0;
 
   @override
   void dispose() {
@@ -78,13 +79,24 @@ class _GuestFinderState extends State<GuestFinder> {
       final hit = await Backend.i.findGuestByCode(widget.venue.id, code);
       if (!mounted) return;
       if (hit == null) {
-        setState(() => _miss = 'No guest with that code — codes last 10 minutes; ask them for a fresh one.');
+        Haptics.error();
+        setState(() {
+          _misses++;
+          _miss = 'No guest with that code — codes last 10 minutes; ask them for a fresh one.';
+        });
       } else {
+        Haptics.success();
         _code.clear();
         widget.onPick(hit);
       }
     } catch (e) {
-      if (mounted) setState(() => _miss = e is BackendError ? e.message : 'Couldn\'t look that up — try again.');
+      if (mounted) {
+        Haptics.error();
+        setState(() {
+          _misses++;
+          _miss = e is BackendError ? e.message : 'Couldn\'t look that up — try again.';
+        });
+      }
     } finally {
       if (mounted) setState(() => _looking = false);
     }
@@ -131,21 +143,29 @@ class _GuestFinderState extends State<GuestFinder> {
         ),
       ],
       const SectionHeader('Their code'),
-      Row(children: [
-        Expanded(
-          child: GlassField(
-            controller: _code,
-            hint: 'The 6 letters on their guest card',
-            icon: Ph.identificationBadge,
-            caps: TextCapitalization.characters,
-            onChanged: (_) => setState(() => _miss = null),
-            onSubmitted: (_) => _find(),
+      Shake(
+        trigger: _misses,
+        child: Row(children: [
+          Expanded(
+            child: GlassField(
+              controller: _code,
+              hint: 'The 6 letters on their guest card',
+              icon: Ph.identificationBadge,
+              caps: TextCapitalization.characters,
+              maxLength: 6,
+              onChanged: (t) {
+                setState(() => _miss = null);
+                // The sixth letter looks itself up — one less tap at a busy till.
+                if (t.trim().length == 6) _find();
+              },
+              onSubmitted: (_) => _find(),
+            ),
           ),
-        ),
-        const SizedBox(width: S.s),
-        SizedBox(width: 96, child: BdButton(_looking ? '…' : 'Find', kind: BtnKind.secondary, onTap: _code.text.trim().length == 6 ? _find : null)),
-      ]),
-      if (_miss != null) Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_miss!, style: T.caption(bd))),
+          const SizedBox(width: S.s),
+          SizedBox(width: 96, child: BdButton('Find', kind: BtnKind.secondary, busy: _looking, onTap: _code.text.trim().length == 6 ? _find : null)),
+        ]),
+      ),
+      Appear(visible: _miss != null, child: _miss == null ? const SizedBox.shrink() : Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_miss!, style: T.sans(bd, size: 13, color: bd.tone(Tone.late))))),
       const SizedBox(height: S.s),
       Text('Guests find their code under Taste passport › Show my guest card. Nobody is searched by name.', style: T.caption(bd)),
     ]);
