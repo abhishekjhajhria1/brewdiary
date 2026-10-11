@@ -49,7 +49,6 @@ class _PayrollScreenState extends State<PayrollScreen> {
           tabBar: false,
           onRefresh: () async => shiftRev.bump(),
           children: [
-            const DemoNote(),
             Wrap(spacing: S.s, runSpacing: S.s, children: [
               for (final p in PayPeriod.values) BdChip(p.label, active: p == _period, onTap: () => setState(() => _period = p)),
             ]),

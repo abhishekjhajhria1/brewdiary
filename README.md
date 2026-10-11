@@ -13,9 +13,10 @@ npm test         # vitest — the pure logic
 npm run build    # production build — the verification gate (typecheck + lint + compile)
 ```
 
-New sign-ups start empty; the **You** tab has quiet *reseed / reset* controls (reseed drops ~20 realistic
-demo entries so the mosaic is alive). Copy `.env.example` → `.env.local` and fill it in to enable the
-Supabase backend and the Ninkasi AI; without it the app runs local-only (localStorage).
+New sign-ups start empty — there is no demo data anywhere. Copy `.env.example` → `.env.local` and fill
+it in: the Supabase values turn on sign-in and sync, and `AI_API_KEY` switches Ninkasi on (without it she
+says she's switched off — never a scripted stand-in). Signed out, a first night logged stays in this
+browser until a diary is made.
 
 ## Stack
 

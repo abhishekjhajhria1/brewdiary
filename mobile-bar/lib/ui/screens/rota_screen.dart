@@ -54,7 +54,6 @@ class _RotaScreenState extends State<RotaScreen> {
             IconBtn(Ph.calendarBlank, tooltip: 'Time off', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => TimeOffScreen(venue: _venue)))),
           ],
           children: [
-            const DemoNote(),
             Row(children: [
               IconBtn(Ph.caretLeft, tooltip: 'The week before', onTap: () => _week(-1)),
               Expanded(

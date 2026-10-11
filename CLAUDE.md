@@ -70,7 +70,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `tests/` | Vitest unit tests for `src/lib` (excluded from `next build`). |
 | `test_m_app/` | The **Flutter mobile user app** (Android + iOS) on the same Supabase backend. Its pure logic lives in `packages/brewdiary_core/` (shared with the venue app), a 1:1 port of `src/lib` with parity tests — change one, change both. See `test_m_app/README.md`; connecting it to the server, Ninkasi, email-code sign-in and the bar side: `docs/12-mobile-server-and-venues.md`. |
 | `packages/brewdiary_core/` | The pure-Dart logic both Flutter apps share (dates, derive, drinks, money, jurisdiction, menus), with the parity tests. `dart test` inside it. |
-| `mobile-bar/` | The **venue staff app** (Flutter; iOS + Android, phones + tablets) for bars, clubs, restaurants, cafés, liquor stores, sweet shops, bakeries and other shops — role-based. Same backend. Runs as a demo venue with no env. The build list and what's done: `mobile-bar/PLAN.md`. |
+| `mobile-bar/` | The **venue staff app** (Flutter; iOS + Android, phones + tablets) for bars, clubs, restaurants, cafés, liquor stores, sweet shops, bakeries and other shops — role-based. Same backend. No demo mode: without env it opens a "not connected" page; tests use an in-memory stand-in (`mobile-bar/test/support`). The build list and what's done: `mobile-bar/PLAN.md`. |
 | `docs/` | The beginner-proof handbook (committed — for every developer you hire). |
 | `.claude/skills/taste-engine/` | The design/product spec + anti-slop engine. Loaded as a Claude Code skill; **keep it here** (moving it breaks the skill). |
 | `internal/` | **Git-ignored** local planning/handoff. Not in a fresh clone. |
@@ -106,7 +106,7 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `goals.ts` | Gentle limits — optional weekly-limit/dry-days goals, per-device localStorage, off by default (standing derived via `derive.weekBalance`). |
 | `expenses.ts` | Split (Splitwise-style) balance math. |
 | `wishlist.ts` / `trends.ts` / `training.ts` | To-try list, opt-in taste trends, local Ninkasi training export. |
-| `bartender.ts` | Ninkasi persona + system prompt + scripted fallback. |
+| `bartender.ts` | Ninkasi persona + system prompt + context block. No scripted fallback: without a key the routes answer 503 and every client says she's switched off. |
 | `hostAdvisor.ts` | **Ninkasi for hosts** (`/api/host-ai`): the shift companion for every staff role. The brief is built on the phone from what that role can already see — counts and titles, never a guest — and the briefing rules are twinned in `mobile-bar/lib/logic/host_brief.dart` (same test cases). Signed-in only; never writes the training corpus. |
 | `appLinks.ts` | The `/.well-known` app-link files (rewritten in `next.config.mjs` to `/api/app-links/*`): bwdy.site → the guest app, bar.bwdy.site → the venue app, from server env (fingerprints, Apple team id); 404 until set. How all four windows connect (Supabase, Cloudflare, hosting): `docs/14`. |
 | *(counter, 050)* | Counters' till lives in the venue app (`mobile-bar/lib/logic/counter.dart`) over `supabase/050_shop_counter.sql`: products (never above MRP), a stock ledger (on hand is derived), suppliers, `ring_sale()` (the SERVER prices it), and alcohol that is **deny-by-default** — no `retail_alcohol_rules` row with a source, no bottle sale; a listed dry day stops it; hours, per-sale ml limit and an ID check (a yes, never the ID) apply. A sale has no customer column. `docs/15`. |
@@ -168,7 +168,7 @@ If `internal/` is missing (a fresh clone), rely on `docs/` + this file — nothi
 
 **Built & working (no keys):** calendar/logging/mosaic, auth + cloud sync (entries, photos, wishlist),
 Together (friends/feed/cheers/comments/share), circles, parties + host-approval, split, age-gate, PWA,
-Ninkasi (live when `AI_API_KEY` set, scripted fallback otherwise) + the two-database AI data plane,
+Ninkasi (live when `AI_API_KEY` set, honestly "switched off" otherwise) + the two-database AI data plane,
 drink canonicalization + log autocomplete + Extras, and the **Rooms/Points/Venues layer** (Phase 7):
 sparks + positive-only vibe inside parties, the venue dashboard on the `bar.` subdomain (staff, rooms,
 verification requests, house perks for verified venues), the public kiosk board, opt-in public profiles

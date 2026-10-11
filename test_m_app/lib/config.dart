@@ -6,8 +6,9 @@
 // where env.json is (see env.example.json):
 //   { "SUPABASE_URL": "...", "SUPABASE_ANON_KEY": "...", "SITE_URL": "https://bwdy.site" }
 //
-// With no Supabase values the app runs in LOCAL mode — the diary lives on the device
-// and the social layer is hidden — exactly like the website without its env.
+// Both values are required: a build without them opens a "not connected" page that
+// says what's missing, and never runs on pretend accounts. (Signed out, the first
+// nights you log stay on the phone and move to your diary when you make one.)
 class Config {
   static const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
   static const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');

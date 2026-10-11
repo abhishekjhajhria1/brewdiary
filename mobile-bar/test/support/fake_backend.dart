@@ -1,29 +1,29 @@
-// The demo venue: a seeded bar and a sweet shop that live entirely on this phone.
+// A stand-in server for the widget tests and screenshot tours: a seeded bar, a sweet
+// shop and a liquor store that live in memory. It is never part of the app — the app
+// only ever talks to the real database (SupabaseBackend).
 //
-// It powers the app when no Supabase values are built in — screenshots, the widget
-// tests, and showing an owner what the app does before they sign up. It keeps the
-// same rules the database enforces where a demo would otherwise mislead (a perk can't
-// be claimed before it's earned, a card is punched once a day, a sweet shop's reward
-// is never alcohol), so what you see here is what you'd get for real.
+// It keeps the rules the database enforces (a perk can't be claimed before it's
+// earned, a card is punched once a day, a sweet shop's reward is never alcohol), so a
+// test that passes here exercises the same behaviour the server would allow.
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'backend.dart';
-import 'models.dart';
-import 'prefs.dart';
-import '../logic/area.dart' show HeatRow;
-import '../logic/host_brief.dart';
-import '../logic/roles.dart';
-import '../logic/service.dart' show nightStart;
-import '../logic/rota.dart' show canTakeRole;
-import '../logic/staff.dart';
-import '../logic/venue_kinds.dart';
+import 'package:brewdiary_bar/data/backend.dart';
+import 'package:brewdiary_bar/data/models.dart';
+import 'package:brewdiary_bar/data/prefs.dart';
+import 'package:brewdiary_bar/logic/area.dart' show HeatRow;
+import 'package:brewdiary_bar/logic/host_brief.dart';
+import 'package:brewdiary_bar/logic/roles.dart';
+import 'package:brewdiary_bar/logic/service.dart' show nightStart;
+import 'package:brewdiary_bar/logic/rota.dart' show canTakeRole;
+import 'package:brewdiary_bar/logic/staff.dart';
+import 'package:brewdiary_bar/logic/venue_kinds.dart';
 
-class DemoBackend implements Backend {
-  DemoBackend._();
+class FakeBackend implements Backend {
+  FakeBackend._();
 
   @override
-  bool get isDemo => true;
+  bool get live => false;
 
   static const me = AppUser(id: 'demo-me', email: 'you@demo.local', name: 'You (demo)', handle: 'demo-owner');
 
@@ -89,8 +89,8 @@ class DemoBackend implements Backend {
   ];
 
   /// A demo venue already signed in — or, with [signedIn] false, the sign-in screen.
-  factory DemoBackend.seeded({bool signedIn = true}) {
-    final b = DemoBackend._();
+  factory FakeBackend.seeded({bool signedIn = true}) {
+    final b = FakeBackend._();
     b._seed();
     if (signedIn) b._user = me;
     return b;
@@ -1960,8 +1960,8 @@ class DemoBackend implements Backend {
   @override
   Stream<String> advise(Map<String, dynamic> brief, List<Map<String, String>> messages) async* {
     final text = messages.isEmpty
-        ? 'This is the demo venue, so I\'m reading made-up numbers — but here is how I\'d read them. Friday and Saturday carry the week and Tuesday is nearly empty: you\'ve already marked it quiet, so tell your regulars a Tuesday visit counts double toward their card. Your team was thanked 27 times this month — say so at the next pre-shift.'
-        : 'In the demo I answer from a script. Sign in with your real venue and I\'ll read your own numbers — totals only, never a single guest.';
+        ? 'Friday and Saturday carry the week and Tuesday is nearly empty: you\'ve already marked it quiet, so tell your regulars a Tuesday visit counts double toward their card. Your team was thanked 27 times this month — say so at the next pre-shift.'
+        : 'Totals only, never a single guest.';
     for (final w in text.split(' ')) {
       await Future<void>.delayed(const Duration(milliseconds: 8));
       yield '$w ';
@@ -2292,10 +2292,14 @@ class DemoBackend implements Backend {
     doorRev.bump();
   }
 
+  /// Tests flip this to see what the team sees when Ninkasi is off.
+  bool ninkasiOff = false;
+
   @override
   Stream<String> askHost(HostBrief brief, List<Map<String, String>> messages) async* {
+    if (ninkasiOff) throw const BackendError('Ninkasi isn\'t switched on yet.');
     final q = messages.lastWhere((m) => m['role'] == 'user', orElse: () => const {'content': ''})['content'] ?? '';
-    for (final w in hostFallbackAnswer(brief, q).split(' ')) {
+    for (final w in 'You asked: $q'.split(' ')) {
       await Future<void>.delayed(const Duration(milliseconds: 6));
       yield '$w ';
     }

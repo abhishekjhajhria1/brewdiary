@@ -4,8 +4,8 @@
 // handed ONLY this venue's aggregate totals (the very numbers already on screen) plus
 // the owner's own perk/quiet-night settings, and turns them into a couple of plain,
 // actionable sentences. No individual guest is ever described to the model — see
-// lib/venueAdvisor.ts for the privacy line. Streams like the bartender; works on a
-// scripted fallback before an AI key exists.
+// lib/venueAdvisor.ts for the privacy line. Streams like the bartender. Without an AI
+// key she says she's switched off — she never reads the numbers from a script.
 import { useMemo, useState } from "react";
 import type { Venue } from "@/lib/venues";
 import { useVenuePerks } from "@/lib/perks";
@@ -14,11 +14,13 @@ import { currencyForCountry, formatMoney } from "@/lib/money";
 import { isCounter } from "@/lib/venueKinds";
 import {
   ADVISOR_STARTERS,
-  ADVISOR_OFFLINE_NOTE,
   type AdvisorInsights,
   type InsightBrief,
   type ChatMessage,
 } from "@/lib/venueAdvisor";
+
+/** Why Ninkasi couldn't read the numbers, worded for the owner. */
+class AdvisorUnavailable extends Error {}
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -38,7 +40,7 @@ export function VenueAdvisor({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [offline, setOffline] = useState(false);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
   const started = messages.length > 0;
 
   // The brief is assembled ONLY from data this manager already holds: the aggregate
@@ -67,6 +69,7 @@ export function VenueAdvisor({
     // A follow-up appears as its own turn; the opening "read" sends no user message.
     const next: ChatMessage[] = question ? [...messages, { role: "user", content: question }] : messages;
     setMessages([...next, { role: "assistant", content: "" }]);
+    setUnavailable(null);
     setBusy(true);
 
     let acc = "";
@@ -76,7 +79,15 @@ export function VenueAdvisor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ brief, messages: next }),
       });
-      setOffline(res.headers.get("x-advisor-mode") === "fallback");
+      if (!res.ok) {
+        throw new AdvisorUnavailable(
+          res.status === 503
+            ? "Ninkasi isn't switched on yet."
+            : res.status === 429
+              ? "Give her a moment with the last set of books, then ask again."
+              : "Ninkasi couldn't read that just now — ask again.",
+        );
+      }
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       while (reader) {
@@ -89,12 +100,11 @@ export function VenueAdvisor({
           return copy;
         });
       }
-    } catch {
-      setMessages((m) => {
-        const copy = m.slice();
-        copy[copy.length - 1] = { role: "assistant", content: "The ledger slipped away for a moment — ask me again." };
-        return copy;
-      });
+    } catch (e) {
+      // Take back the empty turn (and the question, so it can be asked again).
+      setMessages(messages);
+      if (question) setInput(question);
+      setUnavailable(e instanceof AdvisorUnavailable ? e.message : "Ninkasi can't be reached — check your connection.");
     } finally {
       setBusy(false);
     }
@@ -187,7 +197,11 @@ export function VenueAdvisor({
         </>
       )}
 
-      {offline && <p className="mt-2.5 text-xs leading-relaxed text-faint">{ADVISOR_OFFLINE_NOTE}</p>}
+      {unavailable && (
+        <p role="alert" className="mt-2.5 text-xs leading-relaxed text-accent">
+          {unavailable}
+        </p>
+      )}
     </div>
   );
 }

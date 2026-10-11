@@ -38,7 +38,6 @@ class MoreScreen extends StatelessWidget {
       title: 'More',
       subtitle: '${venue.name} · ${roleLabel(venue.myRole, venue.kind)}',
       children: [
-        const DemoNote(),
         Group(children: [
           GroupTile(
             icon: Ph.usersThree,

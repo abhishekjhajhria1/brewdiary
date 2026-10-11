@@ -1,7 +1,7 @@
 // Ninkasi for hosts: the briefing rules (src/lib/hostAdvisor.ts). The Dart twin
 // (mobile-bar/lib/logic/host_brief.dart) is tested on the same cases.
 import { describe, expect, it } from "vitest";
-import { HOST_SYSTEM_PROMPT, coerceHostBrief, hostBriefing, hostFallbackAnswer, summarizeHostBrief } from "@/lib/hostAdvisor";
+import { HOST_SYSTEM_PROMPT, coerceHostBrief, hostBriefing, summarizeHostBrief } from "@/lib/hostAdvisor";
 
 const brief = coerceHostBrief({
   venueName: "The Amber Room",
@@ -50,11 +50,6 @@ describe("Ninkasi for hosts", () => {
     const lines = hostBriefing(shop);
     expect(lines[0]).toBe("The till is ready — punch cards once a day per guest.");
     expect(lines.join(" ")).not.toMatch(/alcohol|water is free/i);
-  });
-
-  it("answers the hard question the same way every time", () => {
-    expect(hostFallbackAnswer(brief, "Someone's had enough — what do I do?")).toMatch(/^Stop serving them alcohol/);
-    expect(hostFallbackAnswer(brief, "How do I explain the loyalty card?")).toContain("never how much anyone drinks");
   });
 
   it("trusts nothing from the wire", () => {

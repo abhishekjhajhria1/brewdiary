@@ -81,7 +81,7 @@ The golden rule of how it's filled: **controlled and minimized, never raw access
   person (useful for quality and for honoring "delete my data"), but nobody can work backward to *who*
   without a secret key kept only on our server.
 - **Consented + real only.** A conversation is saved only if the user left "Help train Ninkasi" on, and
-  only when the real AI answered (scripted fallbacks are never sent).
+  only when the real AI answered (and there is no other kind of answer — no scripted stand-ins).
 - **Server-only.** The browser has zero credentials for this database. Our *server* writes to it
   (`/api/bartender` records the exchange; `/api/ninkasi/forget` deletes a user's rows on request).
 - **Aggregates are anonymous.** The "what's popular" snapshots only count a drink when 3+ people logged

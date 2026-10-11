@@ -72,7 +72,7 @@ class ExportBundle {
       }
     }
 
-    final cloud = c != null && me != null && me != 'local';
+    final cloud = c != null && me != null;
     final results = await Future.wait<Object?>([
       if (cloud) ...[
         safe(FriendsApi.friends, const <SocialProfile>[]),

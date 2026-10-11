@@ -50,8 +50,8 @@ export async function beginIdentityVerification(): Promise<IdentityResult> {
   };
 }
 
-/** Is paid identity verification configured on this deployment? (Always false until
- *  funded — the UI uses this to show "coming soon" instead of a dead button.) */
+/** Is paid identity verification configured on this deployment? (False until a vendor
+ *  is wired in; nothing in the UI mentions it before then.) */
 export const identityVerificationAvailable = false;
 
 // ── 2. the free TRUST LEVEL ──────────────────────────────────────────────────

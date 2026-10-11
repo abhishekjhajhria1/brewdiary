@@ -34,7 +34,6 @@ class _GuestsScreenState extends State<GuestsScreen> {
       title: 'Guests',
       subtitle: widget.venue.name,
       children: [
-        const DemoNote(),
         Text('Your own notes on the regulars you serve — first-party only: never their diary, never another venue. They can see and erase anything you keep.', style: T.caption(bd)),
         GuestFinder(
           venue: widget.venue,

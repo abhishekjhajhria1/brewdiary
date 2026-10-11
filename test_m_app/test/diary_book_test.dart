@@ -5,11 +5,11 @@ import 'dart:io';
 
 import 'package:brewdiary/data/export.dart';
 import 'package:brewdiary/ui/export/diary_book.dart';
-import 'package:brewdiary_core/seed.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import 'helpers.dart';
+import 'support/seed.dart';
 
 Future<BookFonts> _fonts() async {
   Future<pw.Font> f(String n) async => pw.Font.ttf((await File('assets/fonts/$n').readAsBytes()).buffer.asByteData());

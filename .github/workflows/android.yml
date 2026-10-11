@@ -1,8 +1,8 @@
 # Installable Android builds of both apps, for testing on a phone or tablet.
 #
 # GitHub's runners carry the Android SDK, so the APKs are built here. Neither app needs
-# a secret: with no Supabase settings the venue app runs as the demo venue (The Amber
-# Room) and the guest app keeps its diary on the phone. Set the repository variables
+# a secret: with no Supabase settings both apps open a "not connected yet" page (there is
+# no demo mode). Set the repository variables
 # SUPABASE_URL, SUPABASE_ANON_KEY and SITE_URL (the anon key is public by design) and the
 # same builds talk to the real backend instead.
 #
@@ -76,13 +76,13 @@ jobs:
             if [ "$HAS_BACKEND" = "true" ]; then
               echo "- backend: the real Supabase project (repository variables SUPABASE_URL + SUPABASE_ANON_KEY)"
             else
-              echo "- backend: **none.** The venue app runs as the demo venue and the guest app keeps its diary on the phone, with no sign-in. Set the repository variables SUPABASE_URL and SUPABASE_ANON_KEY (Settings → Secrets and variables → Actions → Variables) and re-run for a build that signs in for real."
+              echo "- backend: **none.** Both apps open a “not connected yet” page (there is no demo mode). Set the repository variables SUPABASE_URL and SUPABASE_ANON_KEY (Settings → Secrets and variables → Actions → Variables) and re-run for a build that signs in for real."
             fi
             echo "- size: $(du -h "${{ matrix.name }}.apk" | cut -f1)"
             echo "- sha256: \`$(sha256sum "${{ matrix.name }}.apk" | cut -d' ' -f1)\`"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$HAS_BACKEND" != "true" ]; then
-            echo "::warning title=No backend::${{ matrix.name }} was built without SUPABASE_URL / SUPABASE_ANON_KEY, so it can't sign in (the venue app is the demo). Set the repository variables for a real build."
+            echo "::warning title=No backend::${{ matrix.name }} was built without SUPABASE_URL / SUPABASE_ANON_KEY, so it only shows a “not connected yet” page. Set the repository variables for a real build."
           fi
       - uses: actions/upload-artifact@v4
         with:

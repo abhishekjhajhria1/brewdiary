@@ -148,27 +148,3 @@ List<String> hostStarters(HostBrief b) => [
       if (!b.sellsAlcohol) 'What sells best near us?',
     ];
 
-/// Scripted answers for when Ninkasi is out of reach (no network, demo, no AI key).
-String hostFallbackAnswer(HostBrief b, String question) {
-  final q = question.toLowerCase();
-  if (q.contains('enough') || q.contains('drunk') || q.contains('cut off')) {
-    return 'Stop serving them alcohol — calmly, and without an audience. Offer water and something to eat, bring in the manager, and help them get home safely (a cab, a friend). Never argue, and never make it about them as a person. Nothing goes on their card.';
-  }
-  if (q.contains('alcohol-free') || q.contains('zero') || q.contains('mocktail')) {
-    return b.alcoholFree.isEmpty
-        ? 'There\'s nothing marked alcohol-free on the menu yet. Water is always free; ask a manager to add a proper zero-proof option.'
-        : 'Tonight: ${_list(b.alcoholFree)}. Mention one with every recommendation — lots of people want one and don\'t ask.';
-  }
-  if (q.contains('around') || q.contains('event') || q.contains('nearby')) {
-    final s = b.signals.where((s) => !_isDryDay(s.kind, s.title)).take(3).toList();
-    return s.isEmpty
-        ? 'Nothing listed around you right now. Events, openings and dry days show here as they come in.'
-        : s.map((s) => '${s.title}${s.startsOn == null ? '' : ' (${_when(b.today, s.startsOn)})'}').join('. ');
-  }
-  if (q.contains('card') || q.contains('loyalty') || q.contains('perk') || q.contains('reward')) {
-    if (b.perks.isEmpty) return 'This venue doesn\'t run a loyalty card yet — a manager can set one up in More › Loyalty card.';
-    final p = b.perks.first;
-    return 'Each visit counts toward the card: ${p.reward} after ${p.at}. Guests see their progress in their own app; staff hand the reward over from the guest\'s card. It\'s visits that count — never how much anyone drinks.';
-  }
-  return 'I can\'t reach the full Ninkasi right now. Here\'s the briefing: ${hostBriefing(b).take(3).join(' ')}';
-}

@@ -47,7 +47,6 @@ class MenuScreen extends StatelessWidget {
       ],
       onRefresh: () async => menuRev.bump(),
       children: [
-        const DemoNote(),
         if (!venue.verified)
           Padding(
             padding: const EdgeInsets.only(bottom: S.l),

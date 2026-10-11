@@ -11,7 +11,7 @@
 // is a thing this product refuses to build (see the Insights note in VenueApp).
 //
 // Like bartender.ts this file is provider-agnostic and framework-free: persona +
-// grounding + a scripted fallback so the feature is alive before an AI key exists.
+// grounding. Without an AI key the route says so — there is no scripted stand-in.
 import type { ChatMessage } from "./bartender";
 
 export type { ChatMessage };
@@ -190,101 +190,3 @@ export const ADVISOR_STARTERS = [
   "How do I turn new faces into regulars?",
 ];
 
-/**
- * Scripted advice when no AI key is configured — deterministic, on-brand, and useful
- * on its own. Rule-based over the same aggregates; nudges toward the levers that don't
- * reward drinking more (quiet nights, a first perk tier, honouring earned perks, thanks).
- */
-export function fallbackAdvice(brief: InsightBrief): string {
-  const i = brief.insights;
-  const store = brief.kind === "store";
-  const bits: string[] = [];
-
-  if (i.guests === 0) {
-    return store
-      ? "No card punches yet in this window, love. Once you're verified, find a regular at the till and punch their card — a visit a day, and the reward you promised does the rest."
-      : "A quiet stretch — no guests logged in this window. Open a room, put the code on the tables, and let your bartenders hand out a good word as they serve. The numbers will come once the room does.";
-  }
-
-  // Trend first — "are we growing" is the question an owner opens the dashboard with.
-  const gPct = pctChange(i.guests, i.prevGuests);
-  if (gPct !== null && gPct <= -20) {
-    bits.push(
-      `Fewer people than the ${brief.days} days before — down about ${Math.abs(gPct)}%. Before anything fancy, lean on the regulars: make sure every earned perk gets honoured, and give a dead night a reason to fill.`,
-    );
-  } else if (gPct !== null && gPct >= 25) {
-    bits.push(
-      `Up about ${gPct}% on the previous ${brief.days} days — whatever you're doing, it's working. Lock it in with a perk so this month's new faces have a reason to make it three visits, not one.`,
-    );
-  }
-
-  // The dead-night lever — now it can name the actual deadest weekday from the data.
-  if (!store) {
-    const { deadest } = peakDays(i.visitsByDow);
-    const deadLabel = deadest !== null ? WEEKDAY_FULL[deadest] : null;
-    const deadIsMarked = deadest !== null && brief.quietNightLabels.includes(WEEKDAY_ORDER[deadest]);
-
-    if (deadLabel && !deadIsMarked) {
-      bits.push(
-        `${deadLabel} is your quietest night and it isn't marked quiet. Set it under Perks — a visit that ${deadLabel} then counts double toward the house perk, so people have a reason to come when the room's empty. No drink discounted, nobody asked to drink more.`,
-      );
-    } else if (brief.quietNightLabels.length === 0) {
-      bits.push(
-        "You've marked no quiet nights. Pick your deadest one and set it — a visit that night counts double toward your perk, so the empty nights have a pull. No drink discounted, nobody asked to drink more.",
-      );
-    } else if (i.quietVisits === 0 && i.otherVisits > 0) {
-      bits.push(
-        `Your quiet-night boost is on but nobody's used it yet. Say it out loud where they'll see it — "come ${brief.quietNightLabels.join(" or ")}, your visit counts double." A boost nobody knows about does nothing.`,
-      );
-    }
-  }
-
-  // Is there even a reason to come back?
-  if (brief.perks.length === 0) {
-    bits.push(
-      "You've no house perk set. A small one — five visits, a free coffee — is the whole reason a face becomes a regular. Set one under Perks and give them something to chase.",
-    );
-  } else if (i.perksEarned !== null && i.perksEarned > 0) {
-    bits.push(
-      `${i.perksEarned} ${i.perksEarned === 1 ? "guest has" : "guests have"} earned a perk and not claimed it. Next time they're in, hand it over — a promise kept is what brings the third visit and the fourth.`,
-    );
-  }
-
-  // Convert new faces into regulars, when the split is visible.
-  if (i.newGuests !== null && i.returningGuests !== null && i.newGuests > i.returningGuests && i.newGuests >= 3) {
-    bits.push(
-      "Plenty of new faces, fewer coming back. That's a first-tier perk's job — make the reward for the second or third visit easy to reach, so the first visit isn't the last.",
-    );
-  }
-
-  // The kindness lever.
-  if (!store && i.kudos === 0 && i.guests >= 3) {
-    bits.push(
-      "Nobody's thanked your team yet. Remind the room they can — a guest tapping a bartender's name to say thanks costs you nothing and keeps good staff longer than a raise sometimes does.",
-    );
-  }
-
-  // The neighbourhood nudge — only when there's a real local pool behind it.
-  const areaDrinks = (brief.areaTrends ?? []).filter((t) => t.kind === "drink").map((t) => t.name).slice(0, 3);
-  if (areaDrinks.length) {
-    const where = brief.areaLabel ? `around ${brief.areaLabel}` : "around here";
-    bits.push(
-      `${areaDrinks.join(", ")} ${areaDrinks.length === 1 ? "is" : "are"} what drinkers ${where} have been logging lately. If it's not already on your list, a night built around one of those is an easy pull — the neighbourhood's already reaching for it.`,
-    );
-  }
-
-  if (bits.length === 0) {
-    bits.push(
-      store
-        ? "Steady numbers. Keep the card honest — one punch per person per day — and make sure the reward's worth the walk back. That's the whole game at a shop."
-        : "Steady numbers, nothing crying out. Keep honouring the perks people earn, keep a dead night marked quiet, and let the staff be thanked. The regulars build themselves from there.",
-    );
-  }
-
-  // Two nudges at most — a wall of advice is advice nobody acts on.
-  return bits.slice(0, 2).join(" ");
-}
-
-/** Note shown in the UI when running on the scripted fallback (no key yet). */
-export const ADVISOR_OFFLINE_NOTE =
-  "Add an AI key (AI_API_KEY) and Ninkasi reads your numbers herself — she's advising from the ledger for now.";

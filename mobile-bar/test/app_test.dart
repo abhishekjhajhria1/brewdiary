@@ -1,13 +1,25 @@
-// Walk-throughs on the demo venue: the real screens, the real rules, no network.
+// Walk-throughs on the stand-in venues: the real screens, the real rules, no network.
+import 'package:brewdiary_bar/data/prefs.dart';
 import 'package:brewdiary_bar/data/session.dart';
+import 'package:brewdiary_bar/ui/screens/not_connected_screen.dart';
 import 'package:brewdiary_bar/ui/widgets/common.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers.dart';
 
 void main() {
   setUpAll(loadFonts);
+
+  testWidgets('a build without the server address says so — no pretend venue', (t) async {
+    SharedPreferences.setMockInitialValues({});
+    Prefs.useInstance(await SharedPreferences.getInstance());
+    await t.pumpWidget(const NotConnectedApp());
+    await t.pumpAndSettle();
+    expect(find.text('Not connected yet'), findsOneWidget);
+    expect(find.text('The Amber Room'), findsNothing);
+  });
 
   testWidgets('sign in with an emailed code, then pick a venue', (t) async {
     await bootApp(t, signedIn: false);
@@ -130,7 +142,7 @@ void main() {
     expect(find.text('A new brewpub opened on 12th Main'), findsOneWidget);
   });
 
-  testWidgets('Ninkasi for the whole team: a briefing, and answers that never push drink', (t) async {
+  testWidgets('Ninkasi for the whole team: a briefing, and the question goes to her', (t) async {
     await bootApp(t);
     await tapText(t, 'The Amber Room');
     await tapText(t, 'Ask Ninkasi');
@@ -140,7 +152,19 @@ void main() {
     await tapText(t, 'Someone\'s had enough — what do I do?');
     await t.pump(const Duration(seconds: 2));
     await t.pumpAndSettle();
-    expect(find.textContaining('Stop serving them alcohol'), findsOneWidget);
+    expect(find.textContaining('You asked: Someone\'s had enough'), findsOneWidget);
+  });
+
+  testWidgets('Ninkasi switched off: an honest line, never a scripted answer', (t) async {
+    final backend = await bootApp(t);
+    backend.ninkasiOff = true;
+    await tapText(t, 'The Amber Room');
+    await tapText(t, 'Ask Ninkasi');
+    await tapText(t, 'Someone\'s had enough — what do I do?');
+    await t.pumpAndSettle();
+    expect(find.text('Ninkasi isn\'t switched on yet.'), findsOneWidget);
+    expect(find.textContaining('Stop serving them alcohol'), findsNothing);
+    expect(find.text('THIS SHIFT'), findsOneWidget, reason: 'the briefing is worked out on the phone and stays');
   });
 
   testWidgets('a liquor store: a sale needs an ID check, and the stock follows', (t) async {

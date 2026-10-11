@@ -53,7 +53,6 @@ class _TillScreenState extends State<TillScreen> {
       title: 'Till',
       subtitle: v.name,
       children: [
-        const DemoNote(),
         ShiftCard(venue: v),
         NextSteps(venue: v),
         if (s.can(Cap.takePayment)) ...[

@@ -70,8 +70,8 @@ The rules that make this safe:
 | Venue app | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SITE_URL` | `mobile-bar/env.json` (git-ignored) | no |
 | Your laptop | `SUPABASE_DB_URL` (runs migrations and checks) | `.env.local` | **yes** |
 
-Both apps build with `flutter build … --dart-define-from-file=env.json`. With no `env.json`, the guest
-app runs on the device alone and the venue app runs a labelled demo venue. **Never** put a service-role
+Both apps build with `flutter build … --dart-define-from-file=env.json`. With no `env.json`, both apps
+open a short "not connected yet" page — there is no demo mode and no pretend account. **Never** put a service-role
 key or an AI key in an app: anything shipped in an app can be read out of it.
 
 `SITE_URL` is the website's address (`https://bwdy.site`). Both apps call its `/api/…` routes: the

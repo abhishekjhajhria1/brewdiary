@@ -110,7 +110,6 @@ class _FloorScreenState extends State<FloorScreen> {
       maxWidth: kWideMaxWidth,
       onRefresh: () async => floorRev.bump(),
       children: [
-        const DemoNote(),
         ShiftCard(venue: v),
         NextSteps(venue: v),
         Loader<FloorData>(

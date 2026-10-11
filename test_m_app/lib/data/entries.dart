@@ -10,7 +10,6 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:brewdiary_core/date.dart';
-import 'package:brewdiary_core/seed.dart';
 import 'package:brewdiary_core/types.dart';
 import 'auth.dart';
 import 'base.dart';
@@ -148,7 +147,7 @@ class EntryStore extends ChangeNotifier {
   Future<void> _applyAuth() async {
     final a = auth;
     if (a.status == AuthStatus.loading) return;
-    if (a.isAuthed && db != null && a.meId != 'local') {
+    if (a.isAuthed && db != null) {
       if (_remote && _user == a.meId) return;
       _user = a.meId;
       _remote = true;
@@ -322,14 +321,14 @@ class EntryStore extends ChangeNotifier {
     Prefs.setJson(_archiveKey, [...kept, ...entries.map((e) => e.toJson())]);
   }
 
-  /// For tests and the signed-out demo: an empty diary (put away, as always).
+  /// An empty diary (put away, as always).
   void resetAll() => clearDiary();
 
-  /// Wipe and re-seed the demo history (signed-out builds only).
-  void reseed() {
+  /// Tests only: the device diary becomes [entries] (the widget tests have no server).
+  @visibleForTesting
+  void debugUseLocal(List<Entry> entries) {
     if (_remote) return;
-    _archiveLocal(_cache);
-    _setCache(seedEntries());
+    _setCache(entries);
     _writeLocal(_cache);
   }
 

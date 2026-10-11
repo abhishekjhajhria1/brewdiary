@@ -20,7 +20,7 @@ Tick items here as they land (and in the app's own `CHANGELOG.md`).
 | Database | every migration (`schema.sql` → `054`) applies to a fresh Postgres; `db:audit` + `db:verify` pass (485 checks) |
 | App ↔ schema | `db:contract`: all 459 database calls fit — website 198, users app 136, venue app 125 |
 | Users app (`test_m_app`) | analyze clean, tests green; runs fully offline-first when signed out; **not yet pointed at the real server** |
-| Venue app (`mobile-bar`) | analyze clean, 89 tests green; runs as a demo venue with no env; 56 of 232 plan items done, 30 partly |
+| Venue app (`mobile-bar`) | analyze clean, 89 tests green; no demo mode (a "not connected" page without env); 56 of 232 plan items done, 30 partly |
 | Shared core (`packages/brewdiary_core`) | 67 tests green |
 | Live database | **migrations 042–054 not run yet** — the apps' newer features fail against it until they are |
 

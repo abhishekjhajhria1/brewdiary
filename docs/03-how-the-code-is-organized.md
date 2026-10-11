@@ -103,7 +103,7 @@ This is where data and logic live. A few important patterns:
 | `features.ts` | **Extras** — optional trackers (cigarettes, water…) that stay hidden until switched on in *You › Settings*. Add one line here and it appears as a toggle + a counter in the log. |
 | `tallies.ts` | The **per-day counts** behind those Extras (e.g. how many cigarettes that day). |
 | `date.ts` | Small date helpers (what week is this, format a date). |
-| `bartender.ts` | **Ninkasi's personality** (the system prompt) + the offline scripted replies. |
+| `bartender.ts` | **Ninkasi's personality** (the system prompt) + the context she's given. No scripted replies. |
 | `training.ts` | Collects consented chat exchanges to build the AI training set. |
 | `trends.ts` | The opt-in, anonymous taste-trends data. |
 | `points.ts` | **Sparks & vibe** — the party points board (summed live from an append-only ledger, positive-only) + the kiosk board + the "show me on venue screens" opt-in. |
@@ -114,7 +114,6 @@ This is where data and logic live. A few important patterns:
 | `ratelimit.ts` | The **anti-abuse guard** for the AI route (caps requests per minute). |
 | `theme.ts` | Light/dark theme handling. |
 | `age.ts` | The 18+ age-gate logic. |
-| `seed.ts` | Fake demo data, so a fresh install has something to look at. |
 
 ## The one rule that explains the whole design
 > **Only drink entries are truly stored. Everything else is *calculated* from them.**

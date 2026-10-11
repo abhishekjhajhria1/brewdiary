@@ -14,14 +14,19 @@ import 'data/reminder.dart';
 import 'data/settings.dart';
 import 'data/wishlist.dart';
 import 'ui/home_widget.dart';
+import 'ui/screens/not_connected_screen.dart';
 import 'ui/widgets/motion.dart' show Haptics;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Prefs.init();
-  if (Config.cloud) {
-    await Supabase.initialize(url: Config.supabaseUrl, publishableKey: Config.supabaseAnonKey);
+  // brewdiary only ever runs against its real server. Built without the address, it
+  // says so plainly instead of pretending.
+  if (!Config.cloud) {
+    runApp(const NotConnectedApp());
+    return;
   }
+  await Supabase.initialize(url: Config.supabaseUrl, publishableKey: Config.supabaseAnonKey);
   // Wire the stores once: auth first, then the diary + to-try list follow it.
   auth.init();
   entryStore.wire();

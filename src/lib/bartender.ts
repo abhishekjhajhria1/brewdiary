@@ -3,8 +3,8 @@
 // character on top of any base model). Provider-agnostic: any OpenAI-compatible chat
 // API (xAI Grok, Gemini, OpenAI, DeepSeek, Groq, Together…). No Claude/Anthropic here
 // by design — see internal/done/PROGRESS.md (cost decision). The route handler picks the
-// provider from env; this file holds the persona, context grounding, and the no-key
-// fallback so she's alive before a key is added.
+// provider from env; this file holds the persona and context grounding. Without a key
+// she is honestly switched off — never a script pretending to be her.
 
 export const NINKASI_NAME = "Ninkasi";
 
@@ -97,27 +97,3 @@ export const STARTERS = [
   "A beautiful drink with no alcohol.",
 ];
 
-/**
- * Scripted reply when no API key is configured — so Ninkasi still speaks, in character.
- * Deterministic and on-brand; nudges toward setting up a provider.
- */
-export function fallbackReply(messages: ChatMessage[], ctx?: BartenderContext): string {
-  const last = messages.filter((m) => m.role === "user").at(-1)?.content.toLowerCase() ?? "";
-  const recent = ctx?.recentDrinks?.[0];
-
-  if (/non.?alcohol|na |mocktail|sober|no alcohol/.test(last)) {
-    return "Then let me pour you something bright, darling — lime and soda over crushed ice, a few mint leaves crushed under the spoon, a whisper of honey. Or a cold-brew over ice with a splash of milk, if the night wants quiet. No spirit, all pleasure.";
-  }
-  if (/cozy|cosy|nightcap|warm|wind down|relax/.test(last)) {
-    return recent
-      ? `You've been keeping company with ${recent}, I see. For a cozy night I'd set down an Old Fashioned — two ounces of bourbon, a sugar cube, two dashes of bitters, one great piece of ice, an orange peel pressed over the top. Prefer to stay clear-headed? Warm chamomile and honey does the same gentle work.`
-      : "A cozy night asks for an Old Fashioned, love — bourbon, a sugar cube, two dashes of bitters, one big piece of ice, an orange peel pressed over the glass. Or warm chamomile with honey, if you'd rather keep your head clear.";
-  }
-  return recent
-    ? `Lately it's been ${recent} in your glass. Tonight, step one door over with me — if it's coffee, a cortado; if it's wine, a dry riesling; if it's beer, a saison with a little pepper to it. Tell me the mood you're chasing and I'll pour more precisely.`
-    : "Tell me the mood you're chasing tonight — cozy, celebratory, clear-headed, or merely curious — and what you tend to like, and I'll pour you something worth writing down.";
-}
-
-/** Note shown in the UI when running on the scripted fallback (no key yet). */
-export const OFFLINE_NOTE =
-  "Add an AI key (AI_API_KEY) to wake Ninkasi fully — she's pouring from memory for now.";

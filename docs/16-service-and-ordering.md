@@ -129,7 +129,7 @@ checks each rule exists, and `npm run db:verify` (scene 21) plays a whole servic
 | Venue app sums (splits, table states, tickets, the shared bill) | `mobile-bar/lib/logic/service.dart` |
 | Website table link | `src/app/t/[code]/page.tsx`, `src/components/menu/TableMenu.tsx`, `src/components/menu/MenuView.tsx`, `src/lib/tableOrder.ts` |
 | Guest app table link | `test_m_app/lib/data/table_order.dart`, `test_m_app/lib/ui/screens/menu_screen.dart` (`TableMenuScreen`), routed in `test_m_app/lib/app.dart`; parsing in `packages/brewdiary_core/lib/menus.dart` |
-| Demo | The Amber Room's floor has seeded tabs, tickets, an order from T3, "bill please" from T2 and a waitlist |
+| Tests | `mobile-bar/test/app_test.dart` walks the floor, tabs, tickets, an order request, "bill please" and the waitlist against an in-memory stand-in |
 
 Next (PLAN M3–M6, M11, M13): table moves and merges, courses and hold/fire, sizes and modifiers, the
 tax profile, printed receipts, a cash drawer and the day close, bookings, push when food is ready, and

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../../data/backend.dart';
 import '../../data/session.dart';
 import '../theme.dart';
-import '../widgets/bits.dart';
 import '../widgets/common.dart';
 
 enum _Step { email, code, password }
@@ -90,7 +89,6 @@ class _SignInScreenState extends State<SignInScreen> {
                   const SizedBox(height: S.s),
                   Text('Run the floor and know your regulars — for bars, restaurants, cafés, clubs and shops.', style: T.bodyMuted(bd)),
                   const SizedBox(height: S.x3),
-                  const DemoNote(),
                   // A wrong code shakes the card ("no") as the reason appears under it.
                   Shake(
                     trigger: _errors,

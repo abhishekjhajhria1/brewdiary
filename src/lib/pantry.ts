@@ -1,8 +1,8 @@
 "use client";
 
 // Your bar — a private list of what you keep at home (spirits, mixers, ingredients).
-// It feeds nothing yet; it's the store Ninkasi will read later to answer "what can I
-// make tonight with what I've got?" — the shelf's forward-looking half. Per-device
+// It rides along in Ninkasi's context (Bartender.tsx → /api/bartender), so "what can I
+// make tonight with what I've got?" is answered from this shelf first. Per-device
 // localStorage, SSR-safe via useSyncExternalStore, deliberately simple and offline (it's
 // low-stakes and private); promotable to Supabase later with the lib/store.ts pattern.
 import { useSyncExternalStore } from "react";

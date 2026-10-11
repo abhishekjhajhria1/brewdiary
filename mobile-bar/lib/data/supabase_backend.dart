@@ -46,7 +46,7 @@ class SupabaseBackend implements Backend {
   AppUser? _user;
 
   @override
-  bool get isDemo => false;
+  bool get live => true;
 
   String get _me {
     final id = _c.auth.currentUser?.id;
@@ -1172,6 +1172,7 @@ class SupabaseBackend implements Backend {
     } catch (_) {
       throw const BackendError('Ninkasi is out of reach — check your connection.');
     }
+    if (res.statusCode == 503) throw const BackendError('Ninkasi isn\'t switched on yet.');
     if (res.statusCode == 429) throw const BackendError('Give her a moment with the last set of books, then ask again.');
     if (res.statusCode >= 400) throw const BackendError('Ninkasi couldn\'t read that — try again.');
     yield* res.stream.transform(utf8.decoder);
@@ -1191,7 +1192,9 @@ class SupabaseBackend implements Backend {
     } catch (_) {
       throw const BackendError('Ninkasi is out of reach.');
     }
-    if (res.statusCode >= 400) throw BackendError('Ninkasi couldn\'t answer (${res.statusCode}).');
+    if (res.statusCode == 503) throw const BackendError('Ninkasi isn\'t switched on yet.');
+    if (res.statusCode == 429) throw const BackendError('Too many questions at once — ask again in a minute.');
+    if (res.statusCode >= 400) throw const BackendError('Ninkasi couldn\'t answer just now — try again.');
     yield* res.stream.transform(utf8.decoder);
   }
 }

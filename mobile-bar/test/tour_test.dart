@@ -1,5 +1,5 @@
 // A screenshot tour for design review — NOT part of the normal suite (skipped unless
-// TOUR is defined). Renders the staff-access and rota/payroll screens on the demo venue,
+// TOUR is defined). Renders the staff-access and rota/payroll screens on the stand-in venues,
 // dark (the default):
 //   flutter test test/tour_test.dart --dart-define=TOUR=true --update-goldens
 // Output: test/tour/*.png (git-ignored).

@@ -2,7 +2,7 @@
 // manager can already see: the totals on the Numbers tab, the venue's own perk and
 // quiet-night settings, and the area's anonymous taste (5+ people per line). Never a
 // guest, a name, or what one person spent. Streams from the website (/api/venue-ai),
-// which holds the AI key; with no key there it answers from a script.
+// which holds the AI key; with no key there she says she's switched off.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -34,6 +34,7 @@ class _NinkasiScreenState extends State<NinkasiScreen> {
   final _input = TextEditingController();
   final List<Map<String, String>> _messages = [];
   bool _busy = false;
+  String? _error; // why she couldn't answer — never shown as her words
   List<PerkTier> _perks = const [];
   List<AreaTrend> _area = const [];
 
@@ -101,6 +102,7 @@ class _NinkasiScreenState extends State<NinkasiScreen> {
         ..addAll(sent)
         ..add({'role': 'assistant', 'content': ''});
       _busy = true;
+      _error = null;
     });
     var acc = '';
     try {
@@ -110,7 +112,17 @@ class _NinkasiScreenState extends State<NinkasiScreen> {
         setState(() => _messages[_messages.length - 1] = {'role': 'assistant', 'content': acc});
       }
     } on BackendError catch (e) {
-      if (mounted) setState(() => _messages[_messages.length - 1] = {'role': 'assistant', 'content': e.message});
+      // Off or out of reach: take back the empty turn (and the question) and say why.
+      if (mounted) {
+        setState(() {
+          _messages.removeLast();
+          if (question != null) {
+            _messages.removeLast();
+            if (_input.text.isEmpty) _input.text = question;
+          }
+          _error = e.message;
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -144,6 +156,7 @@ class _NinkasiScreenState extends State<NinkasiScreen> {
                         child: Text(m['content']!.isEmpty ? '…' : m['content']!, style: T.serif(bd, size: 18, height: 1.45)),
                       ),
               ),
+            if (_error != null) ErrorLine(_error!, style: T.sans(bd, size: 14, color: bd.accentText), padding: const EdgeInsets.only(bottom: S.m)),
             if (!_busy && _messages.length <= 1)
               Wrap(spacing: S.s, runSpacing: S.s, children: [for (final q in _starters) BdChip(q, onTap: () => _ask(q))]),
             const SizedBox(height: S.l),

@@ -34,7 +34,6 @@ class StaffHistoryScreen extends StatelessWidget {
           tabBar: false,
           onRefresh: () async => staffRev.bump(),
           children: [
-            const DemoNote(),
             Loader<List<StaffEvent>>(
               load: () => Backend.i.staffHistory(venue.id, userId: userId),
               refresh: staffRev,

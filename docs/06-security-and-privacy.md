@@ -96,8 +96,8 @@ check we did it right. Each item says *what the risk is* and *how we handle it*.
   training is:
   - **Pseudonymous** — a salted hash stands in for the user, never their real id/name/email/photos, and
     it can't be reversed without a secret salt kept only on the server.
-  - **Consented + real-only** — saved only when "Help train Ninkasi" is on, and never for scripted
-    fallback replies.
+  - **Consented + real-only** — saved only when "Help train Ninkasi" is on, and only for real model
+    replies (there are no scripted ones).
   - **Server-only** — the browser has no key for this database; only our server writes to it.
   - **Deletable** — "clear Ninkasi data" calls an authenticated server route that erases that user's
     rows from the AI database too.

@@ -156,9 +156,9 @@ Variables), never in the app:
 | `AI_BASE_URL` | an OpenAI-compatible endpoint (default: Groq) |
 | `AI_MODEL` | e.g. `llama-3.3-70b-versatile` |
 
-No redeploy of the app is needed: the same app starts getting live replies. Without a key, or when
-the phone is offline, Ninkasi answers from her scripted fallback and the app says she's "pouring from
-memory". Test the route from a terminal:
+No redeploy of the app is needed: the same app starts getting live replies. Without a key the route
+answers 503 and the app says "Ninkasi isn't switched on yet"; offline it says she can't be reached and
+hands the question back. She never answers from a script. Test the route from a terminal:
 
 ```bash
 curl -N -X POST https://bwdy.site/api/bartender \

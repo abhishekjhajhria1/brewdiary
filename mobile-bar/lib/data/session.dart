@@ -77,9 +77,9 @@ class Session extends ChangeNotifier with WidgetsBindingObserver {
       WidgetsBinding.instance.addObserver(this);
       _observing = true;
     }
-    // The demo lives on the phone and changes only when you change it: no clock needed
-    // (and none left running under the widget tests).
-    if (!Backend.i.isDemo) {
+    // Re-check on a clock only when someone else can change things (no timer is left
+    // running under the widget tests' in-memory stand-in).
+    if (Backend.i.live) {
       _timer?.cancel();
       _timer = Timer.periodic(recheckEvery, (_) {
         if (signedIn) unawaited(refreshVenues());

@@ -940,7 +940,7 @@ class _CodeSheetState extends State<_CodeSheet> {
   }
 }
 
-/// Export/import, the demo, and the rights: a copy of everything, or deletion.
+/// Export/import and the rights: a copy of everything, or deletion.
 class _DataGroup extends StatefulWidget {
   final bool cloud;
   const _DataGroup({required this.cloud});
@@ -1061,10 +1061,6 @@ class _DataGroupState extends State<_DataGroup> {
         GroupTile(icon: Ph.export, title: 'Back up my diary', subtitle: 'A file you can import again', onTap: _exportDiary),
         GroupTile(icon: Ph.fileArrowUp, title: 'Import a diary file', onTap: _import),
         if (widget.cloud) GroupTile(icon: Ph.downloadSimple, title: 'Everything as a data file', subtitle: 'Machine-readable (JSON), for moving it elsewhere', onTap: _busy ? null : _exportEverything),
-        if (!widget.cloud)
-          GroupTile(icon: Ph.arrowsClockwise, title: 'Reseed the demo month', onTap: () async {
-            if (await confirm(context, title: 'Reseed the demo?', body: 'A sample month replaces what you see; your own entries are kept on this phone.', yes: 'Reseed')) entryStore.reseed();
-          }),
         GroupTile(icon: Ph.eraser, title: 'Start a fresh diary', subtitle: 'Everything is kept — you just see an empty diary', onTap: _busy ? null : _freshDiary),
         if (widget.cloud) GroupTile(icon: Ph.trash, title: 'Delete my account', destructive: true, onTap: _busy ? null : _deleteAccount),
       ],

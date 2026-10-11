@@ -10,7 +10,7 @@ Terms you'll meet are in the [glossary](02-glossary.md); the "why" behind all th
 ---
 
 ## Phase A — Turn Ninkasi's real brain on (≈ 10 minutes)
-Right now Ninkasi answers with built-in scripted lines. To give her a real AI brain, plug in a provider.
+Until a key is set, Ninkasi is switched off: the apps and the site say "Ninkasi isn't switched on yet" (there are no scripted stand-in replies). To switch her on, plug in a provider.
 We use **Groq** (cheap, fast, generous free tier to start).
 
 1. **Get a Groq key.** Go to **https://console.groq.com**, sign up, open **API Keys**, create one, and
@@ -24,8 +24,8 @@ We use **Groq** (cheap, fast, generous free tier to start).
    (The last two are already the defaults; you mainly need to fill in `AI_API_KEY`.)
 3. **Restart the app** so it reads the new setting: stop it (`Ctrl + C`) and run `npm run dev` again.
 4. **Test it.** Open `http://localhost:3000/bartender` and ask "what should I pour tonight?" You should
-   get a fresh, personalized reply (not the same scripted line every time). If the little "add an AI
-   key" note is gone, she's live.
+   get a fresh, personalized reply. If you still see "Ninkasi isn't switched on yet", the key isn't
+   being read — check the variable name and restart.
 
 **Safety is already handled for you:** the code caps chats at ~20 per minute per person and rejects
 oversized messages, so this key can't be abused into a giant bill (see

@@ -127,20 +127,3 @@ class QrBox extends StatelessWidget {
       );
 }
 
-/// The demo ribbon: honest about the numbers being made up.
-class DemoNote extends StatelessWidget {
-  const DemoNote({super.key});
-  @override
-  Widget build(BuildContext context) {
-    if (!Backend.i.isDemo) return const SizedBox.shrink();
-    final bd = context.bd;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: S.l),
-      child: Row(children: [
-        Icon(Ph.info, size: 16, color: bd.faint),
-        const SizedBox(width: 6),
-        Expanded(child: Text('Demo venue — made-up data that never leaves this phone.', style: T.caption(bd))),
-      ]),
-    );
-  }
-}

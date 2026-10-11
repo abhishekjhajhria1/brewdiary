@@ -41,8 +41,8 @@ template to copy:
 ```
 cp .env.example .env.local
 ```
-Then open `.env.local` in any text editor. For **just looking at the app**, you can leave the AI key
-blank — Ninkasi will use her charming built-in scripted replies. To connect the **real database** and
+Then open `.env.local` in any text editor. You can leave the AI key blank — Ninkasi then says she
+isn't switched on yet (there are no scripted replies). To connect the **real database** and
 the **real AI**, fill in the values as described in [08 — Founder playbook](08-founder-playbook.md).
 (The current project already has a working `.env.local` for its Supabase database.)
 
@@ -85,8 +85,7 @@ the core logic still behaves correctly. If you change anything in `src/lib/`, ru
 ## Where the different pieces run
 - **The app you see** → your browser, at `localhost:3000`.
 - **The database** → Supabase, in the cloud (already set up for this project).
-- **The AI** → a provider (Groq) in the cloud, *once you add a key*; otherwise scripted replies run
-  locally.
+- **The AI** → a provider (Groq) in the cloud, *once you add a key*; until then Ninkasi is switched off.
 - **The AI training/model workshop** → separate, offline, in the `ninkasi-ai/` folder, and it needs
   Python (not Node). See [08 — Founder playbook](08-founder-playbook.md).
 

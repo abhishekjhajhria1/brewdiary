@@ -2,7 +2,6 @@ import OpenAI from "openai";
 import {
   ADVISOR_SYSTEM_PROMPT,
   summarizeInsights,
-  fallbackAdvice,
   type InsightBrief,
   type ChatMessage,
 } from "@/lib/venueAdvisor";
@@ -89,25 +88,10 @@ function coerceBrief(raw: unknown): InsightBrief | null {
   };
 }
 
-function streamText(text: string): Response {
-  const encoder = new TextEncoder();
-  const words = text.split(/(\s+)/);
-  const body = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      for (const w of words) {
-        controller.enqueue(encoder.encode(w));
-        await new Promise((r) => setTimeout(r, 12));
-      }
-      controller.close();
-    },
-  });
-  return new Response(body, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-store",
-      "x-advisor-mode": "fallback",
-    },
-  });
+/** Ninkasi can't answer: say so with a status the apps understand (503 = not switched
+ *  on yet, 502 = the model didn't answer). She never answers from a script. */
+function unavailable(status: 502 | 503, message: string): Response {
+  return new Response(message, { status, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
 export async function POST(req: Request) {
@@ -140,7 +124,7 @@ export async function POST(req: Request) {
   if (totalChars > MAX_TOTAL_CHARS) return new Response("Message too long", { status: 413 });
 
   const key = process.env.AI_API_KEY;
-  if (!key) return streamText(fallbackAdvice(brief));
+  if (!key) return unavailable(503, "Ninkasi isn't switched on yet.");
 
   // No follow-up question means "read my numbers" — the opening briefing.
   const turns: ChatMessage[] =
@@ -179,11 +163,10 @@ export async function POST(req: Request) {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-store",
-        "x-advisor-mode": "live",
         "x-advisor-model": MODEL,
       },
     });
   } catch {
-    return streamText(fallbackAdvice(brief));
+    return unavailable(502, "Ninkasi couldn't answer just now — try again.");
   }
 }

@@ -1,9 +1,8 @@
 // Everything the venue app asks of the server, in one place.
 //
-// Two implementations: SupabaseBackend talks to the real database (RLS + server
-// functions decide what each person may do), DemoBackend is a seeded venue that lives
-// on the device. Screens only ever see this interface, so the demo, the tests and the
-// real thing run the same screens.
+// The app runs on SupabaseBackend: the real database, where RLS and server functions
+// decide what each person may do. Screens only ever see this interface, so the widget
+// tests can run the same screens against an in-memory stand-in (test/support).
 import 'models.dart';
 import '../logic/area.dart' show HeatRow;
 import '../logic/host_brief.dart' show HostBrief;
@@ -27,8 +26,9 @@ abstract class Backend {
   static late Backend i;
   static void use(Backend b) => i = b;
 
-  /// True for the seeded demo venue (nothing leaves the phone).
-  bool get isDemo;
+  /// True when other phones can change the data under us (the real server), so the
+  /// session re-checks it on a clock. An in-memory stand-in returns false.
+  bool get live;
 
   // ── auth ──────────────────────────────────────────────────────────────────
   AppUser? get currentUser;

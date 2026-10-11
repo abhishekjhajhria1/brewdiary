@@ -3,9 +3,9 @@
 // The trust card in You → settings. Shows the person their own trust level and how it's
 // built — a coarse anti-bot standing (are you a real, settled human), NOT a rating of you
 // as a person and NOT a public ranking. It grows from tenure, real diary use, and friend
-// vouches. (The on-device camera check is off for now.) Photo-ID verification is the paid
-// void, shown as "coming soon" rather than a dead button.
-import { useMyTrust, trustScore, TRUST_LABEL, identityVerificationAvailable, type TrustLevel } from "@/lib/verify";
+// vouches. (The on-device camera check is off for now.) Nothing here advertises a check
+// that doesn't exist yet.
+import { useMyTrust, trustScore, TRUST_LABEL, type TrustLevel } from "@/lib/verify";
 import { useMyVouchCount } from "@/lib/vouch";
 import { useProfile } from "@/lib/profile";
 
@@ -69,11 +69,6 @@ export function TrustCard() {
         </p>
       )}
 
-      {/* the paid-vendor void — a real row, honestly "later", never a dead button */}
-      <p className="mt-3 flex items-center justify-between gap-3 text-xs text-faint">
-        <span>Photo-ID verification</span>
-        <span>{identityVerificationAvailable ? "Available" : "Coming soon"}</span>
-      </p>
     </div>
   );
 }

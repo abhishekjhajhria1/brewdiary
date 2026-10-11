@@ -44,7 +44,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
   final _focus = FocusNode();
   final _scroll = ScrollController();
   bool _busy = false;
-  bool _offline = false;
+  String? _unavailable; // why she couldn't answer the last question
 
   /// How many messages were already there when this conversation was opened: those
   /// are simply shown; anything said after rises in.
@@ -85,7 +85,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
     setState(() {
       _messages.clear();
       _seen = 0;
-      _offline = false;
+      _unavailable = null;
       _under = false;
     });
   }
@@ -97,7 +97,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
         ..clear()
         ..addAll(c.messages);
       _seen = _messages.length;
-      _offline = false;
+      _unavailable = null;
     });
     _toBottom();
   }
@@ -129,6 +129,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
         ..add(const ChatMessage(ChatRole.assistant, ''));
       _input.clear();
       _busy = true;
+      _unavailable = null;
     });
     _toBottom();
 
@@ -141,23 +142,24 @@ class _BartenderScreenState extends State<BartenderScreen> {
       homeBar: PantryStore.instance.items,
       palate: [for (final n in palate(entries).take(4)) n.note],
     );
-    final stream = BartenderApi.ask(history, ctx, collect: TrainingStore.instance.collecting);
-    stream.mode.then((m) {
-      if (mounted) setState(() => _offline = m != 'live');
-    });
     var acc = '';
     try {
-      await for (final t in stream.text) {
+      await for (final t in BartenderApi.ask(history, ctx, collect: TrainingStore.instance.collecting)) {
         acc = t;
         if (!mounted) return;
         setState(() => _messages[_messages.length - 1] = ChatMessage(ChatRole.assistant, acc));
       }
       TrainingStore.instance.log(user: content, assistant: acc);
       await ChatStore.instance.save([...history, ChatMessage(ChatRole.assistant, acc)]);
-    } catch (_) {
+    } catch (e) {
+      // She's off or out of reach: say so, and hand the question back to ask again.
+      // Nothing is saved — a chat only ever holds what she really said.
       if (mounted) {
-        Haptics.error();
-        setState(() => _messages[_messages.length - 1] = const ChatMessage(ChatRole.assistant, 'The bar went quiet for a moment — ask me again, love.'));
+        setState(() {
+          _messages.removeRange(_messages.length - 2, _messages.length);
+          if (_input.text.isEmpty) _input.text = content;
+          _unavailable = e is NinkasiUnavailable ? e.message : "Ninkasi couldn't answer just now — ask again.";
+        });
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -210,7 +212,7 @@ class _BartenderScreenState extends State<BartenderScreen> {
           ),
         ]),
       ),
-      if (_offline) Padding(padding: const EdgeInsets.fromLTRB(S.gutter, S.xs, S.gutter, S.xs), child: Text(offlineNote, textAlign: TextAlign.center, style: T.caption(bd))),
+      if (_unavailable != null) ErrorLine(_unavailable!, style: T.caption(bd, color: bd.accentText), padding: const EdgeInsets.fromLTRB(S.gutter, S.xs, S.gutter, S.xs)),
       AnimatedPadding(
         duration: Motion.fast,
         curve: Motion.curve,

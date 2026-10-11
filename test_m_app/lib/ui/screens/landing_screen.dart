@@ -4,7 +4,6 @@
 // age gate, which checks the legal age WHERE YOU ARE.
 import 'package:flutter/material.dart';
 
-import '../../config.dart';
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
 import 'package:brewdiary_core/jurisdiction.dart';
@@ -72,7 +71,9 @@ class _LandingScreenState extends State<LandingScreen> {
               const SizedBox(height: S.m),
               Text('Every night you log fills a square — dry nights too — so a month is one glance, not a spreadsheet. Keep it private, or pour with friends.', style: T.bodyMuted(bd)),
               const SizedBox(height: S.x3),
-              const YearPreview(),
+              // The real year, from what's been logged on this phone — empty until the
+              // first square, never a made-up pattern.
+              YearMosaic(year: now.year, counts: countsByDate(entries), onSelect: _open),
               const SectionHeader('Try it — tap a day'),
               MonthCalendar(
                 year: _y,
@@ -124,7 +125,7 @@ class _LandingScreenState extends State<LandingScreen> {
                   Text(
                     entries.isNotEmpty
                         ? 'Your entries live on this device until you make a diary. Sign up and they come with you — phone, laptop, next year.'
-                        : 'A diary takes an email and a password. Free, no card, and the first square is one tap away.',
+                        : 'A diary takes just your email — we send a code, no password to remember. Free, no card, and the first square is one tap away.',
                     style: T.bodyMuted(bd),
                   ),
                   const SizedBox(height: S.xxl),
@@ -136,10 +137,6 @@ class _LandingScreenState extends State<LandingScreen> {
                   Center(child: TextAction('I already have one — sign in', onTap: () => showAuthSheet(context, signup: false))),
                 ]),
               ),
-              if (!Config.cloud) ...[
-                const SizedBox(height: S.l),
-                Text('Running without a cloud backend — "Create a diary" keeps everything on this phone.', textAlign: TextAlign.center, style: T.caption(bd)),
-              ],
             ]);
           },
         ),
@@ -192,8 +189,8 @@ class _AuthSheetState extends State<_AuthSheet> {
   String? _error;
   bool _confirm = false;
   bool _resetSent = false;
-  // Email-code sign-in (cloud builds): no password, a 6-digit code instead.
-  bool _useCode = Config.cloud; // the emailed code first; a password is the other way
+  // Email-code sign-in: no password, a 6-digit code instead.
+  bool _useCode = true; // the emailed code first; a password is the other way
   bool _codeSent = false;
   final _code = TextEditingController();
 
@@ -325,19 +322,16 @@ class _AuthSheetState extends State<_AuthSheet> {
         const SizedBox(height: S.s),
         Text(_signup ? (_useCode ? "Save what you logged and start a streak. Your email and the code we send — that's it." : "Save what you logged and start a streak. Email and a password — that's it.") : 'Pick up where you left off.', style: T.bodyMuted(bd)),
         const SizedBox(height: S.xl),
-        if (Config.cloud) ...[
-          Segmented<bool>(
-            options: const [(true, 'Email me a code'), (false, 'Password')],
-            value: _useCode,
-            onChanged: (v) => setState(() {
-              _useCode = v;
-              _codeSent = false;
-              _error = null;
-            }),
-          ),
-          const SizedBox(height: S.xl),
-        ] else
-          const SizedBox(height: S.s),
+        Segmented<bool>(
+          options: const [(true, 'Email me a code'), (false, 'Password')],
+          value: _useCode,
+          onChanged: (v) => setState(() {
+            _useCode = v;
+            _codeSent = false;
+            _error = null;
+          }),
+        ),
+        const SizedBox(height: S.xl),
         if (_signup) ...[
           LineField(controller: _name, label: 'Name', hint: 'What should we call you?', caps: TextCapitalization.words, action: TextInputAction.next, autofill: const [AutofillHints.name], onChanged: (_) => setState(() {})),
           const SizedBox(height: S.xl),

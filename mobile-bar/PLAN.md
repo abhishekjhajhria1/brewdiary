@@ -1,6 +1,6 @@
 # mobile-bar — the venue staff app: everything that has to be built
 
-**Status (2026-09-30): R1 built, R1.5 under way.** M0–M2 are in this folder (the app, its demo venue and
+**Status (2026-09-30): R1 built, R1.5 under way.** M0–M2 are in this folder (the app, its test stand-in and
 tests) and in `supabase/044`–`047` (roles, capability gates, every kind of shop); the area heat map is in
 `048` and `docs/13`; outside signals `049`; the counter `050`; service `051`; the door `052`; the team —
 adding employees with the owner's code, pausing access, history, the time clock — `053` and `docs/17`.
@@ -327,13 +327,13 @@ That is the lawful version of the question (M12.6).
 - [x] **M0.1** Scaffold the Flutter app in `mobile-bar/` (Android + iOS) with the same toolchain and lints as `test_m_app`.
 - [x] **M0.2** App id, name and icons (D17). Android 12+ / iOS 17+ like the user app; phones portrait, tablets rotate.
 - [x] **M0.3** Config like `test_m_app/lib/config.dart`: `--dart-define-from-file=env.json`, anon key only, `SITE_URL` for server routes, `env.example.json`, `env.json` git-ignored.
-- [x] **M0.4** Demo mode when there's no env: a seeded, clearly labelled demo venue for screenshots, golden tests and demos. (No offline-only production mode: a venue app without the database isn't useful.)
+- [x] **M0.4** No demo mode: without env the app opens a "not connected yet" page. The seeded venue lives only in the tests (`test/support/fake_backend.dart`) for screenshots and golden tests. (No offline-only production mode: a venue app without the database isn't useful.)
 - [x] **M0.5** Shared core (D1): `packages/brewdiary_core` — dates, money (`₹1,23,456`; currency from the venue), the jurisdiction mirror, drink canonicalisation, menus — used by both apps, with the parity tests.
 - [~] **M0.6** Theme: reuse the liquid-glass tokens (`test_m_app/lib/ui/theme.dart`), fonts (Hanken Grotesk, Newsreader), Phosphor icons. Add staff tokens: status colours with shapes and labels, a station type scale, and a reduced-blur mode for cheap tablets. *(Done: tokens, fonts, icons, status tones. Left: station type scale, reduced blur.)*
-- [~] **M0.7** Data plumbing like `test_m_app/lib/data/base.dart` (`db`, `Rev`, `rows()`), plus a realtime helper and the outbox (M13.3). *(Done: `Backend` with Supabase and demo implementations, `Rev` signals. Left: realtime, outbox.)*
+- [~] **M0.7** Data plumbing like `test_m_app/lib/data/base.dart` (`db`, `Rev`, `rows()`), plus a realtime helper and the outbox (M13.3). *(Done: `Backend` with the Supabase implementation and an in-memory test stand-in, `Rev` signals. Left: realtime, outbox.)*
 - [~] **M0.8** Shell: role-based navigation; phone tabs and tablet station layouts; states for loading, empty, offline, "couldn't reach brewdiary" with retry, and "your role can't do this". *(Done: phone tabs by capability, loading/empty/retry. Left: tablet station layouts, offline state.)*
 - [ ] **M0.9** Translation scaffolding (English first); number and date formats from the venue's country.
-- [ ] **M0.10** Crash reporting with no personal data (choose a provider); off in demo mode.
+- [ ] **M0.10** Crash reporting with no personal data (choose a provider); off in tests.
 - [x] **M0.11** CI: `flutter analyze` + `flutter test` jobs for `mobile-bar` and `test_m_app` (fixes 1.4 #8).
 - [x] **M0.12** `mobile-bar/README.md`: run, build, test.
 

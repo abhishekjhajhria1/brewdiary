@@ -1,7 +1,7 @@
 // Finding a guest without searching everyone (056): who opened the menu tonight,
 // with the taste they shared, and the 6-letter code from their guest card.
 import 'package:brewdiary_bar/data/backend.dart';
-import 'package:brewdiary_bar/data/demo_backend.dart';
+import 'support/fake_backend.dart';
 import 'package:brewdiary_bar/data/models.dart';
 import 'package:brewdiary_bar/data/session.dart';
 import 'package:brewdiary_bar/ui/theme.dart';
@@ -42,7 +42,7 @@ void main() {
     expect(picked, isNull);
     expect(find.textContaining('No guest with that code'), findsOneWidget);
 
-    await t.enterText(find.byType(TextField), DemoBackend.demoGuestCode.toLowerCase());
+    await t.enterText(find.byType(TextField), FakeBackend.demoGuestCode.toLowerCase());
     await t.pumpAndSettle();
     await t.tap(find.text('Find'));
     await t.pumpAndSettle();

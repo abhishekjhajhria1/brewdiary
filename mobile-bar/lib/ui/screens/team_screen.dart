@@ -48,7 +48,6 @@ class TeamScreen extends StatelessWidget {
           tabBar: false,
           onRefresh: () async => staffRev.bump(),
           children: [
-            const DemoNote(),
             if (manage) ...[
               BdButton('Add an employee', icon: Ph.userPlus, onTap: () => addEmployeeSheet(context, venue)),
               const SizedBox(height: S.s),
@@ -393,7 +392,7 @@ class TeamScreen extends StatelessWidget {
 
 String _hm(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-/// "Priya (you)" — without doubling a name that already says so ("You (demo)").
+/// "Priya (you)" — without doubling a name that already says so ("You").
 String youLabel(String name) => name.toLowerCase().startsWith('you') ? name : '$name (you)';
 
 /// Add an employee: their details and the role, then their code — shown once.

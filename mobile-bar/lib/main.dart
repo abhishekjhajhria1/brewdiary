@@ -8,22 +8,24 @@ import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import 'app.dart';
 import 'config.dart';
 import 'data/backend.dart';
-import 'data/demo_backend.dart';
 import 'data/prefs.dart';
 import 'data/session.dart';
 import 'data/settings.dart';
 import 'data/supabase_backend.dart';
+import 'ui/screens/not_connected_screen.dart';
 import 'ui/widgets/motion.dart' show Haptics;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Prefs.init();
-  if (Config.cloud) {
-    await Supabase.initialize(url: Config.supabaseUrl, publishableKey: Config.supabaseAnonKey);
-    Backend.use(SupabaseBackend());
-  } else {
-    Backend.use(DemoBackend.seeded());
+  // The app only ever runs against the real server. Built without its address, it says
+  // so plainly instead of pretending.
+  if (!Config.cloud) {
+    runApp(const NotConnectedApp());
+    return;
   }
+  await Supabase.initialize(url: Config.supabaseUrl, publishableKey: Config.supabaseAnonKey);
+  Backend.use(SupabaseBackend());
   await Session.instance.restore();
   // Haptics follow the switch on More, from the first frame on.
   void haptics() => Haptics.enabled = HapticsStore.instance.on;

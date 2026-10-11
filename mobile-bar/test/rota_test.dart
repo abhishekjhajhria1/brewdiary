@@ -1,6 +1,6 @@
 // The rota, time off, breaks, timesheets and payroll (supabase/054): the words and rules
 // (held against the migration's own text where the database decides), then the flows on the
-// demo venues with the real screens — an owner planning and approving, a server at Café
+// stand-in venues with the real screens — an owner planning and approving, a server at Café
 // Nilgiri asking for a shift and giving one away, a break, a correction, and payroll.
 import 'dart:io';
 

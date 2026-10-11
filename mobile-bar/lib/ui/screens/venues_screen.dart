@@ -44,7 +44,6 @@ class VenuesScreen extends StatelessWidget {
           ],
           onRefresh: () => s.refreshVenues(),
           children: [
-            const DemoNote(),
             if (s.error != null) ErrorLine(s.error!, padding: const EdgeInsets.only(bottom: S.l), style: T.sans(bd, size: 14, color: bd.accentText)),
             if (s.enrolments.isNotEmpty) ...[
               Text('A code to type'.toUpperCase(), style: T.section(bd)),

@@ -15,9 +15,11 @@ cp env.example.json env.json          # fill in your Supabase URL + anon key
 flutter run --dart-define-from-file=env.json
 ```
 
-With no `env.json` the app runs in **local mode**, like the website without its env:
-the diary lives on the phone, and the Together tab shows an introduction that says
-this build isn't connected. With `env.json`, Together switches on once you sign in.
+`env.json` is required: without it the app opens a short "not connected yet" page —
+there is no demo mode and no pretend account. Signed out, the first nights someone
+logs stay on the phone and move into their diary when they make one; Together
+switches on once they sign in. The widget tests run without a server and use test
+seams (`auth.debugSignIn`, `entryStore.debugUseLocal`, `test/support/seed.dart`).
 
 ## Devices
 
@@ -95,7 +97,7 @@ states that break layouts: scrolled, keyboard up, small phone, large text, table
 | Parties + party room (RSVP, invite, recap, points, vibe, check-in, house perk, thank the bar, screen consent) | ✅ |
 | Split (balances, add expense, settle up) | ✅ |
 | Discover (compass, near-me, venues on brewdiary, area + global trends) | ✅ |
-| Ninkasi (streamed from `/api/bartender`, scripted fallback offline) | ✅ |
+| Ninkasi (streamed from `/api/bartender`; an honest "switched off / can't be reached" line otherwise) | ✅ |
 | You: stats, year, to-try, words, photos, shelf, pantry, journey, all settings | ✅ |
 | Handle re-roll, trust standing, profile privacy, blocks, venue notes | ✅ |
 | Data export + real account deletion | ✅ |

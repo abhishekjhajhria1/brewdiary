@@ -1,7 +1,8 @@
 // Ninkasi for hosts — the shift companion for a venue's team (/api/host-ai). The twin of
-// mobile-bar/lib/logic/host_brief.dart: the same brief, the same briefing rules, the same
-// scripted answers when the AI is off. tests/hostAdvisor.test.ts and the Dart logic tests
-// check the same cases.
+// mobile-bar/lib/logic/host_brief.dart: the same brief and the same briefing rules (the
+// short "this shift" list, worked out from the counts — not an AI pretending). Questions
+// go to the model; with no AI key the route says she's off. tests/hostAdvisor.test.ts
+// and the Dart logic tests check the same cases.
 //
 // The brief holds only what the person's own role can already see, and only counts:
 // never a guest's name, never what one person had or spent. So the model stays a
@@ -138,31 +139,6 @@ export function hostBriefing(b: HostBrief): string[] {
     lines.push("Water is free and on every table. If someone's had enough, stop serving alcohol, offer water and food, and get the manager.");
   }
   return lines;
-}
-
-/** Scripted answers for when the AI is off — the same as hostFallbackAnswer() in Dart. */
-export function hostFallbackAnswer(b: HostBrief, question: string): string {
-  const q = question.toLowerCase();
-  if (/enough|drunk|cut off/.test(q)) {
-    return "Stop serving them alcohol — calmly, and without an audience. Offer water and something to eat, bring in the manager, and help them get home safely (a cab, a friend). Never argue, and never make it about them as a person. Nothing goes on their card.";
-  }
-  if (/alcohol-free|zero|mocktail/.test(q)) {
-    return b.alcoholFree.length
-      ? `Tonight: ${list(b.alcoholFree)}. Mention one with every recommendation — lots of people want one and don't ask.`
-      : "There's nothing marked alcohol-free on the menu yet. Water is always free; ask a manager to add a proper zero-proof option.";
-  }
-  if (/around|event|nearby/.test(q)) {
-    const s = b.signals.filter((x) => !isDryDay(x)).slice(0, 3);
-    return s.length
-      ? s.map((x) => `${x.title}${x.startsOn ? ` (${when(b.today, x.startsOn)})` : ""}`).join(". ")
-      : "Nothing listed around you right now. Events, openings and dry days show here as they come in.";
-  }
-  if (/card|loyalty|perk|reward/.test(q)) {
-    if (!b.perks.length) return "This venue doesn't run a loyalty card yet — a manager can set one up in More › Loyalty card.";
-    const p = b.perks[0];
-    return `Each visit counts toward the card: ${p.reward} after ${p.at}. Guests see their progress in their own app; staff hand the reward over from the guest's card. It's visits that count — never how much anyone drinks.`;
-  }
-  return `I can't reach the full Ninkasi right now. Here's the briefing: ${hostBriefing(b).slice(0, 3).join(" ")}`;
 }
 
 export const HOST_SYSTEM_PROMPT = `You are Ninkasi, the calm, experienced shift companion for the team at a venue on brewdiary. You talk to one member of staff at a time; their role is given below. Answer like a good shift lead: short, practical, kind, in plain words. Two to five sentences unless asked for more.

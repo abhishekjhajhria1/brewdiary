@@ -55,7 +55,6 @@ class _TonightScreenState extends State<TonightScreen> {
       tabBar: !widget.pushed,
       onRefresh: () async => roomsRev.bump(),
       children: [
-        const DemoNote(),
         if (!widget.pushed) ShiftCard(venue: v),
         NextSteps(venue: v),
         if (!v.verified)

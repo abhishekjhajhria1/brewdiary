@@ -1,7 +1,7 @@
 "use client";
 
 // Entry store. Two modes, one API (so components never change):
-//   • logged OUT  → local mode: entries live in localStorage (the onboarding demo).
+//   • logged OUT  → local mode: entries live in localStorage until you make a diary.
 //   • logged IN   → remote mode: entries live in Supabase, scoped to the user.
 // On sign-in, any local entries are migrated up (preserving the first-logged drink).
 // Writes are OPTIMISTIC: the in-memory cache updates immediately (snappy darken),
@@ -11,7 +11,6 @@
 import { useSyncExternalStore } from "react";
 import type { Entry } from "./types";
 import { addDays, toKey } from "./date";
-import { seedEntries } from "./seed";
 import { supabase } from "./supabase";
 import { getAuthState, subscribeAuth, type AuthState } from "./profile";
 
@@ -316,14 +315,6 @@ export function resetAll() {
     setCache(EMPTY);
     writeLocal(EMPTY);
   }
-}
-
-/** Wipe and re-seed the demo history (for the current diary). */
-export function reseed() {
-  const seeded = seedEntries();
-  if (mode === "remote") return; // the demo month is for signed-out diaries only
-  setCache(seeded);
-  writeLocal(seeded);
 }
 
 /** Add a diary file's entries (used by import) — nothing is removed (055): an entry
