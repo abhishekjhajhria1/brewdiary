@@ -67,10 +67,12 @@ abstract final class Ph {
   static const eyeSlash = IconData(0xe224, fontFamily: 'Phosphor');
   static const fileArrowDown = IconData(0xe232, fontFamily: 'Phosphor');
   static const fileArrowUp = IconData(0xe61e, fontFamily: 'Phosphor');
+  static const filePdf = IconData(0xe702, fontFamily: 'Phosphor');
   static const fileText = IconData(0xe23a, fontFamily: 'Phosphor');
   static const fire = IconData(0xe242, fontFamily: 'Phosphor');
   static const flag = IconData(0xe244, fontFamily: 'Phosphor');
   static const flame = IconData(0xe624, fontFamily: 'Phosphor');
+  static const gauge = IconData(0xe628, fontFamily: 'Phosphor');
   static const gearSix = IconData(0xe272, fontFamily: 'Phosphor');
   static const gift = IconData(0xe276, fontFamily: 'Phosphor');
   static const globe = IconData(0xe288, fontFamily: 'Phosphor');

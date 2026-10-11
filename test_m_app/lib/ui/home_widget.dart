@@ -89,6 +89,18 @@ class HomeWidget {
     }
   }
 
+  /// Ask Android to put a widget on the home screen ([which]: mosaic, quick, split).
+  /// False when the launcher can't — then the person adds it from the widget list.
+  static Future<bool> pin(String which) async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      return await _channel.invokeMethod<bool>('pin', {'which': which}) ?? false;
+    } catch (e) {
+      logDebug(e);
+      return false;
+    }
+  }
+
   static String? _lastSplit;
 
   /// The Split widget: called when the Split page has your balances. Redraws

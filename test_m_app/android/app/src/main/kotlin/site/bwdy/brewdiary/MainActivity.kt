@@ -1,5 +1,7 @@
 package site.bwdy.brewdiary
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -21,6 +23,22 @@ class MainActivity : FlutterFragmentActivity() {
                 "split" -> {
                     SplitWidget.refreshAll(applicationContext)
                     result.success(null)
+                }
+                // "Add to home screen" from the app: Android shows its own confirm sheet
+                // and places the widget. False when the launcher can't pin widgets.
+                "pin" -> {
+                    val cls = when (call.argument<String>("which")) {
+                        "mosaic" -> MosaicWidget::class.java
+                        "quick" -> QuickLogWidget::class.java
+                        "split" -> SplitWidget::class.java
+                        else -> null
+                    }
+                    val manager = AppWidgetManager.getInstance(applicationContext)
+                    if (cls != null && manager.isRequestPinAppWidgetSupported) {
+                        result.success(manager.requestPinAppWidget(ComponentName(applicationContext, cls), null, null))
+                    } else {
+                        result.success(false)
+                    }
                 }
                 else -> result.notImplemented()
             }

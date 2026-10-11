@@ -2,6 +2,9 @@
 // phone: the month grid (or year mosaic) comes first so the calendar is the first
 // thing you see, then your streak, a gentle "looking back" memory, today's extra
 // counters, and a Ninkasi nudge. Month/Year and Discover live in the top bar.
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'package:brewdiary_core/date.dart';
@@ -21,6 +24,7 @@ import '../widgets/page.dart';
 import '../widgets/game.dart';
 import '../widgets/passport.dart';
 import 'discover_screen.dart';
+import 'guide_screen.dart';
 import 'morning_after.dart';
 import 'taste_card.dart';
 import 'tonight_sheet.dart';
@@ -144,6 +148,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       if (entries.isEmpty) const EmptyNote('Tap a day to log your first drink — a coffee counts.', icon: Ph.handTap) else _Glance(stats: s, nights: loggedDates(entries).length),
       _PassportStrip(year: month ? _y : now.year, month0: month ? _m : null),
       const SizedBox(height: S.xxl),
+      const _FirstSteps(),
       if (morningAfterWorthOffering(now)) ...[
         Glass(
           onTap: () => showMorningAfter(context),
@@ -406,3 +411,62 @@ class _DayCounter extends StatelessWidget {
     );
   }
 }
+
+/// New here? Three things worth knowing, once — then it folds away for good.
+class _FirstSteps extends StatefulWidget {
+  const _FirstSteps();
+  @override
+  State<_FirstSteps> createState() => _FirstStepsState();
+}
+
+class _FirstStepsState extends State<_FirstSteps> {
+  static const _key = 'brewdiary.firststeps.v1';
+  bool _gone = Prefs.getString(_key) != null;
+
+  void _dismiss() {
+    Prefs.setString(_key, 'done');
+    setState(() => _gone = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final android = !kIsWeb && Platform.isAndroid;
+    Widget step(IconData icon, String text) => Padding(
+          padding: const EdgeInsets.only(top: S.s),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(icon, size: 18, color: bd.accentText),
+            const SizedBox(width: S.s),
+            Expanded(child: Text(text, style: T.body(bd))),
+          ]),
+        );
+    return Appear(
+      visible: !_gone,
+      child: _gone
+          ? const SizedBox(width: double.infinity)
+          : Padding(
+              padding: const EdgeInsets.only(bottom: S.xl),
+              child: Glass(
+                padding: const EdgeInsets.fromLTRB(S.l, S.m, S.xs, S.m),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Row(children: [
+                    Expanded(child: Text('NEW HERE?', style: T.label(bd, color: bd.accentText))),
+                    IconBtn(Ph.x, tooltip: 'Got it — hide this', size: 18, color: bd.faint, onTap: _dismiss),
+                  ]),
+                  Padding(
+                    padding: const EdgeInsets.only(right: S.m),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      step(Ph.handTap, 'Tap a day to log a drink — a coffee counts, a dry day keeps your streak.'),
+                      step(Ph.shareNetwork, 'Open a day, then "Share this night": your photo with one small sticker.'),
+                      if (android) step(Ph.squaresFour, 'Put this month on your home screen — You → Settings → Home screen.'),
+                    ]),
+                  ),
+                  const SizedBox(height: S.xs),
+                  Align(alignment: Alignment.centerLeft, child: TextAction("See what's in brewdiary", icon: Ph.compass, accent: true, onTap: () => showGuide(context))),
+                ]),
+              ),
+            ),
+    );
+  }
+}
+

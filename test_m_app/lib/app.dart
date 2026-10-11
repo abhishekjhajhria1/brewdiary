@@ -114,6 +114,15 @@ class Shell extends StatefulWidget {
   /// shared link) — for tests; live, the link plugin does this.
   @visibleForTesting
   static void openLink(Uri uri) => _ShellState._live?._route(uri);
+
+  /// Switch to a tab from anywhere (the guide's "take me there").
+  static void goTo(Tab t) => _ShellState._live?._select(t);
+
+  /// A context inside the navigator (for a sheet or a toast raised from outside a screen).
+  static BuildContext? get contextOrNull {
+    final s = _ShellState._live;
+    return s != null && s.mounted ? s.context : null;
+  }
   @override
   State<Shell> createState() => _ShellState();
 }

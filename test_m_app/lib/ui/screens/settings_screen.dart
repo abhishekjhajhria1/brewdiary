@@ -7,6 +7,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
@@ -36,6 +37,7 @@ import '../widgets/page.dart';
 import '../widgets/pickers.dart';
 import 'landing_screen.dart' show showAuthSheet;
 import 'taste_card.dart' show TasteShareSettings;
+import 'guide_screen.dart';
 import 'profile_screen.dart';
 
 /// Settings on a page of its own (kept for links); in the app they live inline at
@@ -79,10 +81,15 @@ class SettingsBody extends StatelessWidget {
               const TasteShareSettings(),
             ],
           ],
+          if (!kIsWeb && Platform.isAndroid) ...[
+            const _Header('Home screen'),
+            const HomeScreenWidgets(),
+          ],
           const _Header('Your data'),
           _DataGroup(cloud: cloud),
           const _Header('About'),
           Group(children: [
+            GroupTile(icon: Ph.compass, title: "What's in brewdiary", subtitle: 'Everything, and where it lives', chevron: true, onTap: () => showGuide(context)),
             GroupTile(icon: Ph.shieldCheck, title: 'Privacy', trailing: Icon(Ph.arrowUpRight, size: 16, color: context.bd.faint), onTap: () => launchUrl(Config.api('/privacy'), mode: LaunchMode.externalApplication)),
             GroupTile(icon: Ph.fileText, title: 'Terms', trailing: Icon(Ph.arrowUpRight, size: 16, color: context.bd.faint), onTap: () => launchUrl(Config.api('/terms'), mode: LaunchMode.externalApplication)),
           ]),

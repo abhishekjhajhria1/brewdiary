@@ -14,6 +14,7 @@ import 'package:brewdiary/data/friends.dart';
 import 'package:brewdiary/data/parties.dart';
 import 'package:brewdiary/data/plans.dart';
 import 'package:brewdiary/ui/screens/circles_section.dart';
+import 'package:brewdiary/ui/screens/guide_screen.dart';
 import 'package:brewdiary/ui/screens/menu_screen.dart';
 import 'package:brewdiary/ui/screens/party_screens.dart';
 import 'package:brewdiary/ui/screens/photo_studio.dart';
@@ -391,6 +392,18 @@ void main() {
     await _push(t, const PhotoStudio(story: story));
     await pick('Line');
     await _shot(t, 'p09_no_photo_line');
+  });
+
+  _tourTest('first steps and the guide', (t) async {
+    await _boot(t);
+    await t.scrollUntilVisible(find.text('NEW HERE?'), 200, scrollable: find.byType(Scrollable).first);
+    await t.drag(find.byType(Scrollable).first, const Offset(0, -160));
+    await t.pumpAndSettle();
+    await _shot(t, 'q1_first_steps');
+    await _push(t, const GuideScreen());
+    await _shot(t, 'q2_guide');
+    await _scroll(t, 700);
+    await _shot(t, 'q3_guide_more');
   });
 
   _tourTest('light theme social', (t) async {
