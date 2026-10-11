@@ -265,15 +265,15 @@ void main() {
     await tapText(t, 'The Amber Room');
     await tapText(t, 'MORE');
     await tapText(t, 'Floor setup');
-    expect(find.text('Guests can order from the table'), findsOneWidget);
-    await t.scrollUntilVisible(find.text('Add a table'), 200, scrollable: find.byType(Scrollable).first);
-    await tapText(t, 'Add a table');
+    expect(find.text('STAFF OK FIRST'), findsOneWidget, reason: 'how phone orders come in');
+    await tapInView(t, 'Add a table');
     await t.enterText(find.byType(TextField).first, 'W1');
     await tapText(t, 'Save');
     await t.scrollUntilVisible(find.text('W1'), 200, scrollable: find.byType(Scrollable).first);
     await tapText(t, 'W1');
     expect(find.textContaining('bwdy.site/t/'), findsWidgets);
     expect(find.text('Share the link'), findsOneWidget);
+    expect(find.text('Write an NFC sticker'), findsOneWidget);
   });
 
   testWidgets('switching venue goes back to the list', (t) async {

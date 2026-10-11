@@ -2,6 +2,12 @@
     <!-- A one-time, coarse location: the venue's ~40 km area cell (Setup). Never tracked. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Writing a table's or a pickup point's link onto an NFC sticker (Floor setup). -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
+    <!-- Scanning a guest card or a customer's list (the camera, only while scanning). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <application
         android:label="brewdiary bar"
         android:name="${applicationName}"

@@ -2289,6 +2289,13 @@ try {
     const scode = (await db.query(`select code from public.venue_tables where id = $1`, [sc])).rows[0].code;
     const st5 = (await as(guest, `select public.place_order($1,$2,$3::jsonb) s`, [scode, randomUUID(), JSON.stringify([{ item: kaju, qty: 2 }])])).rows[0].s;
     ok("a sweet-shop order at the counter gets a number to collect", st5.pickup_no >= 1);
+    const boxed = randomUUID();
+    await as(owner, `insert into public.venue_menu_items (id, venue_id, name, kind, price, no_alcohol, station) values ($1,$2,'Boxed Laddoo','food',150,true,'none')`, [boxed, sweets]);
+    const reqBox = randomUUID();
+    await db.query(`update public.order_requests set created_at = created_at - interval '1 minute' where requested_by = $1`, [guest]);
+    const st6 = (await as(guest, `select public.place_order($1,$2,$3::jsonb) s`, [scode, reqBox, JSON.stringify([{ item: boxed, qty: 1 }])])).rows[0].s;
+    const boxBoard = (await anon(`select * from public.pickup_board($1)`, [scode])).rows.find((r) => r.pickup_no === st6.pickup_no);
+    ok("…and what needs no making is ready at once — the number shows ready on the board", st6.status === "ready" && boxBoard && boxBoard.state === "ready");
 
     // A liquor store: bottles are never ordered by phone.
     const store = await mkVenue("Verify Wines", "store", true);

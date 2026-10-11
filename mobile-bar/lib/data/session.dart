@@ -127,7 +127,11 @@ class Session extends ChangeNotifier with WidgetsBindingObserver {
         lockedOut?.venueId,
         lockedOut?.lockReason,
         lockedOut?.reportTo,
-        for (final v in venues) '${v.id}:${v.myRole.db}:${v.name}:${v.verified}',
+        // Every setting a screen reads off the venue: a switch flipped (phone orders, the
+        // pause, capacity…) repaints, here and on the other phones at the next check.
+        for (final v in venues)
+          '${v.id}:${v.myRole.db}:${v.name}:${v.verified}:${v.city}:${v.servesAlcohol}:${v.geohash}:${v.quietNights.join(',')}:${v.areaShare}:'
+              '${v.tableService}:${v.capacity}:${v.ordersDirect}:${v.ordersPaused}:${v.ordersAnon}',
         for (final a in access) '${a.venueId}:${a.status.db}:${a.lockReason}:${a.reportTo}',
         for (final e in enrolments) '${e.id}:${e.triesLeft}',
       ].join('|');
@@ -182,7 +186,8 @@ class Session extends ChangeNotifier with WidgetsBindingObserver {
   void select(Venue v) {
     _onList = false;
     lockedOut = null;
-    venue = v;
+    // The freshest copy we hold: the list on screen may be a check behind.
+    venue = venues.where((x) => x.id == v.id).firstOrNull ?? v;
     Prefs.setString(_venueKey, v.id);
     notifyListeners();
   }

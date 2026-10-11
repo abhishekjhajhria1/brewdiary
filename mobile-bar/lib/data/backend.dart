@@ -53,8 +53,8 @@ abstract class Backend {
     required String country,
     String? region,
   });
-  /// [capacity] 0 clears it.
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity});
+  /// [capacity] 0 clears it. [ordersDirect] / [ordersAnon]: how phone orders come in (059).
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity, bool? ordersDirect, bool? ordersAnon});
   Future<void> deleteVenue(String venueId);
 
   Future<VerificationRequest?> verification(String venueId);
@@ -237,8 +237,19 @@ abstract class Backend {
   Future<double> closeTab(String tabId, List<Map<String, Object>> payments, {double? tip});
   Future<void> voidTab(String tabId, String reason);
 
-  /// The bar's or the kitchen's open tickets (sent, preparing, ready).
+  /// The bar's or the kitchen's open tickets (sent, preparing, ready). [station] 'counter'
+  /// is every station at once — a café's, bakery's or shop's one counter (059).
   Future<List<OrderLine>> stationLines(String venueId, String station);
+
+  // ── phone orders (059): pickup numbers, the pause ─────────────────────────
+  /// Handed over at the counter: every line on a pickup order is served.
+  Future<void> collectPickup(String tabId);
+
+  /// "Hold phone orders" in a rush, or take them again. Any station or floor role.
+  Future<void> pausePhoneOrders(String venueId, bool paused);
+
+  /// The ready board for a pickup point's [code]: what's being made and what's ready.
+  Future<List<PickupNumber>> pickupBoard(String code);
 
   Future<List<InboxItem>> inbox(String venueId);
   Future<void> acceptRequest(String requestId, String tabId);

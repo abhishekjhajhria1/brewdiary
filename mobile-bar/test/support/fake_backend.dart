@@ -477,7 +477,7 @@ class FakeBackend implements Backend {
   }
 
   @override
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity}) async {
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity, bool? ordersDirect, bool? ordersAnon}) async {
     final i = _venues.indexWhere((v) => v.id == venueId);
     if (i < 0) throw const BackendError('No such venue.');
     final v = _venues[i];
@@ -490,6 +490,8 @@ class FakeBackend implements Backend {
       areaShare: areaShare,
       tableService: tableService,
       capacity: capacity,
+      ordersDirect: ordersDirect,
+      ordersAnon: ordersAnon,
       servesAlcohol: servesAlcohol == null || !v.kind.alcoholIsChoice ? null : servesAlcohol,
     );
     venueRev.bump();
@@ -2041,13 +2043,14 @@ class FakeBackend implements Backend {
   @override
   Future<void> saveTable(String venueId, VenueTable table, {bool isNew = false}) async {
     _can(venueId, Cap.editSettings);
-    if (_venue(venueId).kind.isCounter) throw const BackendError('A counter has no tables.');
+    if (_venue(venueId).kind.isCounter && !table.isPickup) throw const BackendError('A counter has no tables — add a pickup point for the counter.');
     if (table.label.trim().isEmpty) throw const BackendError('Give the table a label.');
     final list = _tables.putIfAbsent(venueId, () => []);
     if (list.any((t) => t.id != table.id && t.label == table.label.trim())) throw const BackendError('That label is taken.');
     final i = list.indexWhere((t) => t.id == table.id);
+    if (i >= 0 && list[i].kind != table.kind) throw const BackendError('A table stays a table and a pickup point a pickup point — add a new one.');
     final saved = table.code.isEmpty
-        ? VenueTable(id: table.id, areaId: table.areaId, label: table.label.trim(), seats: table.seats, code: newId().replaceAll('-', '').substring(0, 8), active: table.active, position: table.position)
+        ? VenueTable(id: table.id, areaId: table.areaId, label: table.label.trim(), seats: table.seats, code: newId().replaceAll('-', '').substring(0, 8), active: table.active, position: table.position, kind: table.kind)
         : table;
     i < 0 ? list.add(saved) : list[i] = saved;
     floorRev.bump();
@@ -2060,8 +2063,7 @@ class FakeBackend implements Backend {
     final list = _tables[vid]!;
     final i = list.indexWhere((t) => t.id == tableId);
     final code = newId().replaceAll('-', '').substring(0, 8);
-    final t = list[i];
-    list[i] = VenueTable(id: t.id, areaId: t.areaId, label: t.label, seats: t.seats, code: code, active: t.active, position: t.position);
+    list[i] = list[i].copyWith(code: code);
     floorRev.bump();
     return code;
   }
@@ -2160,8 +2162,8 @@ class FakeBackend implements Backend {
     final out = <OrderLine>[];
     for (final t in (_tabs[venueId] ?? const <ServiceTab>[]).where((t) => t.status == 'open')) {
       for (final l in _lines[t.id] ?? const <OrderLine>[]) {
-        if (l.station == station && const ['sent', 'preparing', 'ready'].contains(l.status)) {
-          out.add(OrderLine(id: l.id, tabId: l.tabId, menuItemId: l.menuItemId, name: l.name, unitPrice: l.unitPrice, qty: l.qty, note: l.note, seat: l.seat, station: l.station, status: l.status, source: l.source, createdAt: l.createdAt, readyAt: l.readyAt, tableLabel: tables[t.tableId], tabName: t.name));
+        if ((station == 'counter' || l.station == station) && const ['sent', 'preparing', 'ready'].contains(l.status)) {
+          out.add(OrderLine(id: l.id, tabId: l.tabId, menuItemId: l.menuItemId, name: l.name, unitPrice: l.unitPrice, qty: l.qty, note: l.note, seat: l.seat, station: l.station, status: l.status, source: l.source, createdAt: l.createdAt, readyAt: l.readyAt, tableLabel: tables[t.tableId], tabName: t.name, pickupNo: t.pickupNo));
         }
       }
     }
@@ -2180,10 +2182,110 @@ class FakeBackend implements Backend {
     final vid = _inbox.entries.firstWhere((e) => e.value.any((i) => i.id == requestId), orElse: () => throw const BackendError('That request is gone.')).key;
     _can(vid, Cap.takeOrders);
     final r = _inbox[vid]!.firstWhere((i) => i.id == requestId);
-    if (!(_tabs[vid] ?? const <ServiceTab>[]).any((t) => t.id == tabId)) await openTab(vid, tabId, tableId: r.tableId);
-    await addLines(tabId, [for (final l in r.lines) {'item': l.item, 'qty': l.qty, 'note': l.note, 'source': 'guest'}]);
+    final point = (_tables[vid] ?? const <VenueTable>[]).where((t) => t.id == r.tableId).firstOrNull;
+    if (point != null && point.isPickup) {
+      _landPickup(vid, point, r.lines);
+    } else {
+      if (!(_tabs[vid] ?? const <ServiceTab>[]).any((t) => t.id == tabId)) await openTab(vid, tabId, tableId: r.tableId);
+      await addLines(tabId, [for (final l in r.lines) {'item': l.item, 'qty': l.qty, 'note': l.note, 'source': 'guest'}]);
+    }
     _inbox[vid]!.removeWhere((i) => i.id == requestId);
     floorRev.bump();
+  }
+
+  // ── phone orders (059) ────────────────────────────────────────────────────
+  /// The next pickup number: one after the highest of the last 12 hours, 1..999.
+  int _nextPickup(String vid) {
+    final since = DateTime.now().subtract(const Duration(hours: 12));
+    final recent = (_tabs[vid] ?? const <ServiceTab>[]).where((t) => t.pickupNo != null && t.openedAt.isAfter(since)).toList()
+      ..sort((a, b) => b.openedAt.compareTo(a.openedAt));
+    return recent.isEmpty ? 1 : recent.first.pickupNo! % 999 + 1;
+  }
+
+  /// A pickup order on a tab of its own, with the next number. What needs no making is
+  /// ready at once (the database does the same).
+  String _landPickup(String vid, VenueTable point, List<({String item, String name, int qty, String? note, bool alcohol})> lines) {
+    final no = _nextPickup(vid);
+    final id = newId();
+    _tabs.putIfAbsent(vid, () => []).add(ServiceTab(id: id, name: 'Pickup $no', openedAt: DateTime.now(), pickupNo: no, pickupPoint: point.id));
+    final menu = {for (final m in _menu[vid] ?? const <MenuItem>[]) m.id: m};
+    _lines[id] = [
+      for (final l in lines)
+        if (menu[l.item] case final m?)
+          OrderLine(id: newId(), tabId: id, menuItemId: m.id, name: m.name, unitPrice: m.price ?? 0, qty: l.qty, note: l.note, station: m.station, status: m.station == 'none' ? 'ready' : 'sent', source: 'guest', createdAt: DateTime.now(), readyAt: m.station == 'none' ? DateTime.now() : null),
+    ];
+    return id;
+  }
+
+  /// For tests: a guest's phone sends an order from a table's or pickup point's [code] —
+  /// straight onto the tickets when the venue says so, else into the inbox for an OK.
+  void guestOrder(String code, List<({String item, int qty})> items, {String? note}) {
+    final vid = _tables.entries.firstWhere((e) => e.value.any((t) => t.code == code)).key;
+    final v = _venue(vid);
+    final point = _tables[vid]!.firstWhere((t) => t.code == code);
+    if (!v.tableService) throw const BackendError('This place doesn\'t take orders from phones — ask at the bar.');
+    if (v.ordersPaused) throw const BackendError('The kitchen has paused phone orders for a few minutes — ask at the bar.');
+    final menu = {for (final m in _menu[vid] ?? const <MenuItem>[]) m.id: m};
+    final lines = [
+      for (final x in items) (item: x.item, name: menu[x.item]!.name, qty: x.qty, note: null as String?, alcohol: !menu[x.item]!.noAlcohol),
+    ];
+    if (v.ordersDirect) {
+      if (point.isPickup) {
+        _landPickup(vid, point, lines);
+      } else {
+        final open = (_tabs[vid] ?? const <ServiceTab>[]).where((t) => t.tableId == point.id && t.status == 'open').toList();
+        final tab = open.isEmpty ? newId() : open.last.id;
+        if (open.isEmpty) _tabs.putIfAbsent(vid, () => []).add(ServiceTab(id: tab, tableId: point.id, openedAt: DateTime.now()));
+        _lines.putIfAbsent(tab, () => []).addAll([
+          for (final l in lines) OrderLine(id: newId(), tabId: tab, menuItemId: l.item, name: l.name, unitPrice: menu[l.item]!.price ?? 0, qty: l.qty, station: menu[l.item]!.station, source: 'guest', createdAt: DateTime.now()),
+        ]);
+      }
+    } else {
+      _inbox.putIfAbsent(vid, () => []).add(InboxItem(kind: 'order', id: newId(), tableId: point.id, tableLabel: point.label, createdAt: DateTime.now(), lines: lines, note: note, hasAlcohol: lines.any((l) => l.alcohol)));
+    }
+    floorRev.bump();
+  }
+
+  @override
+  Future<void> collectPickup(String tabId) async {
+    final vid = _venueOfTab(tabId);
+    if (!roleCan(_venue(vid).myRole, Cap.takeOrders) && !roleCan(_venue(vid).myRole, Cap.barStation) && !roleCan(_venue(vid).myRole, Cap.kitchenStation)) {
+      throw const BackendError('Your role can\'t hand orders over here.');
+    }
+    final t = _tab(tabId);
+    if (t.pickupNo == null) throw const BackendError('That isn\'t a pickup order.');
+    for (final l in [...?_lines[tabId]]) {
+      if (const ['sent', 'preparing', 'ready'].contains(l.status)) _putLine(l.copyWith(status: 'served', readyAt: l.readyAt ?? DateTime.now()));
+    }
+    _putTab(t.collected(DateTime.now()));
+    floorRev.bump();
+  }
+
+  @override
+  Future<void> pausePhoneOrders(String venueId, bool paused) async {
+    final role = _venue(venueId).myRole;
+    if (!roleCan(role, Cap.takeOrders) && !roleCan(role, Cap.barStation) && !roleCan(role, Cap.kitchenStation)) {
+      throw const BackendError('Your role can\'t pause phone orders here.');
+    }
+    final i = _venues.indexWhere((v) => v.id == venueId);
+    _venues[i] = _venues[i].copyWith(ordersPaused: paused);
+    venueRev.bump();
+  }
+
+  @override
+  Future<List<PickupNumber>> pickupBoard(String code) async {
+    final e = _tables.entries.where((e) => e.value.any((t) => t.code == code && t.isPickup && t.active)).firstOrNull;
+    if (e == null) return const [];
+    final since = DateTime.now().subtract(const Duration(hours: 6));
+    final out = <PickupNumber>[];
+    for (final t in (_tabs[e.key] ?? const <ServiceTab>[]).where((t) => t.pickupNo != null && t.collectedAt == null && t.status == 'open' && t.openedAt.isAfter(since))) {
+      final live = (_lines[t.id] ?? const <OrderLine>[]).where((l) => l.status != 'void').toList();
+      if (live.isEmpty) continue;
+      final ready = live.every((l) => l.status == 'ready' || l.status == 'served');
+      final readyAt = live.map((l) => l.readyAt).whereType<DateTime>().fold<DateTime?>(null, (a, b) => a == null || b.isAfter(a) ? b : a);
+      out.add(PickupNumber(no: t.pickupNo!, ready: ready, since: readyAt ?? t.openedAt));
+    }
+    return out;
   }
 
   @override

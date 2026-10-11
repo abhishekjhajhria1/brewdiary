@@ -52,6 +52,15 @@ class Venue {
 
   /// How many people the licence allows inside at once (052) — the door counts against it.
   final int? capacity;
+
+  /// Phone orders go straight onto the bar's and kitchen's tickets, no staff OK (059).
+  final bool ordersDirect;
+
+  /// The bar's "hold phone orders" in a rush (059): guests are told to ask at the bar.
+  final bool ordersPaused;
+
+  /// A guest can order without an account (059) — the table's code is the proof.
+  final bool ordersAnon;
   final bool verified;
   final StaffRole myRole;
 
@@ -71,6 +80,9 @@ class Venue {
     this.areaShare = false,
     this.tableService = false,
     this.capacity,
+    this.ordersDirect = false,
+    this.ordersPaused = false,
+    this.ordersAnon = false,
     this.verified = false,
     this.myRole = StaffRole.bartender,
   });
@@ -91,6 +103,9 @@ class Venue {
         areaShare: v['area_share'] == true,
         tableService: v['table_service'] == true,
         capacity: (v['capacity'] as num?)?.toInt(),
+        ordersDirect: v['orders_direct'] == true,
+        ordersPaused: v['orders_paused'] == true,
+        ordersAnon: v['orders_anon'] == true,
         verified: v['verified'] == true,
         myRole: role,
       );
@@ -98,8 +113,11 @@ class Venue {
   LegalClass get legal => legalClass(kind, servesAlcohol: servesAlcohol);
   bool get sellsAlcohol => legal != LegalClass.noAlcohol;
 
+  /// How a guest's order from a table or a pickup point reaches the people making it.
+  PhoneOrders get phoneOrders => !tableService ? PhoneOrders.off : (ordersDirect ? PhoneOrders.direct : PhoneOrders.confirm);
+
   /// [capacity] 0 clears it.
-  Venue copyWith({String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity, bool? verified}) => Venue(
+  Venue copyWith({String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity, bool? ordersDirect, bool? ordersPaused, bool? ordersAnon, bool? verified}) => Venue(
         id: id,
         name: name ?? this.name,
         slug: slug,
@@ -115,10 +133,17 @@ class Venue {
         areaShare: areaShare ?? this.areaShare,
         tableService: tableService ?? this.tableService,
         capacity: capacity == null ? this.capacity : (capacity > 0 ? capacity : null),
+        ordersDirect: ordersDirect ?? this.ordersDirect,
+        ordersPaused: ordersPaused ?? this.ordersPaused,
+        ordersAnon: ordersAnon ?? this.ordersAnon,
         verified: verified ?? this.verified,
         myRole: myRole,
       );
 }
+
+/// Phone orders (051, 059): off; each one waits for a staff member's OK; or straight to
+/// the bar and the kitchen — for places where nobody on the floor carries a phone.
+enum PhoneOrders { off, confirm, direct }
 
 /// Someone on the team as the roster shows them (team_roster, 053). Owners and managers
 /// also see who's waiting and who's paused, phone numbers, and why; everyone else sees the
@@ -1168,7 +1193,15 @@ class VenueTable {
   final String code;
   final bool active;
   final int position;
-  const VenueTable({required this.id, this.areaId, required this.label, this.seats = 4, required this.code, this.active = true, this.position = 0});
+
+  /// 'table', or 'pickup' (059): a counter where an order gets a number to collect —
+  /// a bar counter, a café's, a shop's. Counters have only these.
+  final String kind;
+  const VenueTable({required this.id, this.areaId, required this.label, this.seats = 4, required this.code, this.active = true, this.position = 0, this.kind = 'table'});
+
+  bool get isPickup => kind == 'pickup';
+
+  VenueTable copyWith({String? code}) => VenueTable(id: id, areaId: areaId, label: label, seats: seats, code: code ?? this.code, active: active, position: position, kind: kind);
 
   factory VenueTable.fromRow(Map<String, dynamic> r) => VenueTable(
         id: r['id'] as String,
@@ -1178,6 +1211,7 @@ class VenueTable {
         code: r['code'] as String,
         active: r['active'] != false,
         position: _int(r['position']),
+        kind: (r['kind'] as String?) ?? 'table',
       );
 }
 
@@ -1193,7 +1227,12 @@ class ServiceTab {
 
   /// Whose table it is (058): whoever opened it, until it's handed on.
   final String? serverId;
-  const ServiceTab({required this.id, this.tableId, this.name, this.covers, this.status = 'open', required this.openedAt, this.subtotal, this.tip, this.serverId});
+
+  /// A pickup order (059): its number, the pickup point, and when it was handed over.
+  final int? pickupNo;
+  final String? pickupPoint;
+  final DateTime? collectedAt;
+  const ServiceTab({required this.id, this.tableId, this.name, this.covers, this.status = 'open', required this.openedAt, this.subtotal, this.tip, this.serverId, this.pickupNo, this.pickupPoint, this.collectedAt});
 
   /// [clearTable] moves it off any table (to the bar).
   ServiceTab copyWith({String? tableId, bool clearTable = false, String? name, int? covers, String? status, double? subtotal, double? tip, String? serverId}) => ServiceTab(
@@ -1206,7 +1245,12 @@ class ServiceTab {
         subtotal: subtotal ?? this.subtotal,
         tip: tip ?? this.tip,
         serverId: serverId ?? this.serverId,
+        pickupNo: pickupNo,
+        pickupPoint: pickupPoint,
+        collectedAt: collectedAt,
       );
+
+  ServiceTab collected(DateTime at) => ServiceTab(id: id, tableId: tableId, name: name, covers: covers, status: status, openedAt: openedAt, subtotal: subtotal, tip: tip, serverId: serverId, pickupNo: pickupNo, pickupPoint: pickupPoint, collectedAt: at);
 
   factory ServiceTab.fromRow(Map<String, dynamic> r) => ServiceTab(
         id: r['id'] as String,
@@ -1218,6 +1262,9 @@ class ServiceTab {
         subtotal: _numOrNull(r['subtotal']),
         tip: _numOrNull(r['tip']),
         serverId: (r['server_id'] ?? r['opened_by']) as String?,
+        pickupNo: (r['pickup_no'] as num?)?.toInt(),
+        pickupPoint: r['pickup_point'] as String?,
+        collectedAt: r['collected_at'] == null ? null : DateTime.parse(r['collected_at'] as String).toLocal(),
       );
 }
 
@@ -1240,6 +1287,9 @@ class OrderLine {
   /// For station tickets: where it's going.
   final String? tableLabel;
   final String? tabName;
+
+  /// For station tickets: the number the guest collects it by (059), or null at a table.
+  final int? pickupNo;
   const OrderLine({
     required this.id,
     required this.tabId,
@@ -1257,6 +1307,7 @@ class OrderLine {
     this.voidReason,
     this.tableLabel,
     this.tabName,
+    this.pickupNo,
   });
 
   double get total => status == 'void' ? 0 : unitPrice * qty;
@@ -1279,6 +1330,7 @@ class OrderLine {
         voidReason: voidReason ?? this.voidReason,
         tableLabel: tableLabel,
         tabName: tabName,
+        pickupNo: pickupNo,
       );
 
   factory OrderLine.fromRow(Map<String, dynamic> r) {
@@ -1301,6 +1353,7 @@ class OrderLine {
       voidReason: r['void_reason'] as String?,
       tableLabel: table?['label'] as String?,
       tabName: tab?['name'] as String?,
+      pickupNo: (tab?['pickup_no'] as num?)?.toInt(),
     );
   }
 }
@@ -1331,6 +1384,20 @@ class InboxItem {
         note: r['note'] as String?,
         callKind: r['call_kind'] as String?,
         hasAlcohol: r['has_alcohol'] == true,
+      );
+}
+
+/// One number on the ready board (pickup_board(), 059): numbers and states, never who.
+class PickupNumber {
+  final int no;
+  final bool ready;
+  final DateTime since;
+  const PickupNumber({required this.no, required this.ready, required this.since});
+
+  factory PickupNumber.fromRow(Map<String, dynamic> r) => PickupNumber(
+        no: _int(r['pickup_no']),
+        ready: r['state'] == 'ready',
+        since: DateTime.parse(r['since'] as String).toLocal(),
       );
 }
 

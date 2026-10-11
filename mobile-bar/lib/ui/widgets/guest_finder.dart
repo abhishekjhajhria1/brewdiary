@@ -2,12 +2,14 @@
 // venue's table or menu link tonight — with the taste they shared — and the
 // 6-letter code a guest shows from their own phone. Used by the till and the guest
 // book. A bartender reads the taste to make something the guest will like.
+import 'package:brewdiary_core/links.dart' show guestCodeFromScan;
 import 'package:flutter/material.dart';
 
 import '../../data/backend.dart';
 import '../../data/models.dart';
 import '../../data/prefs.dart';
 import '../../data/session.dart';
+import '../../device/scanner.dart';
 import '../../logic/roles.dart';
 import '../theme.dart';
 import 'common.dart';
@@ -66,6 +68,15 @@ class _GuestFinderState extends State<GuestFinder> {
   void dispose() {
     _code.dispose();
     super.dispose();
+  }
+
+  /// The QR on their guest card: the same 6 letters, without typing them.
+  Future<void> _scan() async {
+    final raw = await scanCode(context, title: 'Scan their guest card', hint: 'The QR under Taste passport › Show my guest card.', accept: (r) => guestCodeFromScan(r) != null, reject: 'That isn\'t a guest card.');
+    final code = raw == null ? null : guestCodeFromScan(raw);
+    if (code == null || !mounted) return;
+    _code.text = code;
+    await _find();
   }
 
   Future<void> _find() async {
@@ -162,7 +173,9 @@ class _GuestFinderState extends State<GuestFinder> {
             ),
           ),
           const SizedBox(width: S.s),
-          SizedBox(width: 96, child: BdButton('Find', kind: BtnKind.secondary, busy: _looking, onTap: _code.text.trim().length == 6 ? _find : null)),
+          IconBtn(Ph.scan, tooltip: 'Scan their guest card', glass: true, onTap: _looking ? null : _scan),
+          const SizedBox(width: S.xs),
+          SizedBox(width: 88, child: BdButton('Find', kind: BtnKind.secondary, busy: _looking, onTap: _code.text.trim().length == 6 ? _find : null)),
         ]),
       ),
       Appear(visible: _miss != null, child: _miss == null ? const SizedBox.shrink() : Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_miss!, style: T.sans(bd, size: 13, color: bd.tone(Tone.late))))),

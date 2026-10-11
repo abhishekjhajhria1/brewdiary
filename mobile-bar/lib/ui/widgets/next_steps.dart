@@ -43,7 +43,7 @@ Future<List<String>> pendingSteps(Venue v, Session s) async {
   }
   if (v.geohash == null && s.can(Cap.editSettings)) out.add('where');
   if (s.can(Cap.editMenu) && ((await safe(() => b.menu(v.id))) ?? const []).isEmpty) out.add('menu');
-  if (!v.kind.isCounter && s.can(Cap.editSettings) && ((await safe(() => b.tables(v.id))) ?? const []).isEmpty) out.add('tables');
+  if (!v.kind.isCounter && s.can(Cap.editSettings) && ((await safe(() => b.tables(v.id))) ?? const []).where((t) => !t.isPickup).isEmpty) out.add('tables');
   if (v.verified && s.can(Cap.editPerks) && ((await safe(() => b.perks(v.id))) ?? const []).isEmpty) out.add('reward');
   if (s.can(Cap.manageTeam) && ((await safe(() => b.staff(v.id))) ?? const []).length <= 1) out.add('team');
   return out;

@@ -75,7 +75,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
             const SizedBox(height: S.l),
             Loader<(List<Booking>, List<VenueTable>)>(
               deps: _day,
-              load: () async => (await Backend.i.bookings(v.id, _day.add(const Duration(hours: 6)), _day.add(const Duration(hours: 30))), await Backend.i.tables(v.id)),
+              load: () async => (await Backend.i.bookings(v.id, _day.add(const Duration(hours: 6)), _day.add(const Duration(hours: 30))), (await Backend.i.tables(v.id)).where((t) => !t.isPickup).toList()),
               refresh: bookingsRev,
               retry: true,
               builder: (context, data, loading) {
@@ -182,7 +182,7 @@ Future<void> seatBooking(BuildContext context, Venue venue, Booking b, List<Venu
 
 /// New or edit: who, how many, when, how long, which table, a phone and a note.
 Future<void> editBooking(BuildContext context, Venue venue, {Booking? existing, DateTime? day}) async {
-  final tables = (await Backend.i.tables(venue.id)).where((t) => t.active).toList();
+  final tables = (await Backend.i.tables(venue.id)).where((t) => t.active && !t.isPickup).toList();
   if (!context.mounted) return;
   await showBdSheet<void>(context, title: existing == null ? 'New booking' : 'Edit booking', builder: (_) => _BookingForm(venue: venue, tables: tables, existing: existing, day: day));
 }

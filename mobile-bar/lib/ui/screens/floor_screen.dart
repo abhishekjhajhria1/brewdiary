@@ -60,7 +60,8 @@ Future<FloorData> loadFloor(Venue v) async {
   }
   return (
     areas: results[0] as List<VenueArea>,
-    tables: (results[1] as List<VenueTable>).where((t) => t.active).toList(),
+    // Pickup points (059) aren't seats: their orders show under Tabs at the bar, by number.
+    tables: (results[1] as List<VenueTable>).where((t) => t.active && !t.isPickup).toList(),
     tabs: tabs,
     lines: lines,
     inbox: results[3] as List<InboxItem>,

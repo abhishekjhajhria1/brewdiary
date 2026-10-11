@@ -24,7 +24,7 @@ String tabLabel(ServiceTab t, Map<String, String> tableLabels) {
 /// Move the party to another table, or to the bar. Returns where it went (for the toast),
 /// or null if nothing moved.
 Future<String?> moveTabFlow(BuildContext context, Venue venue, ServiceTab tab) async {
-  final tables = (await Backend.i.tables(venue.id)).where((t) => t.active).toList();
+  final tables = (await Backend.i.tables(venue.id)).where((t) => t.active && !t.isPickup).toList();
   final open = await Backend.i.openTabs(venue.id);
   if (!context.mounted) return null;
   final busy = {for (final t in open) if (t.tableId != null && t.id != tab.id) t.tableId!};

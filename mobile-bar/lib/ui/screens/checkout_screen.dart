@@ -6,11 +6,17 @@
 //
 // A sale has no customer attached: the till sells to "a customer". Punching a loyalty
 // card is still its own step on the Till.
+//
+// The camera button scans a product's barcode, or a customer's shopping list (059) —
+// the list they made from the shop's shelf on their phone. Its lines drop into the
+// basket; the law's checks still happen here, at the till, with a person.
+import 'package:brewdiary_core/links.dart' show parseShopList;
 import 'package:flutter/material.dart';
 
 import '../../data/backend.dart';
 import '../../data/models.dart';
 import '../../data/prefs.dart';
+import '../../device/scanner.dart';
 import '../../logic/counter.dart';
 import '../theme.dart';
 import '../widgets/bits.dart';
@@ -68,6 +74,42 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (grams != null && grams > 0 && mounted) setState(() => _basket = _basket.add(p, grams));
   }
 
+  /// A barcode → that product; a customer's list → its lines, into the basket.
+  Future<void> _scan(List<ShopProduct> products, Map<String, int> stock) async {
+    final raw = await scanCode(
+      context,
+      title: 'Scan a barcode or a list',
+      hint: 'A product\'s barcode, or the list on a customer\'s phone.',
+      accept: (r) => parseShopList(r) != null || RegExp(r'^\d{6,14}$').hasMatch(r.trim()),
+      reject: 'That isn\'t a barcode or a brewdiary list.',
+    );
+    if (raw == null || !mounted) return;
+    final list = parseShopList(raw);
+    if (list == null) {
+      final code = raw.trim();
+      final hit = products.where((p) => p.barcode == code).toList();
+      if (hit.length == 1) return _add(hit.first);
+      setState(() => _q.text = code);
+      return toast(context, hit.isEmpty ? 'No product with barcode $code — add it in More › Stock.' : 'More than one product has that barcode.');
+    }
+    if (list.slug != v.slug) return toast(context, 'That list is for another shop.', tone: ToastTone.error);
+    final byId = {for (final p in products) p.id: p};
+    var b = _basket;
+    final skipped = <String>[];
+    for (final l in list.lines) {
+      final p = byId[l.productId];
+      if (p == null || !p.active || (stock[p.id] ?? 0) <= 0) {
+        skipped.add(p?.name ?? 'an item no longer sold');
+      } else if (p.byWeight) {
+        skipped.add('${p.name} (weigh it)');
+      } else {
+        b = b.add(p, l.qty);
+      }
+    }
+    setState(() => _basket = b);
+    toast(context, skipped.isEmpty ? 'Their list is in the basket.' : 'In the basket — except ${skipped.join(', ')}.');
+  }
+
   Future<int?> _askGrams(ShopProduct p) async {
     final ctl = TextEditingController();
     final got = await showBdSheet<int>(context, title: p.name, builder: (ctx) {
@@ -122,7 +164,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               retry: true,
               builder: (context, data, loading) {
                 if (data == null) return const Skeleton(height: 240);
-                final shelf = _shelf(context, data.$1.where((p) => p.active).toList(), data.$2);
+                final shelf = _shelf(context, data.$1.where((p) => p.active).toList(), data.$2, onScan: () => _scan(data.$1, data.$2));
                 final basket = _basketPane(context);
                 return LayoutBuilder(builder: (context, c) {
                   if (c.maxWidth >= 840) {
@@ -142,14 +184,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Widget _shelf(BuildContext context, List<ShopProduct> products, Map<String, int> stock) {
+  Widget _shelf(BuildContext context, List<ShopProduct> products, Map<String, int> stock, {required VoidCallback onScan}) {
     final bd = context.bd;
     if (products.isEmpty) return const EmptyNote('Nothing on the shelf yet — add products in More › Stock.');
     final cats = {for (final p in products) p.category}.toList()..sort((a, b) => _categoryLabel.keys.toList().indexOf(a) - _categoryLabel.keys.toList().indexOf(b));
     final q = _q.text.trim().toLowerCase();
     final shown = products.where((p) => (_category == null || p.category == _category) && (q.isEmpty || '${p.name} ${p.brand ?? ''} ${p.barcode ?? ''}'.toLowerCase().contains(q))).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      GlassField(controller: _q, hint: 'Search or scan a barcode', icon: Ph.magnifyingGlass, caps: TextCapitalization.none, onChanged: (_) => setState(() {})),
+      Row(children: [
+        Expanded(child: GlassField(controller: _q, hint: 'Search, or a barcode', icon: Ph.magnifyingGlass, caps: TextCapitalization.none, onChanged: (_) => setState(() {}))),
+        const SizedBox(width: S.s),
+        IconBtn(Ph.scan, tooltip: 'Scan a barcode or a customer\'s list', glass: true, onTap: onScan),
+      ]),
       const SizedBox(height: S.s),
       SingleChildScrollView(
         scrollDirection: Axis.horizontal,

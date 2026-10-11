@@ -22,6 +22,7 @@ import 'guests_screen.dart';
 import 'tonight_screen.dart';
 import 'checkout_screen.dart';
 import 'host_screen.dart';
+import 'station_screen.dart';
 
 class TillScreen extends StatefulWidget {
   final Venue venue;
@@ -59,6 +60,11 @@ class _TillScreenState extends State<TillScreen> {
         NextSteps(venue: v),
         if (s.can(Cap.takePayment)) ...[
           BdButton('New sale', icon: Ph.receipt, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckoutScreen(venue: v)))),
+          // Phone orders from the counter's QR (059): made here, collected by number.
+          if (v.tableService) ...[
+            const SizedBox(height: S.s),
+            BdButton('Phone orders', icon: Ph.deviceMobile, kind: BtnKind.secondary, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StationScreen(venue: v, station: 'counter')))),
+          ],
           const SizedBox(height: S.xl),
           const SectionHeader('Punch a card'),
         ],

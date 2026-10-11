@@ -44,6 +44,12 @@ class Ticket {
 
   DateTime get since => lines.map((l) => l.createdAt).reduce((a, b) => a.isBefore(b) ? a : b);
   bool get allReady => lines.every((l) => l.status == 'ready');
+
+  /// A pickup order's number (059) — collected at the counter, not carried to a table.
+  int? get pickupNo => lines.first.pickupNo;
+
+  /// Ordered from a guest's phone: nobody on the floor wrote it down.
+  bool get fromPhone => lines.any((l) => l.source == 'guest');
   int minutes(DateTime now) => now.difference(since).inMinutes;
 }
 

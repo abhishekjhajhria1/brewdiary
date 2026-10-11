@@ -228,7 +228,7 @@ class SupabaseBackend implements Backend {
       });
 
   @override
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity}) => _run(() async {
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity, bool? ordersDirect, bool? ordersAnon}) => _run(() async {
         final patch = <String, dynamic>{};
         if (name != null) {
           if (name.trim().isEmpty) throw const BackendError('Name can\'t be empty.');
@@ -240,6 +240,8 @@ class SupabaseBackend implements Backend {
         if (servesAlcohol != null) patch['serves_alcohol'] = servesAlcohol;
         if (areaShare != null) patch['area_share'] = areaShare;
         if (tableService != null) patch['table_service'] = tableService;
+        if (ordersDirect != null) patch['orders_direct'] = ordersDirect;
+        if (ordersAnon != null) patch['orders_anon'] = ordersAnon;
         if (capacity != null) {
           if (capacity > 20000) throw const BackendError('Capacity is 1 to 20,000 people.');
           patch['capacity'] = capacity > 0 ? capacity : null;
@@ -910,7 +912,8 @@ class SupabaseBackend implements Backend {
         if (table.label.trim().isEmpty) throw const BackendError('Give the table a label.');
         final row = {'area_id': table.areaId, 'label': table.label.trim(), 'seats': table.seats, 'active': table.active, 'position': table.position};
         if (isNew) {
-          await _c.from('venue_tables').insert({'id': table.id, 'venue_id': venueId, ...row}); // the code is made by the database
+          // The code is made by the database; a pickup point stays one (059).
+          await _c.from('venue_tables').insert({'id': table.id, 'venue_id': venueId, if (table.isPickup) 'kind': 'pickup', ...row});
         } else {
           await _c.from('venue_tables').update(row).eq('id', table.id);
         }
@@ -975,14 +978,44 @@ class SupabaseBackend implements Backend {
 
   @override
   Future<List<OrderLine>> stationLines(String venueId, String station) => _run(() async {
-        final rows = await _c
-            .from('order_lines')
-            .select('*, tab:tabs(name, pickup_no, table:venue_tables!tabs_table_id_fkey(label))')
-            .eq('venue_id', venueId)
-            .eq('station', station)
-            .inFilter('status', ['sent', 'preparing', 'ready'])
-            .order('created_at');
+        const live = ['sent', 'preparing', 'ready'];
+        List<Map<String, dynamic>> rows;
+        try {
+          var q = _c.from('order_lines').select('*, tab:tabs(name, pickup_no, table:venue_tables!tabs_table_id_fkey(label))').eq('venue_id', venueId);
+          if (station != 'counter') q = q.eq('station', station);
+          rows = await q.inFilter('status', live).order('created_at');
+        } on PostgrestException catch (e) {
+          if (!_behind(e)) rethrow;
+          // Before 059: no pickup numbers yet — the table's label from the floor.
+          var q = _c.from('order_lines').select('*, tab:tabs(name, table_id)').eq('venue_id', venueId);
+          if (station != 'counter') q = q.eq('station', station);
+          final old = await q.inFilter('status', live).order('created_at');
+          final labels = {for (final t in await tables(venueId)) t.id: t.label};
+          rows = [
+            for (final r in old)
+              {...r, 'tab': {'name': (r['tab'] as Map?)?['name'], 'table': {'label': labels[(r['tab'] as Map?)?['table_id']]}}},
+          ];
+        }
         return [for (final r in rows) OrderLine.fromRow(r)];
+      });
+
+  // ── phone orders (059) ────────────────────────────────────────────────────
+  @override
+  Future<void> collectPickup(String tabId) => _run(() async {
+        await _c.rpc('collect_pickup', params: {'tab': tabId});
+        floorRev.bump();
+      });
+
+  @override
+  Future<void> pausePhoneOrders(String venueId, bool paused) => _run(() async {
+        await _c.rpc('pause_phone_orders', params: {'vid': venueId, 'paused': paused});
+        venueRev.bump();
+      });
+
+  @override
+  Future<List<PickupNumber>> pickupBoard(String code) => _run(() async {
+        final rows = await _c.rpc('pickup_board', params: {'in_code': code});
+        return [for (final r in (rows as List? ?? const [])) PickupNumber.fromRow(Map<String, dynamic>.from(r as Map))];
       });
 
   @override

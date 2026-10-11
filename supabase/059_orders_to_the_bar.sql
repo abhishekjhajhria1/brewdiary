@@ -191,9 +191,13 @@ begin
   for x in select * from jsonb_array_elements(r.lines) loop
     select * into m from public.venue_menu_items where id = (x->>'item')::uuid;
     if m.id is null or not m.available then raise exception '% is off tonight', coalesce(m.name, 'an item'); end if;
-    insert into public.order_lines (tab_id, venue_id, menu_item_id, name, unit_price, qty, note, station, source, created_by, request_id)
+    -- At a pickup point, what needs no making (a bottle of water, a packed sweet) is
+    -- ready at once, so the number isn't held up waiting for nobody.
+    insert into public.order_lines (tab_id, venue_id, menu_item_id, name, unit_price, qty, note, station, source, created_by, request_id, status, ready_at)
     values (tab, r.venue_id, m.id, m.name, coalesce(m.price, 0), (x->>'qty')::int,
-            nullif(left(trim(coalesce(x->>'note', '')), 120), ''), m.station, 'guest', r.requested_by, r.id);
+            nullif(left(trim(coalesce(x->>'note', '')), 120), ''), m.station, 'guest', r.requested_by, r.id,
+            case when pno is not null and m.station = 'none' then 'ready' else 'sent' end,
+            case when pno is not null and m.station = 'none' then now() end);
   end loop;
   update public.order_requests set status = 'accepted', decided_by = decider, decided_at = now(), tab_id = tab where id = req;
   return tab;
