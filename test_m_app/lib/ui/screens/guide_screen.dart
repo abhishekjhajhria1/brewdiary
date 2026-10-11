@@ -17,6 +17,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/moments.dart' show openLog;
 import '../widgets/page.dart';
+import '../../device/scan.dart';
 import 'discover_screen.dart';
 import 'morning_after.dart';
 import 'photo_studio.dart';
@@ -81,7 +82,7 @@ class GuideScreen extends StatelessWidget {
         const Label('At the bar'),
         const SizedBox(height: S.s),
         Group(children: [
-          row(Ph.qrCode, "The table's menu", 'Tap your phone on the tag at the table, or scan its QR. Order from it when the bar allows.'),
+          row(Ph.qrCode, "The menu, from the table or the counter", 'Tap the tag or scan the QR. Order from it when the place allows — at a counter you get a number, and a buzz when it\'s ready.', onTap: () => then(scanToOpen)),
           row(Ph.identificationBadge, 'Your guest card', 'A 6-letter code the bartender types — your taste for tonight, never your diary.', onTap: cloud ? () => then(showGuestCard) : null),
         ]),
         const SizedBox(height: S.xl),

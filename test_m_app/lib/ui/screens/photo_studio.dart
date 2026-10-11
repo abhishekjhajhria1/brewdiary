@@ -192,7 +192,8 @@ class _PhotoStudioState extends State<PhotoStudio> {
       final mine = await TableApi.mine();
       final known = {for (final l in _story.lines) l.name.toLowerCase()};
       final extra = <StoryLine>[
-        for (final r in mine.where((r) => r.status == 'accepted'))
+        // What the venue took (made, ready or served) — not what's waiting or was declined.
+        for (final r in mine.where((r) => const {'sent', 'making', 'ready', 'served'}.contains(r.status)))
           for (final l in r.lines)
             if (!known.contains(l.name.toLowerCase())) StoryLine(l.name, qty: l.qty),
       ];

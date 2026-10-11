@@ -85,6 +85,7 @@ abstract final class Ph {
   static const handWaving = IconData(0xe580, fontFamily: 'Phosphor');
   static const hash = IconData(0xe2a2, fontFamily: 'Phosphor');
   static const heart = IconData(0xe2a8, fontFamily: 'Phosphor');
+  static const hourglass = IconData(0xe2b2, fontFamily: 'Phosphor');
   static const house = IconData(0xe2c2, fontFamily: 'Phosphor');
   static const identificationBadge = IconData(0xe6f6, fontFamily: 'Phosphor');
   static const identificationCard = IconData(0xe2c8, fontFamily: 'Phosphor');

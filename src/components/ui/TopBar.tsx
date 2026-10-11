@@ -21,7 +21,7 @@ export function TopBar() {
   // else (You, Ninkasi, Discover are open to guests) the bar shows for everyone.
   // The venue dashboard and kiosk wall carry no consumer chrome. The venue test is
   // by HOST, not path: on bar.bwdy.site the path is still "/" (see lib/host.ts).
-  if (!mounted || (!profile && pathname === "/") || isVenue || pathname.startsWith("/kiosk")) return null;
+  if (!mounted || (!profile && pathname === "/") || isVenue || pathname.startsWith("/kiosk") || pathname.startsWith("/ready/")) return null;
 
   return (
     <div className="glass mb-6 flex items-center justify-between rounded-tile px-4 py-2.5">

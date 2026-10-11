@@ -39,7 +39,13 @@ class Menu {
   final bool isStore;
   final String currency;
   final List<MenuSection> sections;
-  const Menu({required this.venueName, this.venueCity, this.isStore = false, required this.currency, required this.sections});
+
+  /// The venue's kind (047): bar, club, restaurant, cafe, store, sweet_shop, bakery, shop.
+  final String venueKind;
+  const Menu({required this.venueName, this.venueCity, this.isStore = false, required this.currency, required this.sections, this.venueKind = 'bar'});
+
+  /// A counter (a liquor store, sweet shop, bakery or shop) has a shelf to make a list from.
+  bool get isCounter => const {'store', 'sweet_shop', 'bakery', 'shop'}.contains(venueKind);
 }
 
 /// The URL to write onto a table's NFC tag / print as its QR.
@@ -97,6 +103,7 @@ Menu? groupMenu(List<Map<String, dynamic>> rows) {
     venueName: '${first['venue_name']}',
     venueCity: first['venue_city'] as String?,
     isStore: first['venue_kind'] == 'store',
+    venueKind: (first['venue_kind'] as String?) ?? 'bar',
     currency: (first['currency'] as String?) ?? 'INR',
     sections: sections,
   );

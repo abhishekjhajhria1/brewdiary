@@ -423,6 +423,45 @@ void main() {
     expect(await _sql("select count(*) from public.table_calls where venue_id = '$venueId'"), '1');
   });
 
+  liveTest('a counter, straight in, without an account: a number, then ready (059)', () async {
+    if (_dbUrl.isEmpty) return markTestSkipped('needs LIVE_DB_URL');
+    await auth.signOut();
+    await until(() => !auth.isAuthed, 'signed out');
+    await _sql("update public.venues set orders_direct = true, orders_anon = true where id = '$venueId'");
+    final counterCode = await _sql("insert into public.venue_tables (venue_id, label, kind) values ('$venueId', 'Bar counter', 'pickup') returning code");
+    final info = await TableApi.info(counterCode);
+    expect((info?.isPickup, info?.ordersDirect, info?.ordersAnon), (true, true, true));
+
+    final kokum = await _sql("select id from public.venue_menu_items where venue_id = '$venueId' and name = 'Kokum Cooler'");
+    final st = await TableApi.order(counterCode, [{'item': kokum, 'qty': 1}]);
+    expect(st?.pickupNo, isNotNull, reason: 'a pickup number at once — no staff OK first');
+    expect(st?.status, 'sent');
+    expect(await _sql("select count(*) from public.order_requests where id = '${st!.id}' and requested_by is null and device_hash is not null"), '1', reason: 'no account: only the phone secret\'s hash is kept');
+
+    // The bar makes it; the phone sees it ready, and so does the board on the wall.
+    await _sql("update public.order_lines set status = 'ready', ready_at = now() where request_id = '${st.id}'");
+    final mine = await TableApi.mine();
+    expect((mine.first.status, mine.first.pickupNo, mine.first.atPickup), ('ready', st.pickupNo, true));
+    final board = rows(await db!.rpc('pickup_board', params: {'in_code': counterCode}));
+    expect(board.single['pickup_no'], st.pickupNo);
+    expect(board.single['state'], 'ready');
+    await _sql("update public.venues set orders_direct = false, orders_anon = false where id = '$venueId'");
+  });
+
+  liveTest('a liquor store\'s shelf: what\'s in stock, at its price — never the count (059)', () async {
+    if (_dbUrl.isEmpty) return markTestSkipped('needs LIVE_DB_URL');
+    final owner = await _sql("select created_by from public.venues where id = '$venueId'");
+    final store = await _sql("insert into public.venues (name, slug, created_by, kind, serves_alcohol, verified) values ('Cellar Door', 'cellar-door-${DateTime.now().millisecondsSinceEpoch}', '$owner', 'store', true, true) returning id");
+    final slug = await _sql("select slug from public.venues where id = '$store'");
+    final malt = await _sql("insert into public.shop_products (venue_id, name, brand, category, size, unit, price, mrp) values ('$store', 'Single Malt', 'Amrut', 'spirit', 750, 'ml', 3200, 3400) returning id");
+    await _sql("insert into public.shop_products (venue_id, name, category, size, unit, price) values ('$store', 'Out of stock gin', 'spirit', 750, 'ml', 900)");
+    await _sql("insert into public.stock_moves (venue_id, product_id, qty, reason) values ('$store', '$malt', 6, 'receive')");
+    final shelf = await ShelfApi.load(slug);
+    expect(shelf?.venueName, 'Cellar Door');
+    expect(shelf!.items.map((i) => i.title), ['Amrut Single Malt'], reason: 'only what\'s in stock');
+    expect((shelf.items.single.price, shelf.items.single.mrp, shelf.items.single.alcohol), (3200.0, 3400.0, true));
+  });
+
   liveTest('export everything: the diary, friends, circles, parties, plans, Split', () async {
     await _signIn(mira);
     final b = await ExportBundle.collect();

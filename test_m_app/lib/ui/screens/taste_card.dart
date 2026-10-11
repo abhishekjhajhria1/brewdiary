@@ -9,6 +9,8 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:brewdiary_core/links.dart' show guestCardQr;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
@@ -505,7 +507,7 @@ class _GuestCardState extends State<_GuestCard> {
     final bd = context.bd;
     final c = _card;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text('Show this to the staff when they record a visit or a perk.', style: T.bodyMuted(bd)),
+      Text('Show this to the staff when they record a visit or a perk — they scan the code, or type the letters.', style: T.bodyMuted(bd)),
       const SizedBox(height: S.l),
       PassportPaper(
         padding: const EdgeInsets.symmetric(vertical: S.xl, horizontal: S.l),
@@ -522,6 +524,15 @@ class _GuestCardState extends State<_GuestCard> {
             ),
           const SizedBox(height: S.s),
           if (c != null) Text('Good until ${TimeOfDay.fromDateTime(c.expiresAt).format(context)}', style: TextStyle(fontFamily: T.sansFamily, fontFamilyFallback: T.fallback, fontSize: 12, color: bd.muted)),
+          if (c != null) ...[
+            const SizedBox(height: S.l),
+            // The same 6 letters for the bar's scanner — not a link: another camera opens nothing.
+            Container(
+              padding: const EdgeInsets.all(S.s),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(rCtl)),
+              child: Semantics(label: 'Your guest card as a code to scan', child: QrImageView(data: guestCardQr(c.code), size: 132, backgroundColor: Colors.white)),
+            ),
+          ],
         ]),
       ),
       const SizedBox(height: S.m),

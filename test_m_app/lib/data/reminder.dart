@@ -71,7 +71,7 @@ class ReminderStore extends ChangeNotifier {
       onDidReceiveNotificationResponse: (r) {
         if (r.payload == _morningPayload) {
           openMorning.value = true;
-        } else if (r.payload != _pacePayload) {
+        } else if (r.payload != _pacePayload && r.payload != _readyPayload) {
           openToday.value = true;
         }
       },
@@ -95,7 +95,7 @@ class ReminderStore extends ChangeNotifier {
       if (launch?.didNotificationLaunchApp ?? false) {
         if (payload == _morningPayload) {
           openMorning.value = true;
-        } else if (payload != _pacePayload) {
+        } else if (payload != _pacePayload && payload != _readyPayload) {
           openToday.value = true;
         }
       }
@@ -197,6 +197,42 @@ class ReminderStore extends ChangeNotifier {
   // ── pacing: a few water-break nudges for one night ─────────────────────────
   // Opt-in, per night, and it only ever says "slow down": a glass of water between
   // rounds. It never counts drinks and never suggests another.
+  // ── "your order is ready" (059) ─────────────────────────────────────────────
+  // Only while the app is open (it asks the server every few seconds while an order is
+  // on its way): no push server, nothing about you leaves the phone.
+  static const _readyBase = 7400;
+  static const _readyPayload = 'ready';
+
+  /// Asked once, when a phone order goes in — so "ready" reaches a phone in a pocket.
+  Future<bool> askForReady() async {
+    try {
+      await _init();
+      return await _requestPermission();
+    } catch (e) {
+      logDebug(e);
+      return false;
+    }
+  }
+
+  /// An order you placed is ready to collect (or on its way to your table).
+  Future<void> orderReady(int n, String title, String body) async {
+    try {
+      await _init();
+      await _plugin.show(
+        id: _readyBase + n % 999,
+        title: title,
+        body: body,
+        payload: _readyPayload,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails('orders', 'Your orders', channelDescription: 'When an order you placed from a table or a counter is ready.', importance: Importance.high, priority: Priority.high),
+          iOS: DarwinNotificationDetails(),
+        ),
+      );
+    } catch (e) {
+      logDebug(e);
+    }
+  }
+
   static const _paceBase = 7300;
   static const _paceMax = 8;
   static const _paceKey = 'brewdiary.pace.until';

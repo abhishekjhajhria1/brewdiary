@@ -28,7 +28,7 @@ export function TabBar() {
   // rewrites to /venue internally but the browser's path is still "/", so a
   // `pathname.startsWith("/venue")` test silently fails there — which is how this
   // nav ended up on the bar dashboard in production.
-  if (!mounted || auth.status === "loading" || isVenue || pathname.startsWith("/kiosk")) return null;
+  if (!mounted || auth.status === "loading" || isVenue || pathname.startsWith("/kiosk") || pathname.startsWith("/ready/")) return null;
 
   // Guests still get the local diary — only the social tab needs an account.
   const tabs = TABS.filter((t) => !t.authed || auth.profile);

@@ -33,7 +33,9 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Face ID unlocks your diary, if you switch the lock on.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>To take a photo for a diary entry.</string>
+	<string>To take a photo for a diary entry, or to scan a table's or a counter's code.</string>
+	<key>NFCReaderUsageDescription</key>
+	<string>To open a table's or a counter's menu from its brewdiary tag.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>To point the Discover compass.</string>
 	<key>LSApplicationQueriesSchemes</key>

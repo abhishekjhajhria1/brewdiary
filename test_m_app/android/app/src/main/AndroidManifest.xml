@@ -10,6 +10,9 @@
     <!-- Table menus: tapping a venue's NFC tag opens its menu. Optional hardware —
          phones without NFC scan the QR instead. -->
     <uses-permission android:name="android.permission.NFC"/>
+    <!-- Scanning a table's or a counter's QR inside the app (only while the scanner is open). -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.nfc" android:required="false"/>
 
     <application

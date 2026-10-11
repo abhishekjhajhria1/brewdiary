@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:app_links/app_links.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -110,9 +111,9 @@ class Shell extends StatefulWidget {
   static bool deepLinks = true;
   const Shell({super.key});
 
-  /// Open a link as if the phone had just handed it over (a widget tap, a tag, a
-  /// shared link) — for tests; live, the link plugin does this.
-  @visibleForTesting
+  /// Open a link as if the phone had just handed it over: a code scanned or a tag read
+  /// inside the app (device/scan.dart), and the tests. Links from outside come through
+  /// the link plugin.
   static void openLink(Uri uri) => _ShellState._live?._route(uri);
 
   /// Switch to a tab from anywhere (the guide's "take me there").
@@ -214,9 +215,13 @@ class _ShellState extends State<Shell> {
         if (slug != null) nav.push(MaterialPageRoute(builder: (_) => MenuScreen(slug: slug)));
       case 't':
         // A table's own link (bwdy.site/t/<code>, 051) — the menu with the table known,
-        // ordering and "call staff" when the venue has them on.
+        // ordering and "call staff" when the venue has them on. A counter's (059) is the
+        // same link: order there and collect by number.
         final code = tableCodeFrom(uri);
         if (code != null) nav.push(MaterialPageRoute(builder: (_) => TableMenuScreen(code: code)));
+      case 'ready':
+        // A venue's ready board is for a screen on the wall: the browser shows it.
+        launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
