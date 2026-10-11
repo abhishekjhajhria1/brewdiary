@@ -18,6 +18,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getServerUser } from "@/lib/supabase-server";
 import { sameOrigin } from "@/lib/origin";
 import { rateLimit, clientKey } from "@/lib/ratelimit";
+import { removePhotoFiles } from "@/lib/photoRetention";
 
 export async function POST(req: Request) {
   // The single most destructive route in the app, authenticated by a COOKIE — so it
@@ -50,12 +51,13 @@ export async function POST(req: Request) {
   const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 
   // Storage isn't covered by a foreign key, so the photos have to go explicitly —
-  // they're the one place a deleted person could otherwise linger.
+  // they're the one place a deleted person could otherwise linger. They live at
+  // <user>/<entry>/<photo>, deeper than a storage listing reaches, so the database
+  // names every one (057).
   try {
-    const { data: files } = await admin.storage.from("photos").list(user.id);
-    if (files?.length) {
-      await admin.storage.from("photos").remove(files.map((f) => `${user.id}/${f.name}`));
-    }
+    const { data } = await admin.rpc("photo_files_of", { uid: user.id });
+    const names = ((data ?? []) as { name: string }[]).map((r) => r.name).filter(Boolean);
+    if (names.length) await removePhotoFiles(admin, names);
   } catch {
     /* no bucket / nothing stored — deletion proceeds regardless */
   }

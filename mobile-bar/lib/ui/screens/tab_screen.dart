@@ -18,6 +18,7 @@ import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
+import 'tab_tools.dart';
 
 const _statusWord = {'sent': 'sent', 'preparing': 'making', 'ready': 'ready', 'served': 'served', 'void': 'void'};
 const _statusTone = {'sent': Tone.wait, 'preparing': Tone.info, 'ready': Tone.good, 'served': Tone.calm, 'void': Tone.late};
@@ -41,17 +42,20 @@ class TabScreen extends StatelessWidget {
           maxWidth: kWideMaxWidth,
           onRefresh: () async => floorRev.bump(),
           children: [
-            Loader<(List<OrderLine>, bool)>(
+            Loader<(List<OrderLine>, ServiceTab?, String?)>(
               load: () async {
                 final lines = await Backend.i.tabLines(tabId);
-                final open = (await Backend.i.openTabs(venue.id)).any((t) => t.id == tabId);
-                return (lines, open);
+                final tab = (await Backend.i.openTabs(venue.id)).where((t) => t.id == tabId).firstOrNull;
+                final team = tab?.serverId == null ? const <StaffMember>[] : await Backend.i.staff(venue.id).catchError((_) => const <StaffMember>[]);
+                final server = team.where((m) => m.id == tab?.serverId).firstOrNull?.name;
+                return (lines, tab, server);
               },
               refresh: floorRev,
               retry: true,
               builder: (context, data, loading) {
                 if (data == null) return const Skeleton(height: 240);
-                final (lines, open) = data;
+                final (lines, tab, server) = data;
+                final open = tab != null;
                 final live = lines.where((l) => l.status != 'void').toList();
                 final orders = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   if (lines.isEmpty) EmptyNote(open ? 'Nothing ordered yet.' : 'This tab is closed.'),
@@ -60,6 +64,8 @@ class TabScreen extends StatelessWidget {
                   if (open && s.can(Cap.takeOrders)) ...[
                     const SizedBox(height: S.l),
                     BdButton('Add to the order', icon: Ph.plus, onTap: () => _add(context)),
+                    const SizedBox(height: S.m),
+                    _TabTools(venue: venue, tab: tab, lines: lines, server: server),
                   ],
                 ]);
                 final bill = _BillPane(venue: venue, tabId: tabId, where: where, lines: lines, open: open);
@@ -94,6 +100,38 @@ class TabScreen extends StatelessWidget {
   }
 }
 
+/// Move, merge, split by item, hand over — one row of chips under the order, each a
+/// single sheet. Who has the table is said plainly above them.
+class _TabTools extends StatelessWidget {
+  final Venue venue;
+  final ServiceTab tab;
+  final List<OrderLine> lines;
+  final String? server;
+  const _TabTools({required this.venue, required this.tab, required this.lines, this.server});
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final live = lines.where((l) => l.status != 'void').length;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (server != null) Padding(padding: const EdgeInsets.only(bottom: S.s), child: Text('$server\'s table', style: T.caption(bd))),
+      Wrap(spacing: S.s, runSpacing: S.s, children: [
+        BdChip('Move', icon: Ph.swap, onTap: () async {
+          final to = await moveTabFlow(context, venue, tab);
+          if (to != null && context.mounted) {
+            // Say it before leaving: the toast lives on the app's overlay, not this page.
+            toast(context, 'Moved to $to.', tone: ToastTone.success);
+            Navigator.of(context).pop();
+          }
+        }),
+        BdChip('Bring a tab in', icon: Ph.stack, onTap: () => mergeInFlow(context, venue, tab)),
+        if (live >= 2) BdChip('Split by item', icon: Ph.listChecks, onTap: () => splitByItemFlow(context, venue, tab, lines)),
+        BdChip('Hand over', icon: Ph.handshake, onTap: () => handOverFlow(context, venue, tab)),
+      ]),
+    ]);
+  }
+}
+
 class _LineTile extends StatelessWidget {
   final Venue venue;
   final OrderLine line;
@@ -115,7 +153,11 @@ class _LineTile extends StatelessWidget {
         if (isVoid && l.voidReason != null) 'void: ${l.voidReason}',
       ].join(' · '),
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-        ToneTag(_statusWord[l.status] ?? l.status, _statusTone[l.status] ?? Tone.calm),
+        AnimatedSwitcher(
+          duration: Motion.med,
+          transitionBuilder: (c, a) => FadeTransition(opacity: a, child: ScaleTransition(scale: Tween(begin: .8, end: 1.0).animate(a), child: c)),
+          child: ToneTag(key: ValueKey(l.status), _statusWord[l.status] ?? l.status, _statusTone[l.status] ?? Tone.calm),
+        ),
         const SizedBox(width: S.s),
         Text(money(l.unitPrice * l.qty, venue.currency),
             style: T.sans(bd, size: 14, color: isVoid ? bd.faint : bd.ink).copyWith(fontFeatures: T.tnum, decoration: isVoid ? TextDecoration.lineThrough : null)),
@@ -201,11 +243,17 @@ class _PickerState extends State<_Picker> {
                     style: T.caption(bd)),
               ]),
             ),
-            if ((_qty[m.id] ?? 0) > 0) ...[
-              IconBtn(Ph.minus, tooltip: 'One fewer ${m.name}', onTap: () => setState(() => _qty[m.id] = (_qty[m.id]! - 1).clamp(0, 99))),
-              SizedBox(width: 24, child: Text('${_qty[m.id]}', textAlign: TextAlign.center, style: T.sans(bd, size: 16, weight: FontWeight.w600).copyWith(fontFeatures: T.tnum))),
-              IconBtn(Ph.notePencil, tooltip: 'Note for ${m.name}', onTap: () => _noteFor(m)),
-            ],
+            AnimatedSize(
+              duration: Motion.med,
+              curve: Easing.emphasizedDecelerate,
+              child: (_qty[m.id] ?? 0) > 0
+                  ? Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconBtn(Ph.minus, tooltip: 'One fewer ${m.name}', onTap: () => setState(() => _qty[m.id] = (_qty[m.id]! - 1).clamp(0, 99))),
+                      SizedBox(width: 24, child: RollingNumber(_qty[m.id] ?? 0, textAlign: TextAlign.center, style: T.sans(bd, size: 16, weight: FontWeight.w600))),
+                      IconBtn(Ph.notePencil, tooltip: 'Note for ${m.name}', onTap: () => _noteFor(m)),
+                    ])
+                  : const SizedBox.shrink(),
+            ),
             IconBtn(Ph.plus, tooltip: 'Add ${m.name}', onTap: () => setState(() => _qty[m.id] = ((_qty[m.id] ?? 0) + 1).clamp(0, 99))),
           ]),
         ),
@@ -258,7 +306,7 @@ class _BillPane extends StatelessWidget {
         const SizedBox(height: S.s),
         Row(children: [
           Expanded(child: Text('Total', style: T.sans(bd, size: 16, weight: FontWeight.w600))),
-          Text(money(total, venue.currency), style: T.serif(bd, size: 28).copyWith(fontFeatures: T.tnum)),
+          RollingText(money(total, venue.currency), style: T.serif(bd, size: 28).copyWith(fontFeatures: T.tnum)),
         ]),
         const SizedBox(height: S.m),
         BdButton('Share the bill', icon: Ph.shareNetwork, kind: BtnKind.quiet, onTap: () => SharePlus.instance.share(ShareParams(text: billText(venue: venue.name, where: where, lines: lines, currency: venue.currency)))),

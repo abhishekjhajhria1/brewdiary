@@ -1,9 +1,8 @@
 // Everything the venue app asks of the server, in one place.
 //
-// Two implementations: SupabaseBackend talks to the real database (RLS + server
-// functions decide what each person may do), DemoBackend is a seeded venue that lives
-// on the device. Screens only ever see this interface, so the demo, the tests and the
-// real thing run the same screens.
+// The app runs on SupabaseBackend: the real database, where RLS and server functions
+// decide what each person may do. Screens only ever see this interface, so the widget
+// tests can run the same screens against an in-memory stand-in (test/support).
 import 'models.dart';
 import '../logic/area.dart' show HeatRow;
 import '../logic/host_brief.dart' show HostBrief;
@@ -27,8 +26,9 @@ abstract class Backend {
   static late Backend i;
   static void use(Backend b) => i = b;
 
-  /// True for the seeded demo venue (nothing leaves the phone).
-  bool get isDemo;
+  /// True when other phones can change the data under us (the real server), so the
+  /// session re-checks it on a clock. An in-memory stand-in returns false.
+  bool get live;
 
   // ── auth ──────────────────────────────────────────────────────────────────
   AppUser? get currentUser;
@@ -53,8 +53,8 @@ abstract class Backend {
     required String country,
     String? region,
   });
-  /// [capacity] 0 clears it.
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity});
+  /// [capacity] 0 clears it. [ordersDirect] / [ordersAnon]: how phone orders come in (059).
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity, bool? ordersDirect, bool? ordersAnon});
   Future<void> deleteVenue(String venueId);
 
   Future<VerificationRequest?> verification(String venueId);
@@ -237,8 +237,19 @@ abstract class Backend {
   Future<double> closeTab(String tabId, List<Map<String, Object>> payments, {double? tip});
   Future<void> voidTab(String tabId, String reason);
 
-  /// The bar's or the kitchen's open tickets (sent, preparing, ready).
+  /// The bar's or the kitchen's open tickets (sent, preparing, ready). [station] 'counter'
+  /// is every station at once — a café's, bakery's or shop's one counter (059).
   Future<List<OrderLine>> stationLines(String venueId, String station);
+
+  // ── phone orders (059): pickup numbers, the pause ─────────────────────────
+  /// Handed over at the counter: every line on a pickup order is served.
+  Future<void> collectPickup(String tabId);
+
+  /// "Hold phone orders" in a rush, or take them again. Any station or floor role.
+  Future<void> pausePhoneOrders(String venueId, bool paused);
+
+  /// The ready board for a pickup point's [code]: what's being made and what's ready.
+  Future<List<PickupNumber>> pickupBoard(String code);
 
   Future<List<InboxItem>> inbox(String venueId);
   Future<void> acceptRequest(String requestId, String tabId);
@@ -250,6 +261,50 @@ abstract class Backend {
   Future<void> setWaitStatus(String partyId, String status);
 
   Future<ServiceBoard> serviceBoard(String venueId);
+
+  // ── the floor in motion (058) ─────────────────────────────────────────────
+  /// Move a tab to another table — or to the bar ([barName], no table).
+  Future<void> moveTab(String tabId, {String? toTableId, String? barName});
+
+  /// Every line on [fromTabId] moves to [intoTabId]; the old tab is kept, marked merged.
+  Future<void> mergeTabs(String fromTabId, String intoTabId);
+
+  /// Move some lines to another open tab (a seat moving over, or a split by item).
+  Future<int> moveLines(List<String> lineIds, String toTabId);
+
+  /// Hand a tab to another server.
+  Future<void> assignTab(String tabId, String toUserId);
+
+  /// A line marked ready by mistake goes back to making.
+  Future<void> recallLine(String lineId);
+
+  /// 86 an item ([off] = it ran out), or bring it back. The bar and the kitchen can.
+  Future<void> setItemOff(String itemId, bool off);
+
+  // ── the shift's notes (058) ───────────────────────────────────────────────
+  Future<ShiftNotes> shiftNotes(String venueId);
+
+  /// [kind]: 'preshift' (shown the rest of the night, everyone marks it seen) or 'log'
+  /// (the manager's log book). Supervisors and managers post.
+  Future<void> postNote(String venueId, String id, String kind, String body);
+  Future<void> endNote(String noteId);
+  Future<void> markNoteSeen(String noteId);
+
+  // ── the cash drawer (058) ─────────────────────────────────────────────────
+  Future<DrawerState> drawerState(String venueId);
+  Future<void> openDrawer(String venueId, String id, double float, {String label = 'Drawer'});
+
+  /// [kind]: 'pay_in' | 'pay_out' | 'drop'. A reason always.
+  Future<void> cashMove(String drawerId, String kind, double amount, String reason);
+
+  /// A blind count: what's in the drawer. Returns what the close kept.
+  Future<CashReport> closeDrawer(String drawerId, double counted, {String? note});
+
+  // ── bookings (058) ────────────────────────────────────────────────────────
+  /// Bookings starting in [from, to).
+  Future<List<Booking>> bookings(String venueId, DateTime from, DateTime to);
+  Future<void> saveBooking(String venueId, Booking b, {bool isNew = false});
+  Future<void> setBookingStatus(String bookingId, String status, {String? tabId});
 
   // ── the door (052): counts, never people ──────────────────────────────────
   Future<DoorCount> doorCount(String venueId);
@@ -274,6 +329,14 @@ abstract class Backend {
   /// Rings a sale; the server prices it and returns the total. [saleId] makes a retry safe.
   Future<double> ringSale(String venueId, String saleId, List<Map<String, Object>> lines, String paidBy, {bool idChecked = false});
   Future<List<RegisterRow>> exciseRegister(String venueId, DateTime from, DateTime to);
+
+  // ── guests tonight (056) ──────────────────────────────────────────────────
+  /// Who opened this venue's table or menu link tonight and shared their taste.
+  /// Needs guests.taste (owner, manager, supervisor, bartender, server).
+  Future<List<GuestTonight>> guestsTonight(String venueId);
+
+  /// The guest showing their 6-letter card code (good for 10 minutes), or null.
+  Future<ProfileHit?> findGuestByCode(String venueId, String code);
 
   // ── guest book ────────────────────────────────────────────────────────────
   Future<GuestCard?> guestCard(String venueId, String guestId);

@@ -3,6 +3,44 @@
 What changed in `test_m_app/`, newest first, and the goal behind each change. The plan for what comes
 next is [`IMPROVEMENTS.md`](IMPROVEMENTS.md).
 
+## 1 October 2026 (evening) — a passport you use
+
+- **Palate**: a page in the book with your flavour notes as ink bars ("Leans bitter and citrus"),
+  worked out from what you log, each drink once a night (`palate()` + `FLAVOURS`, web parity).
+- **Your taste**: how sweet, drinks you love, what you'd rather not have, diet, allergies — on the
+  identity page and to tonight's bar (allergies and "rather not" first).
+- **What the bar sees**: a live preview of exactly what's shared.
+- **Next stamps**: families you haven't had that share your notes, always one alcohol-free; one tap
+  puts it on your to-try list (`nextStamps()`, web parity).
+
+## 1 October 2026 (later) — the passport in the calendar, chats, a diary never deleted, taste at the table
+
+- **Taste passport**: a book you swipe — leather cover, identity page with a machine-readable strip,
+  a visa page per year and month with rubber stamps (place, first taste, new kind, dry night). This
+  month's page sits under the month grid, the year's under the mosaic (`lib/ui/widgets/passport.dart`,
+  `stampsBetween()` in brewdiary_core with web parity).
+- **Ninkasi keeps your chats** (`lib/data/chats.dart`): open, start new, rename, delete.
+- **A fresh diary keeps everything** (055): remove = put away; clearing needs an emailed code; import adds.
+- **Taste at the table** (056): asked once, then shared when a venue's menu opens; "your taste is with
+  … tonight · Stop"; Settings › At the bar; "Show my guest card".
+- **Photos kept for a year** (057), noted in the log sheet.
+- **Lock brewdiary**, code-first sign-in, 8-character new passwords, iPhone link entitlements.
+
+## 1 October 2026 — the book, the overlays, the maintainer's calls
+
+**Goal:** give people something beautiful to keep and to share, as decided by the maintainer.
+
+- **Your diary, as a book** — Settings → Your data: a minimal PDF (cover with the year's mosaic, the
+  numbers, every entry month by month, places, Together, Split, to-try, what venues keep on you, the
+  Ninkasi chats). `lib/data/export.dart` gathers it; `lib/ui/export/diary_book.dart` sets it; the
+  `pdf` package. The JSON copy stays as "Everything as a data file".
+- **Twelve photo overlays** (`lib/ui/screens/photo_studio.dart`): receipt, lineup, stats, menu, the
+  haul, ticket, cheers, polaroid, film, postcard, stamp, mosaic. Lines come from the night's logs (and,
+  on the night, accepted table orders); the person can tick lines off, add one, price a line or type
+  the bill. The brand is a small mosaic mark and the wordmark.
+- **Help train Ninkasi** stays on by default; its label now says the chats are kept on the phone and
+  sent, without a name, to the training set.
+
 ## 30 September 2026 — the review, written down (no code changes)
 
 **Goal:** agree what to fix before changing anything.

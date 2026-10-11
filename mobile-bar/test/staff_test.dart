@@ -1,6 +1,6 @@
 // Staff access (supabase/053): the owner's code, approvals, pausing someone, the history
 // and the clock — the words (held against the migration's own text), then the flows on
-// the demo venue with the real screens.
+// the stand-in venue with the real screens.
 import 'dart:io';
 
 import 'package:brewdiary_bar/data/session.dart';

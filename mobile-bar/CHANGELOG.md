@@ -17,6 +17,19 @@ The goals every change is held to:
 
 ---
 
+## 1 October 2026 — guests tonight, the guest's code, the taste on the ticket, next steps
+
+**Goal:** the bartender makes something the guest will like; the till finds a guest without searching
+everyone; a new venue sees what's left to set up.
+
+- `056_taste_at_the_table.sql`: guests who opened the menu share their taste card (8 hours, a one-time
+  yes); `venue_guests_tonight()` for `guests.taste` roles; `venue_find_guest()` by a 6-letter code.
+- The till and the guest book: **In tonight** (each guest, table, taste chips) and **Their code**,
+  instead of a name search (`lib/ui/widgets/guest_finder.dart`).
+- Bar tickets show the table's taste — "nothing with alcohol tonight" and allergies first.
+- **Getting set up** on Tonight / the Till (`lib/ui/widgets/next_steps.dart`, PLAN M1.14).
+- iOS: `applinks:bar.bwdy.site` entitlement.
+
 ## 30 September 2026 — the team: the owner's code, pausing access, hours
 
 **Goal:** an owner adds employees and decides their role. An employee signs in with their own details

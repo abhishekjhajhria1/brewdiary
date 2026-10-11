@@ -1,5 +1,5 @@
-// Auth + profile — a port of src/lib/profile.ts. Email + password via Supabase;
-// when Supabase isn't configured it degrades to a local profile so the app still runs.
+// Auth + profile — a port of src/lib/profile.ts. An emailed code (or a password) via
+// Supabase. There is no offline account: without the server nobody is signed in.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -62,7 +62,7 @@ class AuthResult {
 }
 
 const _profileCols = 'id, display_name, handle, created_at, presence_checked';
-const _localKey = 'brewdiary.profile.v1';
+const _notConnected = AuthResult.failure('This build isn\'t connected to the brewdiary server.');
 
 class AuthStore extends ChangeNotifier {
   AuthStore._();
@@ -72,6 +72,7 @@ class AuthStore extends ChangeNotifier {
   Profile? profile;
   StreamSubscription<AuthState>? _sub;
   bool _initialized = false;
+  ({String id, Future<Profile> future})? _profileFor;
 
   bool get isAuthed => status == AuthStatus.authed && profile != null;
   String? get meId => profile?.id;
@@ -87,8 +88,7 @@ class AuthStore extends ChangeNotifier {
     _initialized = true;
     final c = db;
     if (c == null) {
-      final local = Prefs.getJson<Map<String, dynamic>>(_localKey);
-      local != null ? _set(AuthStatus.authed, Profile.fromJson(local)) : _set(AuthStatus.anon, null);
+      _set(AuthStatus.anon, null);
       return;
     }
     _applySession(c.auth.currentSession);
@@ -103,10 +103,21 @@ class AuthStore extends ChangeNotifier {
     }
     if (profile?.id == user.id && status == AuthStatus.authed) return;
     try {
-      _set(AuthStatus.authed, await _ensureProfile(user));
+      // Sign-up answers with a session AND the auth listener fires for it: share one
+      // lookup rather than racing two inserts for the same profile row.
+      final pending = _profileFor?.id == user.id ? _profileFor!.future : null;
+      final future = pending ?? _ensureProfile(user);
+      if (pending == null) _profileFor = (id: user.id, future: future);
+      final p = await future;
+      if (identical(_profileFor?.future, future)) _profileFor = null;
+      // The profile read takes a moment; if they signed out (or switched account)
+      // meanwhile, this answer is stale — never sign the old account back in.
+      if (db?.auth.currentUser?.id != user.id) return;
+      _set(AuthStatus.authed, p);
     } catch (e) {
       logDebug(e);
-      _set(AuthStatus.anon, null);
+      if (_profileFor?.id == user.id) _profileFor = null; // let the next try start fresh
+      if (db?.auth.currentUser?.id == user.id) _set(AuthStatus.anon, null);
     }
   }
 
@@ -137,12 +148,7 @@ class AuthStore extends ChangeNotifier {
 
   Future<AuthResult> signUp(String email, String password, String name) async {
     final c = db;
-    if (c == null) {
-      final p = Profile(id: 'local', name: name.trim().isEmpty ? 'you' : name.trim(), handle: '', createdAt: appNow().toIso8601String());
-      await Prefs.setJson(_localKey, p.toJson());
-      _set(AuthStatus.authed, p);
-      return const AuthResult.success();
-    }
+    if (c == null) return _notConnected;
     try {
       final res = await c.auth.signUp(email: email.trim(), password: password, data: {'name': name.trim()});
       if (res.session?.user != null) {
@@ -159,15 +165,7 @@ class AuthStore extends ChangeNotifier {
 
   Future<AuthResult> signIn(String email, String password) async {
     final c = db;
-    if (c == null) {
-      final p = profile ??
-          (Prefs.getJson<Map<String, dynamic>>(_localKey) != null
-              ? Profile.fromJson(Prefs.getJson<Map<String, dynamic>>(_localKey)!)
-              : Profile(id: 'local', name: 'you', handle: '', createdAt: appNow().toIso8601String()));
-      await Prefs.setJson(_localKey, p.toJson());
-      _set(AuthStatus.authed, p);
-      return const AuthResult.success();
-    }
+    if (c == null) return _notConnected;
     try {
       await c.auth.signInWithPassword(email: email.trim(), password: password);
       return const AuthResult.success();
@@ -181,7 +179,6 @@ class AuthStore extends ChangeNotifier {
   Future<void> signOut() async {
     final c = db;
     if (c == null) {
-      await Prefs.remove(_localKey);
       _set(AuthStatus.anon, null);
       return;
     }
@@ -193,7 +190,7 @@ class AuthStore extends ChangeNotifier {
   /// include {{ .Token }} — see docs/12-mobile-server-and-venues.md.
   Future<AuthResult> sendEmailCode(String email, {bool create = false, String? name}) async {
     final c = db;
-    if (c == null) return const AuthResult.failure('Email codes need the brewdiary cloud.');
+    if (c == null) return _notConnected;
     try {
       await c.auth.signInWithOtp(email: email.trim(), shouldCreateUser: create, data: create && (name?.trim().isNotEmpty ?? false) ? {'name': name!.trim()} : null);
       return const AuthResult.success();
@@ -208,7 +205,7 @@ class AuthStore extends ChangeNotifier {
   /// auth listener, exactly like a password sign-in.
   Future<AuthResult> verifyEmailCode(String email, String code) async {
     final c = db;
-    if (c == null) return const AuthResult.failure('Email codes need the brewdiary cloud.');
+    if (c == null) return _notConnected;
     try {
       final res = await c.auth.verifyOTP(type: OtpType.email, email: email.trim(), token: code.trim());
       if (res.session != null) await _applySession(res.session);
@@ -223,7 +220,7 @@ class AuthStore extends ChangeNotifier {
   /// Email a reset link. It opens the website's /reset page, which finishes the job.
   Future<AuthResult> sendPasswordReset(String email) async {
     final c = db;
-    if (c == null) return const AuthResult.failure('Password reset needs the cloud backend.');
+    if (c == null) return _notConnected;
     try {
       await c.auth.resetPasswordForEmail(email.trim(), redirectTo: '${Config.siteUrl}/reset');
       return const AuthResult.success();
@@ -238,12 +235,7 @@ class AuthStore extends ChangeNotifier {
     final p = profile;
     if (p == null) return const AuthResult.failure('Not signed in.');
     final c = db;
-    if (c == null) {
-      final next = p.copyWith(handle: handle);
-      await Prefs.setJson(_localKey, next.toJson());
-      _set(AuthStatus.authed, next);
-      return const AuthResult.success();
-    }
+    if (c == null) return _notConnected;
     try {
       await c.from('profiles').update({'handle': handle}).eq('id', p.id);
       _set(AuthStatus.authed, p.copyWith(handle: handle));
@@ -259,12 +251,7 @@ class AuthStore extends ChangeNotifier {
     final p = profile;
     if (p == null) return false;
     final c = db;
-    if (c == null) {
-      final next = p.copyWith(presenceChecked: true);
-      await Prefs.setJson(_localKey, next.toJson());
-      _set(AuthStatus.authed, next);
-      return true;
-    }
+    if (c == null) return false;
     try {
       await c.from('profiles').update({'presence_checked': true, 'presence_checked_at': DateTime.now().toUtc().toIso8601String()}).eq('id', p.id);
       _set(AuthStatus.authed, p.copyWith(presenceChecked: true));
@@ -273,6 +260,10 @@ class AuthStore extends ChangeNotifier {
       return false;
     }
   }
+
+  /// Tests only: be signed in as [p] without a server (the widget tests have none).
+  @visibleForTesting
+  void debugSignIn(Profile p) => _set(AuthStatus.authed, p);
 
   @override
   void dispose() {

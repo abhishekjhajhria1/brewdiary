@@ -14,7 +14,7 @@ any moment and tell them who to report to. It all runs on `supabase/053_staff_ac
 7. [The time clock](#7-the-time-clock)
 8. [The rules the database enforces](#8-the-rules-the-database-enforces)
 9. [Switching it on](#9-switching-it-on)
-10. [Trying it in the demo](#10-trying-it-in-the-demo)
+10. [Trying it out](#10-trying-it-out)
 11. [Not built yet](#11-not-built-yet)
 12. [Where it lives](#12-where-it-lives)
 
@@ -165,16 +165,12 @@ fits the schema.
    error.
 4. **Tell your team** the new way in: the owner adds them, and they type the owner's code.
 
-## 10. Trying it in the demo
+## 10. Trying it out
 
-The demo venue (the app with no Supabase values) has the whole flow on the phone:
-
-- **Your venues** shows *A code to type* for **Café Nilgiri**. The code is **482913**. Try a wrong one
-  first.
-- **The Tap House** is *paused*: tap it to see the paused screen.
-- **The Amber Room › More › Team**: **Kabir** is waiting for your yes, **Rahul S.** is added but not in
-  yet, **Leo** is paused, and Ira and Sam are on shift. Add an employee, pause Sam, look at **Hours** and
-  **Team history**.
+There is no demo venue: try it on your real server with two accounts. As the owner, add an employee
+(More › Team › Add an employee) and note the 6-digit code; sign in on a second phone with that email and
+type the code. Then pause them from the owner's phone and watch the second phone stop. The widget tests
+(`mobile-bar/test/staff_test.dart`) walk the same flow against an in-memory stand-in.
 
 ## 11. Not built yet
 

@@ -4,7 +4,6 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../data/models.dart';
 import '../data/session.dart';
@@ -81,18 +80,30 @@ class _ShellState extends State<Shell> {
           body: Ambient(
             child: Stack(children: [
               Positioned.fill(
-                child: IndexedStack(
+                child: FadeThroughStack(
                   index: tabs.indexOf(current),
                   children: [for (final t in tabs) KeyedSubtree(key: ValueKey('page-${t.name}-${v.id}'), child: _page(t, v))],
                 ),
               ),
-              if (!keyboard)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: _TabBar(tabs: tabs, current: current, venue: v, onSelect: (t) => setState(() => _tab = t)),
+              // The tab bar slides away while the keyboard is up, and back after.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: IgnorePointer(
+                  ignoring: keyboard,
+                  child: AnimatedOpacity(
+                    opacity: keyboard ? 0 : 1,
+                    duration: Motion.fast,
+                    child: AnimatedSlide(
+                      offset: keyboard ? const Offset(0, 1.4) : Offset.zero,
+                      duration: Motion.med,
+                      curve: Motion.curve,
+                      child: _TabBar(tabs: tabs, current: current, venue: v, onSelect: (t) => setState(() => _tab = t)),
+                    ),
+                  ),
                 ),
+              ),
             ]),
           ),
         );
@@ -141,7 +152,7 @@ class _TabBar extends StatelessWidget {
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () {
-                            if (t != current) HapticFeedback.selectionClick();
+                            if (t != current) Haptics.tick();
                             onSelect(t);
                           },
                           child: Stack(alignment: Alignment.topCenter, children: [

@@ -1,5 +1,6 @@
 // Shared test plumbing: real fonts (so goldens show the real type and icons) and a
-// one-call boot of the app in LOCAL mode (no Supabase env).
+// one-call boot of the app. Tests have no server: a signed-in test uses the auth
+// store's test seam and a month of diary from test/support/seed.dart.
 import 'dart:io';
 
 import 'package:brewdiary/app.dart';
@@ -14,6 +15,8 @@ import 'package:brewdiary/ui/widgets/mosaic.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/seed.dart';
 
 /// The evening every test lives in, so goldens don't drift with the calendar.
 final testNow = DateTime(2026, 9, 28, 20, 30);
@@ -38,6 +41,7 @@ Future<void> loadFonts() async {
 
   await load('Hanken Grotesk', ['assets/fonts/HankenGrotesk.ttf', 'assets/fonts/HankenGrotesk-Italic.ttf']);
   await load('Newsreader', ['assets/fonts/Newsreader.ttf', 'assets/fonts/Newsreader-Italic.ttf']);
+  await load('IBM Plex Mono', ['assets/fonts/IBMPlexMono-Regular.ttf', 'assets/fonts/IBMPlexMono-Medium.ttf']);
   await load('Phosphor', ['assets/fonts/Phosphor.ttf']);
   await load('PhosphorFill', ['assets/fonts/Phosphor-Fill.ttf']);
   await load('PhosphorBold', ['assets/fonts/Phosphor-Bold.ttf']);
@@ -84,8 +88,8 @@ Future<void> bootApp(
     await t.pump();
   }
   if (signedIn) {
-    entryStore.reseed();
-    await auth.signUp('a@b.c', 'secret1', 'Sekhi');
+    entryStore.debugUseLocal(seedEntries());
+    auth.debugSignIn(Profile(id: 'local', name: 'Sekhi', handle: '', createdAt: testNow.toIso8601String()));
     await t.pumpAndSettle();
   }
 }

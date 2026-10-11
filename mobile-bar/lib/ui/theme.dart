@@ -154,6 +154,9 @@ class T {
   static const sansFamily = 'Hanken Grotesk';
   static const serifFamily = 'Newsreader';
 
+  /// Hanken Grotesk has no ₹ — fall back to Newsreader for the glyphs it lacks.
+  static const fallback = [serifFamily];
+
   /// Variable fonts: map the requested weight onto the `wght` axis so every
   /// platform renders the real weight (not a synthetic bold).
   static List<FontVariation> _wght(FontWeight w, {double? opsz}) => [
@@ -162,7 +165,7 @@ class T {
       ];
 
   static TextStyle sans(BD bd, {double size = 15, FontWeight weight = FontWeight.w400, Color? color, double? height, double? spacing}) => TextStyle(
-        fontFamily: sansFamily,
+        fontFamily: sansFamily, fontFamilyFallback: fallback,
         fontSize: size,
         fontWeight: weight,
         fontVariations: _wght(weight),
@@ -198,7 +201,7 @@ class T {
 
   /// Raw styles for the share cards (fixed colours, not theme tokens).
   static TextStyle rawSans(double size, Color color, {FontWeight weight = FontWeight.w400, double? spacing}) =>
-      TextStyle(fontFamily: sansFamily, fontSize: size, color: color, fontWeight: weight, fontVariations: _wght(weight), letterSpacing: spacing);
+      TextStyle(fontFamily: sansFamily, fontFamilyFallback: fallback, fontSize: size, color: color, fontWeight: weight, fontVariations: _wght(weight), letterSpacing: spacing);
   static TextStyle rawSerif(double size, Color color, {FontWeight weight = FontWeight.w400, bool italic = false, double? height}) => TextStyle(
       fontFamily: serifFamily,
       fontSize: size,
@@ -213,7 +216,7 @@ class T {
 
 ThemeData buildTheme(BD bd) {
   final base = bd.dark ? ThemeData.dark(useMaterial3: true) : ThemeData.light(useMaterial3: true);
-  final text = base.textTheme.apply(fontFamily: T.sansFamily, bodyColor: bd.ink, displayColor: bd.ink);
+  final text = base.textTheme.apply(fontFamily: T.sansFamily, fontFamilyFallback: T.fallback, bodyColor: bd.ink, displayColor: bd.ink);
   final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(rTile));
   return base.copyWith(
     scaffoldBackgroundColor: bd.base,

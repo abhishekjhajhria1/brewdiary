@@ -1944,6 +1944,378 @@ try {
         await refused(() => as(mgr, `insert into public.${tb} (venue_id) values ($1)`, [vid])));
     }
   }
+
+  // ── 25. a diary is never deleted (055): put away; a fresh emailed code clears it ──
+  if ((await db.query(`select to_regprocedure('public.archive_my_diary()') f`)).rows[0].f) {
+    console.log("\n── 25. a diary is put away, never deleted (055) ──");
+    const t = Date.now();
+    const kai = await mkUser("Kai", `vf-kai-${t}`);
+    const e1 = randomUUID(), e2 = randomUUID();
+    await as(kai, `insert into public.entries (id, user_id, date, drink) values ($1,$2,current_date,'Negroni'), ($3,$2,current_date,'Lime soda')`, [e1, kai, e2]);
+    /** As Kai, with a session that says how (and when) it was signed in. */
+    const withAmr = async (uid, amr, sql, params = []) => {
+      await db.query("set local role authenticated");
+      await db.query(`set local request.jwt.claims = '${JSON.stringify({ sub: uid, role: "authenticated", amr })}'`);
+      const r = await db.query(sql, params);
+      await db.query("reset role");
+      await db.query("reset request.jwt.claims");
+      return r;
+    };
+    const live = async () => (await as(kai, `select id from public.entries`)).rows.length;
+    ok("an app can't write an entry already put away", await refused(() => as(kai, `insert into public.entries (user_id, date, drink, archived_at) values ($1,current_date,'x',now())`, [kai])));
+    ok("…or put one away itself", await refused(() => as(kai, `update public.entries set archived_at = now() where id = $1`, [e1])));
+    ok("…or delete one (no client delete; nothing is destroyed)", (await as(kai, `delete from public.entries where id = $1 returning 1`, [e1])).rows.length === 0 && (await live()) === 2);
+    ok("removing an entry puts it away", (await as(kai, `select public.archive_entry($1) ok`, [e1])).rows[0].ok === true && (await live()) === 1);
+    ok("…and it's still kept", (await db.query(`select archived_at from public.entries where id = $1`, [e1])).rows[0].archived_at !== null);
+    ok("clearing the diary without a code is refused", await refused(() => as(kai, `select public.archive_my_diary()`)));
+    const stale = Math.floor(Date.now() / 1000) - 3600;
+    ok("…and with an hour-old code", await refused(() => withAmr(kai, [{ method: "otp", timestamp: stale }], `select public.archive_my_diary()`)));
+    ok("…and with a password sign-in", await refused(() => withAmr(kai, [{ method: "password", timestamp: Math.floor(Date.now() / 1000) }], `select public.archive_my_diary()`)));
+    const n = (await withAmr(kai, [{ method: "otp", timestamp: Math.floor(Date.now() / 1000) }], `select public.archive_my_diary() n`)).rows[0].n;
+    ok("with a fresh code the diary starts fresh", n === 1 && (await live()) === 0);
+    ok("…and every entry is kept", Number((await db.query(`select count(*) c from public.entries where user_id = $1`, [kai])).rows[0].c) === 2);
+    ok("my_archive() says how much is kept", Number((await as(kai, `select * from public.my_archive()`)).rows[0].entries) === 2);
+  }
+
+  // ── 26. your taste at the table (056): tonight only, the drink-makers only ──
+  if ((await db.query(`select to_regprocedure('public.share_taste(text,jsonb)') f`)).rows[0].f) {
+    console.log("\n── 26. taste at the table, guests tonight, the guest's code (056) ──");
+    const t = Date.now();
+    const boss = await mkUser("Boss", `vf-tboss-${t}`);
+    const pour = await mkUser("Pour", `vf-tpour-${t}`);
+    const door = await mkUser("Door", `vf-tdoor-${t}`);
+    const cook = await mkUser("Cook", `vf-tcook-${t}`);
+    const guest = await mkUser("Guest", `vf-tguest-${t}`);
+    const bar = randomUUID();
+    await as(boss, `insert into public.venues (id, name, slug, created_by, country) values ($1,'Taste Bar',$2,$3,'IN')`, [bar, `vf-taste-${t}`, boss]);
+    await as(boss, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [bar, boss]);
+    for (const [u, r] of [[pour, "bartender"], [door, "host"], [cook, "kitchen"]]) await seat(bar, u, r);
+    await db.query(`update public.venues set verified = true where id = $1`, [bar]);
+    const code = (await db.query(`insert into public.venue_tables (venue_id, label) values ($1,'7') returning code`, [bar])).rows[0].code;
+
+    const shared = (await as(guest, `select * from public.share_taste($1, $2::jsonb)`, [code, JSON.stringify({ into: ["Negroni", "Paloma"], usually: ["Cocktails"], alcohol_free_often: false, sweetness: "dry", avoid: ["gin"], diary: ["everything"], where_else: "Soka" })])).rows[0];
+    ok("opening a table link shares the taste with that venue", shared?.venue_name === "Taste Bar");
+    const stored = (await db.query(`select taste from public.taste_shares where user_id = $1`, [guest])).rows[0].taste;
+    ok("…only the taste card's own keys are kept", JSON.stringify(Object.keys(stored).sort()) === JSON.stringify(["alcohol_free_often", "avoid", "into", "sweetness", "usually"]));
+    ok("a made-up table code is refused", await refused(() => as(guest, `select * from public.share_taste('zzzzzzzz', '{}'::jsonb)`)));
+    ok("nobody writes taste_shares directly", await refused(() => as(guest, `insert into public.taste_shares (user_id, venue_id, taste, expires_at) values ($1,$2,'{}',now())`, [guest, bar])));
+    const tonight = (await as(pour, `select * from public.venue_guests_tonight($1)`, [bar])).rows;
+    ok("the bartender sees who's in, at which table, and what they like", tonight.length === 1 && tonight[0].table_label === "7" && tonight[0].taste.into[0] === "Negroni");
+    ok("…the host doesn't", await refused(() => as(door, `select * from public.venue_guests_tonight($1)`, [bar])));
+    ok("…nor the kitchen", await refused(() => as(cook, `select * from public.venue_guests_tonight($1)`, [bar])));
+    ok("…nor a stranger", await refused(() => as(guest, `select * from public.venue_guests_tonight($1)`, [bar])));
+    ok("opening a link records no visit (a guest can't write their own reward)", Number((await db.query(`select count(*) c from public.venue_checkins where user_id = $1`, [guest])).rows[0].c) === 0);
+    ok("the guest sees their own share", (await as(guest, `select * from public.my_taste_shares()`)).rows.length === 1);
+    await db.query(`update public.taste_shares set expires_at = now() - interval '1 minute' where user_id = $1`, [guest]);
+    ok("after the night it's gone from staff screens", (await as(pour, `select * from public.venue_guests_tonight($1)`, [bar])).rows.length === 0);
+    await as(guest, `select * from public.share_taste($1, '{}'::jsonb)`, [code]);
+    await as(guest, `select public.stop_taste_share($1)`, [bar]);
+    const viaMenu = (await as(guest, `select * from public.share_taste_at($1, $2::jsonb)`, [`vf-taste-${t}`, JSON.stringify({ moods: ["bright"] })])).rows[0];
+    ok("opening the venue's menu link shares it too (no table)", viaMenu?.venue_id === bar && (await as(pour, `select * from public.venue_guests_tonight($1)`, [bar])).rows[0]?.table_label === null);
+    await as(guest, `select public.stop_taste_share($1)`, [bar]);
+    ok("the guest can stop sharing any time", Number((await db.query(`select count(*) c from public.taste_shares where user_id = $1`, [guest])).rows[0].c) === 0);
+
+    const card = (await as(guest, `select * from public.my_guest_code()`)).rows[0];
+    ok("the guest's card is a 6-letter code", /^[A-HJ-NP-Z2-9]{6}$/.test(card.code));
+    ok("staff who punch cards find the guest by it", (await as(pour, `select * from public.venue_find_guest($1,$2)`, [bar, card.code.toLowerCase()])).rows[0]?.user_id === guest);
+    ok("…a wrong code finds nobody", (await as(pour, `select * from public.venue_find_guest($1,'ZZZZZZ')`, [bar])).rows.length === 0);
+    ok("…the host can't look people up", await refused(() => as(door, `select * from public.venue_find_guest($1,$2)`, [bar, card.code])));
+    ok("nobody reads guest_codes directly", (await as(pour, `select * from public.guest_codes`)).rows.length === 0);
+    await db.query(`update public.guest_codes set expires_at = now() - interval '1 second' where user_id = $1`, [guest]);
+    ok("…an old code finds nobody", (await as(pour, `select * from public.venue_find_guest($1,$2)`, [bar, card.code])).rows.length === 0);
+  }
+
+  // ── 27. photos kept a year at most (057) ─────────────────────────────────────
+  if ((await db.query(`select to_regprocedure('public.photo_files_older_than(int,int)') f`)).rows[0].f) {
+    console.log("\n── 27. photos are kept for a year, at most (057) ──");
+    const t = Date.now();
+    const pia = await mkUser("Pia", `vf-pia-${t}`);
+    await db.query(`insert into storage.buckets (id, name, public) values ('photos','photos',true) on conflict do nothing`);
+    await db.query(`insert into storage.objects (bucket_id, name, created_at) values ('photos', $1, now() - interval '400 days'), ('photos', $2, now() - interval '10 days')`, [`${pia}/e1/old`, `${pia}/e2/new`]);
+    await db.query("set local role service_role");
+    const old = (await db.query(`select name from public.photo_files_older_than(365, 500)`)).rows.map((r) => r.name);
+    const mine = (await db.query(`select name from public.photo_files_of($1)`, [pia])).rows.map((r) => r.name);
+    const floor = (await db.query(`select name from public.photo_files_older_than(1, 500)`)).rows.map((r) => r.name);
+    await db.query("reset role");
+    ok("a photo older than a year is due to go; a recent one isn't", old.includes(`${pia}/e1/old`) && !old.includes(`${pia}/e2/new`));
+    ok("account deletion finds every file, however deep", mine.length === 2);
+    ok("…asked for 1 day, it still keeps 30", !floor.includes(`${pia}/e2/new`));
+    ok("an app can't list photo files", await refused(() => as(pia, `select * from public.photo_files_of($1)`, [pia])));
+  }
+
+  // ── 28. the floor in motion, stations, notes, the cash drawer, bookings (058) ──
+  if ((await db.query(`select to_regprocedure('public.merge_tabs(uuid,uuid)') f`)).rows[0].f) {
+    console.log("\n── 28. moving tables, merging and splitting, recall, 86, notes, the drawer, bookings (058) ──");
+    const t = Date.now();
+    const srv = await mkUser("Sam", `vf-sam-${t}`);
+    const srv2 = await mkUser("Ira", `vf-ira-${t}`);
+    const cook = await mkUser("Cook", `vf-cook-${t}`);
+    const door = await mkUser("Door", `vf-doorh-${t}`);
+    const lead = await mkUser("Lead", `vf-lead-${t}`);
+    const cafe = randomUUID();
+    await as(owner, `insert into public.venues (id, name, slug, created_by, kind, serves_alcohol, country) values ($1,'Verify Cafe',$2,$3,'restaurant',true,'IN')`, [cafe, `vf-cafe-${t}`, owner]);
+    await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [cafe, owner]);
+    for (const [uid, role] of [[srv, "server"], [srv2, "server"], [cook, "kitchen"], [door, "host"], [lead, "supervisor"], [barman, "bartender"]]) await seat(cafe, uid, role);
+    await db.query(`update public.venues set verified = true where id = $1`, [cafe]);
+    const mk = async (name, kind, price) => {
+      const id = randomUUID();
+      await as(owner, `insert into public.venue_menu_items (id, venue_id, name, kind, price, no_alcohol, spec) values ($1,$2,$3,$4,$5,$6,$7)`,
+        [id, cafe, name, kind, price, kind !== "cocktail", kind === "cocktail" ? "45 ml gin, 30 ml Campari, 30 ml vermouth. Rocks glass, orange peel." : null]);
+      return id;
+    };
+    const dal = await mk("Dal Makhani", "food", 280);
+    const nimbu = await mk("Nimbu Soda", "soft", 80);
+    const gimlet = await mk("Gimlet", "cocktail", 420);
+    const tA = randomUUID();
+    const tB = randomUUID();
+    await as(owner, `insert into public.venue_tables (id, venue_id, label, seats) values ($1,$2,'A1',4), ($3,$2,'A2',2)`, [tA, cafe, tB]);
+
+    // Spec cards are the team's, never the guest's.
+    ok("a spec card is for the team: the public menu never carries it",
+      !(await anon(`select * from public.venue_menu($1)`, [`vf-cafe-${t}`])).rows.some((r) => "spec" in r));
+    ok("…and staff read it", (await as(srv, `select spec from public.venue_menu_items where id = $1`, [gimlet])).rows[0].spec.startsWith("45 ml gin"));
+
+    // Moving a party, merging, splitting by item, handing over.
+    const tab1 = randomUUID();
+    const tab2 = randomUUID();
+    await as(srv, `select public.open_tab($1,$2,$3,null,2)`, [cafe, tab1, tA]);
+    await as(srv, `select public.open_tab($1,$2,$3,null,1)`, [cafe, tab2, tB]);
+    ok("whoever opens a tab is its server", (await db.query(`select server_id from public.tabs where id = $1`, [tab1])).rows[0].server_id === srv);
+    await as(srv, `select public.add_order_lines($1,$2::jsonb)`, [tab1, JSON.stringify([{ item: dal, qty: 1 }, { item: nimbu, qty: 2 }])]);
+    await as(srv, `select public.add_order_lines($1,$2::jsonb)`, [tab2, JSON.stringify([{ item: gimlet, qty: 1 }])]);
+    await as(srv, `select public.move_tab($1,$2)`, [tab2, tA]);
+    ok("a party moves to another table", (await db.query(`select table_id from public.tabs where id = $1`, [tab2])).rows[0].table_id === tA);
+    ok("moving to the bar needs a name", await refused(() => as(srv, `select public.move_tab($1,null,'')`, [tab2])));
+    ok("a cook can't move a tab", await refused(() => as(cook, `select public.move_tab($1,$2)`, [tab2, tB])));
+    await as(srv, `select public.merge_tabs($1,$2)`, [tab2, tab1]);
+    const merged = (await db.query(`select status, merged_into, subtotal from public.tabs where id = $1`, [tab2])).rows[0];
+    ok("two tabs become one: the old one is kept, marked merged", merged.status === "merged" && merged.merged_into === tab1 && Number(merged.subtotal) === 0);
+    ok("…and every line is on the one that stays", (await db.query(`select count(*)::int n from public.order_lines where tab_id = $1`, [tab1])).rows[0].n === 3);
+    ok("…with the guests added up", (await db.query(`select covers from public.tabs where id = $1`, [tab1])).rows[0].covers === 3);
+    ok("a merged tab can't be settled", await refused(() => as(srv, `select public.close_tab($1,'[]'::jsonb)`, [tab2])));
+    // Split by item: a second check, the gimlet moves over, each is settled on its own.
+    const part = randomUUID();
+    await as(srv, `select public.open_tab($1,$2,$3,null,1)`, [cafe, part, tA]);
+    const gl = (await db.query(`select id from public.order_lines where tab_id = $1 and name = 'Gimlet'`, [tab1])).rows[0].id;
+    const moved = (await as(srv, `select public.move_lines($1::uuid[],$2) n`, [[gl], part])).rows[0].n;
+    ok("split by item: the gimlet moves to its own check", moved === 1 && (await db.query(`select tab_id from public.order_lines where id = $1`, [gl])).rows[0].tab_id === part);
+    const sub1 = Number((await as(srv, `select public.close_tab($1,$2::jsonb) s`, [part, JSON.stringify([{ method: "card", amount: 420 }])])).rows[0].s);
+    ok("…and is settled on its own (₹420)", sub1 === 420);
+    ok("a closed check's lines can't be moved", await refused(() => as(srv, `select public.move_lines($1::uuid[],$2)`, [[gl], tab1])));
+    await as(srv, `select public.assign_tab($1,$2)`, [tab1, srv2]);
+    ok("a table is handed to another server", (await db.query(`select server_id from public.tabs where id = $1`, [tab1])).rows[0].server_id === srv2);
+    ok("…never to someone who can't take orders (a cook)", await refused(() => as(srv, `select public.assign_tab($1,$2)`, [tab1, cook])));
+
+    // The stations: recall and 86.
+    const dl = (await db.query(`select id from public.order_lines where tab_id = $1 and name = 'Dal Makhani'`, [tab1])).rows[0].id;
+    await as(cook, `select public.set_line_status($1,'ready')`, [dl]);
+    await as(cook, `select public.recall_line($1)`, [dl]);
+    ok("a ticket marked ready by mistake goes back to making", (await db.query(`select status, ready_at from public.order_lines where id = $1`, [dl])).rows[0].status === "preparing");
+    ok("the bar can't recall the kitchen's ticket", await refused(() => as(barman, `select public.recall_line($1)`, [dl])));
+    await as(cook, `select public.set_item_off($1,true)`, [dal]);
+    ok("the kitchen 86es an item the moment it runs out", (await db.query(`select available from public.venue_menu_items where id = $1`, [dal])).rows[0].available === false);
+    ok("…a host can't", await refused(() => as(door, `select public.set_item_off($1,false)`, [dal])));
+    await as(cook, `select public.set_item_off($1,false)`, [dal]);
+
+    // The shift's notes.
+    const pre = randomUUID();
+    ok("a server can't post the pre-shift note", await refused(() => as(srv, `select public.post_note($1,$2,'preshift','x')`, [cafe, randomUUID()])));
+    await as(lead, `select public.post_note($1,$2,'preshift','Walk-in is off. Push the paneer, not the fish.')`, [cafe, pre]);
+    await as(srv, `select public.mark_note_seen($1)`, [pre]);
+    const seenLead = (await as(lead, `select public.shift_notes($1) j`, [cafe])).rows[0].j;
+    ok("the team sees the pre-shift note; the lead sees who has (by name)", seenLead.preshift.length === 1 && JSON.stringify(seenLead.preshift[0].seen_by) === JSON.stringify(["Sam"]));
+    const seenSrv = (await as(srv, `select public.shift_notes($1) j`, [cafe])).rows[0].j;
+    ok("…a server sees it marked seen, but not who else has", seenSrv.preshift[0].seen_by_me === true && seenSrv.preshift[0].seen_by === null);
+    await as(lead, `select public.post_note($1,$2,'log','Ice machine leaking — engineer Tuesday.')`, [cafe, randomUUID()]);
+    ok("the manager's log is for supervisors and managers", seenSrv.log.length === 0 && (await as(lead, `select public.shift_notes($1) j`, [cafe])).rows[0].j.log.length === 1);
+    ok("the log book keeps every entry (nothing to take down)",
+      await refused(async () => { const id = (await db.query(`select id from public.venue_notes where venue_id = $1 and kind = 'log'`, [cafe])).rows[0].id; await as(lead, `select public.end_note($1)`, [id]); }));
+    ok("nobody writes a note directly", await refused(() => as(lead, `insert into public.venue_notes (id, venue_id, kind, body) values ($1,$2,'log','x')`, [randomUUID(), cafe])));
+
+    // The cash drawer: float, a drop, a pay-out, a blind count.
+    const dw = randomUUID();
+    await as(srv, `select public.open_drawer($1,$2,2000,'Front till')`, [cafe, dw]);
+    ok("one drawer open at a time", await refused(() => as(lead, `select public.open_drawer($1,$2,500)`, [cafe, randomUUID()])));
+    await as(srv, `select public.cash_move($1,'drop',500,'safe drop at 9')`, [dw]);
+    ok("a server can't pay out from the drawer", await refused(() => as(srv, `select public.cash_move($1,'pay_out',100,'ice')`, [dw])));
+    await as(lead, `select public.cash_move($1,'pay_out',150,'ice delivery')`, [dw]);
+    await as(srv2, `select public.close_tab($1,$2::jsonb)`, [tab1, JSON.stringify([{ method: "Cash", amount: 440 }])]);
+    const mine = (await as(srv, `select public.drawer_state($1) j`, [cafe])).rows[0].j;
+    ok("the person counting doesn't see what should be there (a blind count)", mine.open && mine.open.expected === null && mine.closed.length === 0);
+    const theirs = (await as(lead, `select public.drawer_state($1) j`, [cafe])).rows[0].j;
+    ok("a supervisor does: 2000 float − 500 drop − 150 out + 440 cash = 1790", Number(theirs.open.expected) === 1790, JSON.stringify(theirs.open));
+    ok("a host doesn't handle the cash", await refused(() => as(door, `select public.drawer_state($1)`, [cafe])));
+    const rep = (await as(srv, `select public.close_drawer($1,1780,'short a tenner?') r`, [dw])).rows[0].r;
+    ok("closing their own drawer: counted 1780 against 1790, ₹10 short", Number(rep.expected) === 1790 && Number(rep.counted) === 1780 && Number(rep.difference) === -10);
+    // (One transaction has one clock, so here every payment counts as "since it opened".)
+    ok("the report keeps the takings by how they were paid", Number(rep.by_method.cash) === 440 && rep.bills >= 1, JSON.stringify(rep));
+    ok("a closed drawer can't be closed again", await refused(() => as(lead, `select public.close_drawer($1,1790)`, [dw])));
+    ok("nobody rewrites a closed drawer", await refused(() => as(owner, `update public.cash_sessions set counted = 1790 where id = $1`, [dw]))
+      || (await db.query(`select counted from public.cash_sessions where id = $1`, [dw])).rows[0].counted === "1780.00");
+
+    // Bookings.
+    const bk = randomUUID();
+    await as(door, `insert into public.reservations (id, venue_id, name, party, starts_at, table_id, phone) values ($1,$2,'Mehta',4, now() + interval '3 hours', $3, '+91 98200 00000')`, [bk, cafe, tB]);
+    ok("the host takes a booking", (await as(srv, `select name from public.reservations where id = $1`, [bk])).rows[0].name === "Mehta");
+    ok("a cook can't", await refused(() => as(cook, `insert into public.reservations (id, venue_id, name, party, starts_at) values ($1,$2,'x',2, now())`, [randomUUID(), cafe])));
+    ok("a booking at another venue's table is refused", await refused(() => as(door, `insert into public.reservations (id, venue_id, name, party, starts_at, table_id) values ($1,$2,'x',2, now(), $3)`, [randomUUID(), cafe, randomUUID()])));
+    const old = randomUUID();
+    await db.query(`insert into public.reservations (id, venue_id, name, party, starts_at, phone) values ($1,$2,'Kapoor',2, now(), '+91 90000 00000')`, [old, cafe]);
+    await db.query(`update public.reservations set starts_at = now() - interval '40 days' where id = $1`, [old]);
+    await as(door, `insert into public.reservations (id, venue_id, name, party, starts_at) values ($1,$2,'Rao',2, now() + interval '1 day')`, [randomUUID(), cafe]);
+    const was = (await db.query(`select name, phone from public.reservations where id = $1`, [old])).rows[0];
+    ok("an old booking forgets the phone and the name (\"Party of 2\")", was.phone === null && was.name === "Party of 2");
+    ok("today's booking keeps its phone until the day after", (await db.query(`select phone from public.reservations where id = $1`, [bk])).rows[0].phone !== null);
+    ok("a booking is cancelled, never deleted", await refused(() => as(door, `delete from public.reservations where id = $1`, [bk]))
+      || (await db.query(`select count(*)::int n from public.reservations where id = $1`, [bk])).rows[0].n === 1);
+  }
+
+  // ── 29. orders straight to the bar and kitchen, pickup numbers, no-account orders (059) ──
+  if ((await db.query(`select to_regprocedure('public.place_order_guest(text,uuid,text,jsonb,text)') f`)).rows[0].f) {
+    console.log("\n── 29. straight to the bar and kitchen, pickup points, the ready board, no-account orders (059) ──");
+    const t = Date.now();
+    const cook = await mkUser("Cook", `vf-cook59-${t}`);
+    const bartender = await mkUser("Bartender", `vf-bt59-${t}`);
+    const guest = await mkUser("Guest", `vf-guest59-${t}`);
+    const guest2 = await mkUser("Guest Two", `vf-guest59b-${t}`);
+    const back = (req) => db.query(`update public.order_requests set created_at = created_at - interval '1 minute' where id = $1`, [req]);
+    const mkVenue = async (name, kind, alcohol) => {
+      const id = randomUUID();
+      await as(owner, `insert into public.venues (id, name, slug, created_by, kind, serves_alcohol, country) values ($1,$2,$3,$4,$5,$6,'IN')`, [id, name, `vf59-${kind.replace("_", "-")}-${t}`, owner, kind, alcohol]);
+      await as(owner, `insert into public.venue_staff (venue_id, user_id, role) values ($1,$2,'owner')`, [id, owner]);
+      await db.query(`update public.venues set verified = true, table_service = true where id = $1`, [id]);
+      return id;
+    };
+    const menu = async (vid, name, kind, price) => {
+      const id = randomUUID();
+      await as(owner, `insert into public.venue_menu_items (id, venue_id, name, kind, price, no_alcohol) values ($1,$2,$3,$4,$5,$6)`, [id, vid, name, kind, price, !["beer", "wine", "cocktail", "spirit"].includes(kind)]);
+      return id;
+    };
+
+    // A bar whose guests order from the table, straight to the bar and the kitchen.
+    const bar = await mkVenue("Verify Taproom", "bar", true);
+    await seat(bar, cook, "kitchen");
+    await seat(bar, bartender, "bartender");
+    const fries = await menu(bar, "Masala Fries", "food", 220);
+    const ipa = await menu(bar, "Hazy IPA", "beer", 380);
+    const t4 = randomUUID();
+    const counter = randomUUID();
+    await as(owner, `insert into public.venue_tables (id, venue_id, label, seats) values ($1,$2,'T4',4)`, [t4, bar]);
+    await as(owner, `insert into public.venue_tables (id, venue_id, label, kind) values ($1,$2,'Bar counter','pickup')`, [counter, bar]);
+    const code = (await db.query(`select code from public.venue_tables where id = $1`, [t4])).rows[0].code;
+    const ccode = (await db.query(`select code from public.venue_tables where id = $1`, [counter])).rows[0].code;
+    const info = (await anon(`select * from public.table_info($1)`, [ccode])).rows[0];
+    ok("a pickup point's link says it's a pickup point, and how orders go", info && info.point_kind === "pickup" && info.orders_direct === false && info.legal_class === "on_trade");
+
+    // Confirm mode (the default): a phone order waits for a staff yes, as in 051.
+    const r0 = randomUUID();
+    const st0 = (await as(guest, `select public.place_order($1,$2,$3::jsonb) s`, [code, r0, JSON.stringify([{ item: fries, qty: 1 }])])).rows[0].s;
+    ok("confirm mode: the order waits for staff", st0.status === "pending" && st0.lines.length === 1);
+    ok("…and nothing reaches the kitchen yet", (await db.query(`select count(*)::int n from public.order_lines where request_id = $1`, [r0])).rows[0].n === 0);
+    await back(r0);
+
+    // Straight to the bar and kitchen.
+    await as(owner, `update public.venues set orders_direct = true where id = $1`, [bar]);
+    const r1 = randomUUID();
+    const st1 = (await as(guest, `select public.place_order($1,$2,$3::jsonb,'extra crispy') s`, [code, r1, JSON.stringify([{ item: fries, qty: 2 }, { item: ipa, qty: 1 }])])).rows[0].s;
+    const l1 = (await db.query(`select o.station, o.source, o.unit_price, t.table_id from public.order_lines o join public.tabs t on t.id = o.tab_id where o.request_id = $1 order by o.station`, [r1])).rows;
+    ok("direct: the order lands as lines at once — the IPA at the bar, the fries in the kitchen", st1.status === "sent" && l1.length === 2 && l1[0].station === "bar" && l1[1].station === "kitchen");
+    ok("…on T4's tab, priced by the server, marked as from a phone", l1.every((l) => l.table_id === t4 && l.source === "guest") && Number(l1[1].unit_price) === 220);
+    ok("a retry of the same order is the same order", (await as(guest, `select public.place_order($1,$2,$3::jsonb) s`, [code, r1, JSON.stringify([{ item: fries, qty: 9 }])])).rows[0].s.id === r1
+      && (await db.query(`select count(*)::int n from public.order_lines where request_id = $1`, [r1])).rows[0].n === 2);
+    ok("someone else can't replay my order's id", await refused(() => as(guest2, `select public.place_order($1,$2,$3::jsonb)`, [code, r1, JSON.stringify([{ item: fries, qty: 1 }])])));
+    await back(r1);
+    const kline = (await db.query(`select id from public.order_lines where request_id = $1 and station = 'kitchen'`, [r1])).rows[0].id;
+    await as(cook, `select public.set_line_status($1,'preparing')`, [kline]);
+    ok("the guest follows it: making once the kitchen starts", (await as(guest, `select public.my_orders() o`)).rows[0].o.find((o) => o.id === r1).status === "making");
+    ok("staff still never see who asked", !Object.keys((await as(bartender, `select * from public.service_inbox($1)`, [bar])).rows[0] ?? {}).some((k) => /requested|device|user/.test(k)));
+
+    // Pickup at the bar counter: a number, the board, collected.
+    const r2 = randomUUID();
+    const st2 = (await as(guest2, `select public.place_order($1,$2,$3::jsonb) s`, [ccode, r2, JSON.stringify([{ item: ipa, qty: 1 }])])).rows[0].s;
+    ok("an order at a pickup point gets a pickup number", st2.status === "sent" && st2.pickup_no >= 1 && st2.point_kind === "pickup");
+    const pt = (await db.query(`select id, name, table_id from public.tabs where pickup_no = $1 and venue_id = $2`, [st2.pickup_no, bar])).rows[0];
+    ok("…on its own tab, named for the number, at no table", pt && pt.name === `Pickup ${st2.pickup_no}` && pt.table_id === null);
+    let board = (await anon(`select * from public.pickup_board($1)`, [ccode])).rows;
+    ok("the ready board (signed out) shows the number as being made — numbers only", board.some((b) => b.pickup_no === st2.pickup_no && b.state === "making") && !Object.keys(board[0]).some((k) => /name$|item|guest/.test(k) && k !== "venue_name"));
+    const bline = (await db.query(`select id from public.order_lines where request_id = $1`, [r2])).rows[0].id;
+    await as(bartender, `select public.set_line_status($1,'ready')`, [bline]);
+    board = (await anon(`select * from public.pickup_board($1)`, [ccode])).rows;
+    ok("ready at the bar: the board says so", board.find((b) => b.pickup_no === st2.pickup_no).state === "ready");
+    ok("…and so does the guest's phone", (await as(guest2, `select public.my_orders() o`)).rows[0].o.find((o) => o.id === r2).status === "ready");
+    ok("a guest can't hand themselves their order", await refused(() => as(guest2, `select public.collect_pickup($1)`, [pt.id])));
+    await as(bartender, `select public.collect_pickup($1)`, [pt.id]);
+    ok("collected: off the board, served on the phone",
+      !(await anon(`select * from public.pickup_board($1)`, [ccode])).rows.some((b) => b.pickup_no === st2.pickup_no)
+      && (await as(guest2, `select public.my_orders() o`)).rows[0].o.find((o) => o.id === r2).status === "served");
+    await back(r2);
+    const r3 = randomUUID();
+    const st3 = (await as(guest2, `select public.place_order($1,$2,$3::jsonb) s`, [ccode, r3, JSON.stringify([{ item: fries, qty: 1 }])])).rows[0].s;
+    ok("the next pickup gets the next number", st3.pickup_no === st2.pickup_no % 999 + 1);
+    await back(r3);
+
+    // The pause.
+    ok("a guest can't pause the kitchen", await refused(() => as(guest, `select public.pause_phone_orders($1,true)`, [bar])));
+    await as(cook, `select public.pause_phone_orders($1,true)`, [bar]);
+    ok("paused by the kitchen: phone orders are held", await refused(() => as(guest, `select public.place_order($1,$2,$3::jsonb)`, [code, randomUUID(), JSON.stringify([{ item: fries, qty: 1 }])])));
+    await as(bartender, `select public.pause_phone_orders($1,false)`, [bar]);
+
+    // No account.
+    const dev = randomUUID().replace(/-/g, "");
+    ok("ordering without an account is off until the venue allows it",
+      await refused(() => anon(`select public.place_order_guest($1,$2,$3,$4::jsonb)`, [code, randomUUID(), dev, JSON.stringify([{ item: fries, qty: 1 }])])));
+    await as(owner, `update public.venues set orders_anon = true where id = $1`, [bar]);
+    ok("a made-up phone secret is refused", await refused(() => anon(`select public.place_order_guest($1,$2,$3,$4::jsonb)`, [code, randomUUID(), "not-hex", JSON.stringify([{ item: fries, qty: 1 }])])));
+    const r4 = randomUUID();
+    const st4 = (await anon(`select public.place_order_guest($1,$2,$3,$4::jsonb) s`, [code, r4, dev, JSON.stringify([{ item: fries, qty: 1 }])])).rows[0].s;
+    ok("allowed: a phone without an account orders, straight to the kitchen", st4.status === "sent");
+    const kept = (await db.query(`select requested_by, device_hash from public.order_requests where id = $1`, [r4])).rows[0];
+    ok("…keeping only a hash of the phone's secret, never the secret", kept.requested_by === null && kept.device_hash && kept.device_hash !== dev && !kept.device_hash.includes(dev));
+    ok("that phone sees its order; another phone sees nothing",
+      (await anon(`select public.guest_orders($1) o`, [dev])).rows[0].o.some((o) => o.id === r4)
+      && (await anon(`select public.guest_orders($1) o`, [randomUUID().replace(/-/g, "")])).rows[0].o.length === 0);
+    ok("…not two in twenty seconds from the same phone", await refused(() => anon(`select public.place_order_guest($1,$2,$3,$4::jsonb)`, [code, randomUUID(), dev, JSON.stringify([{ item: fries, qty: 1 }])])));
+    await anon(`select public.call_table_staff_guest($1,$2,'water')`, [code, dev]);
+    ok("\"water please\" from a phone without an account reaches the floor", (await as(owner, `select count(*)::int n from public.service_inbox($1) where call_kind = 'water'`, [bar])).rows[0].n === 1);
+
+    // A sweet shop's counter: a pickup point, never a table.
+    const sweets = await mkVenue("Verify Mithai", "sweet_shop", false);
+    ok("a counter still has no tables", await refused(() => as(owner, `insert into public.venue_tables (venue_id, label) values ($1,'T1')`, [sweets])));
+    const sc = randomUUID();
+    await as(owner, `insert into public.venue_tables (id, venue_id, label, kind) values ($1,$2,'Counter','pickup')`, [sc, sweets]);
+    ok("…but it can have a pickup point for its counter", (await db.query(`select kind from public.venue_tables where id = $1`, [sc])).rows[0].kind === "pickup");
+    await as(owner, `update public.venues set orders_direct = true where id = $1`, [sweets]);
+    const kaju = await menu(sweets, "Kaju Katli (250 g)", "food", 300);
+    const scode = (await db.query(`select code from public.venue_tables where id = $1`, [sc])).rows[0].code;
+    const st5 = (await as(guest, `select public.place_order($1,$2,$3::jsonb) s`, [scode, randomUUID(), JSON.stringify([{ item: kaju, qty: 2 }])])).rows[0].s;
+    ok("a sweet-shop order at the counter gets a number to collect", st5.pickup_no >= 1);
+    const boxed = randomUUID();
+    await as(owner, `insert into public.venue_menu_items (id, venue_id, name, kind, price, no_alcohol, station) values ($1,$2,'Boxed Laddoo','food',150,true,'none')`, [boxed, sweets]);
+    const reqBox = randomUUID();
+    await db.query(`update public.order_requests set created_at = created_at - interval '1 minute' where requested_by = $1`, [guest]);
+    const st6 = (await as(guest, `select public.place_order($1,$2,$3::jsonb) s`, [scode, reqBox, JSON.stringify([{ item: boxed, qty: 1 }])])).rows[0].s;
+    const boxBoard = (await anon(`select * from public.pickup_board($1)`, [scode])).rows.find((r) => r.pickup_no === st6.pickup_no);
+    ok("…and what needs no making is ready at once — the number shows ready on the board", st6.status === "ready" && boxBoard && boxBoard.state === "ready");
+
+    // A liquor store: bottles are never ordered by phone.
+    const store = await mkVenue("Verify Wines", "store", true);
+    const ssp = randomUUID();
+    await as(owner, `insert into public.venue_tables (id, venue_id, label, kind) values ($1,$2,'Counter','pickup')`, [ssp, store]);
+    await as(owner, `update public.venues set orders_direct = true where id = $1`, [store]);
+    const whisky = await menu(store, "Single Malt 750 ml", "spirit", 3200);
+    const tonic = await menu(store, "Tonic Water", "soft", 60);
+    const stcode = (await db.query(`select code from public.venue_tables where id = $1`, [ssp])).rows[0].code;
+    ok("a liquor store's bottle can't be ordered by phone (an ID check at the counter, by law)",
+      await refused(() => as(guest2, `select public.place_order($1,$2,$3::jsonb)`, [stcode, randomUUID(), JSON.stringify([{ item: whisky, qty: 1 }])])));
+    ok("…its tonic water can", (await as(guest2, `select public.place_order($1,$2,$3::jsonb) s`, [stcode, randomUUID(), JSON.stringify([{ item: tonic, qty: 2 }])])).rows[0].s.status === "sent");
+    const prod = randomUUID();
+    await as(owner, `insert into public.shop_products (id, venue_id, name, category, size, unit, price, mrp) values ($1,$2,'Single Malt',$3,750,'ml',3200,3400)`, [prod, store, "spirit"]);
+    const empty = randomUUID();
+    await as(owner, `insert into public.shop_products (id, venue_id, name, category, price) values ($1,$2,'Out of stock gin','other',100)`, [empty, store]).catch(() => {});
+    await db.query(`insert into public.stock_moves (venue_id, product_id, qty, reason) values ($1,$2,6,'receive')`, [store, prod]);
+    const shelf = (await anon(`select * from public.store_shelf($1)`, [`vf59-store-${t}`])).rows;
+    ok("the store's shelf is public: what's in stock, at its price, never the count", shelf.some((p) => p.product_id === prod && Number(p.price) === 3200) && !shelf.some((p) => p.product_id === empty) && !shelf.some((p) => "on_hand" in p || "qty" in p));
+  }
 } catch (e) {
   console.log(`\n!! harness crashed: ${e.message}`);
   fails.push(`harness: ${e.message}`);

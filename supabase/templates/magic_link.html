@@ -1,0 +1,11 @@
+<!-- brewdiary: the sign-in code email. Paste into Supabase → Authentication → Email
+     Templates → "Magic Link" (people who already have a diary). Subject: Your brewdiary code -->
+<div style="margin:0;padding:32px 16px;background:#f4f1ec;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#17161a">
+  <div style="max-width:440px;margin:0 auto;background:#ffffff;border-radius:18px;padding:32px 28px">
+    <p style="margin:0 0 24px;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:22px">brewdiary</p>
+    <p style="margin:0 0 8px;font-size:15px;color:#5b5862">Your code</p>
+    <p style="margin:0 0 24px;font-size:36px;font-weight:700;letter-spacing:8px">{{ .Token }}</p>
+    <p style="margin:0 0 6px;font-size:15px;line-height:1.5">Type it into the app to sign in. It works for 10 minutes, once.</p>
+    <p style="margin:0;font-size:13px;line-height:1.5;color:#8a8790">Didn't ask for it? Ignore this email — nothing happens without the code.</p>
+  </div>
+</div>

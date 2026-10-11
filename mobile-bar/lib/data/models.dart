@@ -52,6 +52,15 @@ class Venue {
 
   /// How many people the licence allows inside at once (052) — the door counts against it.
   final int? capacity;
+
+  /// Phone orders go straight onto the bar's and kitchen's tickets, no staff OK (059).
+  final bool ordersDirect;
+
+  /// The bar's "hold phone orders" in a rush (059): guests are told to ask at the bar.
+  final bool ordersPaused;
+
+  /// A guest can order without an account (059) — the table's code is the proof.
+  final bool ordersAnon;
   final bool verified;
   final StaffRole myRole;
 
@@ -71,6 +80,9 @@ class Venue {
     this.areaShare = false,
     this.tableService = false,
     this.capacity,
+    this.ordersDirect = false,
+    this.ordersPaused = false,
+    this.ordersAnon = false,
     this.verified = false,
     this.myRole = StaffRole.bartender,
   });
@@ -91,6 +103,9 @@ class Venue {
         areaShare: v['area_share'] == true,
         tableService: v['table_service'] == true,
         capacity: (v['capacity'] as num?)?.toInt(),
+        ordersDirect: v['orders_direct'] == true,
+        ordersPaused: v['orders_paused'] == true,
+        ordersAnon: v['orders_anon'] == true,
         verified: v['verified'] == true,
         myRole: role,
       );
@@ -98,8 +113,11 @@ class Venue {
   LegalClass get legal => legalClass(kind, servesAlcohol: servesAlcohol);
   bool get sellsAlcohol => legal != LegalClass.noAlcohol;
 
+  /// How a guest's order from a table or a pickup point reaches the people making it.
+  PhoneOrders get phoneOrders => !tableService ? PhoneOrders.off : (ordersDirect ? PhoneOrders.direct : PhoneOrders.confirm);
+
   /// [capacity] 0 clears it.
-  Venue copyWith({String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity, bool? verified}) => Venue(
+  Venue copyWith({String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity, bool? ordersDirect, bool? ordersPaused, bool? ordersAnon, bool? verified}) => Venue(
         id: id,
         name: name ?? this.name,
         slug: slug,
@@ -115,10 +133,17 @@ class Venue {
         areaShare: areaShare ?? this.areaShare,
         tableService: tableService ?? this.tableService,
         capacity: capacity == null ? this.capacity : (capacity > 0 ? capacity : null),
+        ordersDirect: ordersDirect ?? this.ordersDirect,
+        ordersPaused: ordersPaused ?? this.ordersPaused,
+        ordersAnon: ordersAnon ?? this.ordersAnon,
         verified: verified ?? this.verified,
         myRole: myRole,
       );
 }
+
+/// Phone orders (051, 059): off; each one waits for a staff member's OK; or straight to
+/// the bar and the kitchen — for places where nobody on the floor carries a phone.
+enum PhoneOrders { off, confirm, direct }
 
 /// Someone on the team as the roster shows them (team_roster, 053). Owners and managers
 /// also see who's waiting and who's paused, phone numbers, and why; everyone else sees the
@@ -220,6 +245,54 @@ class ProfileHit {
   final String handle;
   final String name;
   const ProfileHit({required this.id, required this.handle, required this.name});
+}
+
+/// The taste a guest shared when they opened this venue's table or menu link (056):
+/// the card worked out on their phone. Never their diary, never other venues.
+class GuestTaste {
+  final List<String> into;
+  final List<String> usually;
+  final List<String> moods;
+  final List<String> flavours; // the palate's top notes: smoky, citrus, bitter…
+  final List<String> avoid;
+  final String? sweetness; // dry | balanced | sweet
+  final List<String> diet;
+  final List<String> allergies;
+  final bool alcoholFreeOften;
+  final bool dryTonight;
+  const GuestTaste({this.into = const [], this.usually = const [], this.moods = const [], this.flavours = const [], this.avoid = const [], this.sweetness, this.diet = const [], this.allergies = const [], this.alcoholFreeOften = false, this.dryTonight = false});
+
+  static List<String> _list(Object? v) => [for (final x in (v is List ? v : const [])) if (x is String && x.trim().isNotEmpty) x.trim()];
+
+  factory GuestTaste.fromJson(Object? raw) {
+    final m = raw is Map ? raw : const {};
+    return GuestTaste(
+      into: _list(m['into']),
+      usually: _list(m['usually']),
+      moods: _list(m['moods']),
+      flavours: _list(m['flavours']),
+      avoid: _list(m['avoid']),
+      sweetness: const {'dry', 'balanced', 'sweet'}.contains(m['sweetness']) ? m['sweetness'] as String : null,
+      diet: _list(m['diet']),
+      allergies: _list(m['allergies']),
+      alcoholFreeOften: m['alcohol_free_often'] == true,
+      dryTonight: m['dry_tonight'] == true,
+    );
+  }
+
+  bool get isEmpty => into.isEmpty && usually.isEmpty && moods.isEmpty && flavours.isEmpty && avoid.isEmpty && sweetness == null && diet.isEmpty && allergies.isEmpty && !alcoholFreeOften && !dryTonight;
+}
+
+/// Someone in tonight who shared their taste with this venue.
+class GuestTonight {
+  final String userId;
+  final String name;
+  final String handle;
+  final String? tableLabel;
+  final GuestTaste taste;
+  final DateTime sharedAt;
+  const GuestTonight({required this.userId, required this.name, required this.handle, this.tableLabel, required this.taste, required this.sharedAt});
+  ProfileHit get hit => ProfileHit(id: userId, handle: handle, name: name);
 }
 
 enum VerificationStatus { pending, approved, rejected }
@@ -839,7 +912,11 @@ class MenuItem {
     this.station = 'bar',
     this.diet,
     this.allergens = const [],
+    this.spec,
   });
+
+  /// The team's spec card (058): recipe, glass, garnish, method. Never shown to guests.
+  final String? spec;
 
   /// Where its ticket goes (051): the bar, the kitchen, or nowhere (served as is).
   final String station;
@@ -863,9 +940,10 @@ class MenuItem {
         station: (r['station'] as String?) ?? (r['kind'] == 'food' ? 'kitchen' : 'bar'),
         diet: r['diet'] as String?,
         allergens: [for (final a in (r['allergens'] as List?) ?? const []) '$a'],
+        spec: r['spec'] as String?,
       );
 
-  MenuItem copyWith({String? section, String? name, String? description, double? price, String? kind, bool? noAlcohol, bool? available, int? position, String? station, String? diet, List<String>? allergens}) => MenuItem(
+  MenuItem copyWith({String? section, String? name, String? description, double? price, String? kind, bool? noAlcohol, bool? available, int? position, String? station, String? diet, List<String>? allergens, String? spec}) => MenuItem(
         id: id,
         section: section ?? this.section,
         name: name ?? this.name,
@@ -878,6 +956,7 @@ class MenuItem {
         station: station ?? this.station,
         diet: diet ?? this.diet,
         allergens: allergens ?? this.allergens,
+        spec: spec ?? this.spec,
       );
 }
 
@@ -1114,7 +1193,15 @@ class VenueTable {
   final String code;
   final bool active;
   final int position;
-  const VenueTable({required this.id, this.areaId, required this.label, this.seats = 4, required this.code, this.active = true, this.position = 0});
+
+  /// 'table', or 'pickup' (059): a counter where an order gets a number to collect —
+  /// a bar counter, a café's, a shop's. Counters have only these.
+  final String kind;
+  const VenueTable({required this.id, this.areaId, required this.label, this.seats = 4, required this.code, this.active = true, this.position = 0, this.kind = 'table'});
+
+  bool get isPickup => kind == 'pickup';
+
+  VenueTable copyWith({String? code}) => VenueTable(id: id, areaId: areaId, label: label, seats: seats, code: code ?? this.code, active: active, position: position, kind: kind);
 
   factory VenueTable.fromRow(Map<String, dynamic> r) => VenueTable(
         id: r['id'] as String,
@@ -1124,6 +1211,7 @@ class VenueTable {
         code: r['code'] as String,
         active: r['active'] != false,
         position: _int(r['position']),
+        kind: (r['kind'] as String?) ?? 'table',
       );
 }
 
@@ -1136,7 +1224,33 @@ class ServiceTab {
   final DateTime openedAt;
   final double? subtotal;
   final double? tip;
-  const ServiceTab({required this.id, this.tableId, this.name, this.covers, this.status = 'open', required this.openedAt, this.subtotal, this.tip});
+
+  /// Whose table it is (058): whoever opened it, until it's handed on.
+  final String? serverId;
+
+  /// A pickup order (059): its number, the pickup point, and when it was handed over.
+  final int? pickupNo;
+  final String? pickupPoint;
+  final DateTime? collectedAt;
+  const ServiceTab({required this.id, this.tableId, this.name, this.covers, this.status = 'open', required this.openedAt, this.subtotal, this.tip, this.serverId, this.pickupNo, this.pickupPoint, this.collectedAt});
+
+  /// [clearTable] moves it off any table (to the bar).
+  ServiceTab copyWith({String? tableId, bool clearTable = false, String? name, int? covers, String? status, double? subtotal, double? tip, String? serverId}) => ServiceTab(
+        id: id,
+        tableId: clearTable ? null : (tableId ?? this.tableId),
+        name: name ?? this.name,
+        covers: covers ?? this.covers,
+        status: status ?? this.status,
+        openedAt: openedAt,
+        subtotal: subtotal ?? this.subtotal,
+        tip: tip ?? this.tip,
+        serverId: serverId ?? this.serverId,
+        pickupNo: pickupNo,
+        pickupPoint: pickupPoint,
+        collectedAt: collectedAt,
+      );
+
+  ServiceTab collected(DateTime at) => ServiceTab(id: id, tableId: tableId, name: name, covers: covers, status: status, openedAt: openedAt, subtotal: subtotal, tip: tip, serverId: serverId, pickupNo: pickupNo, pickupPoint: pickupPoint, collectedAt: at);
 
   factory ServiceTab.fromRow(Map<String, dynamic> r) => ServiceTab(
         id: r['id'] as String,
@@ -1147,6 +1261,10 @@ class ServiceTab {
         openedAt: DateTime.parse(r['opened_at'] as String).toLocal(),
         subtotal: _numOrNull(r['subtotal']),
         tip: _numOrNull(r['tip']),
+        serverId: (r['server_id'] ?? r['opened_by']) as String?,
+        pickupNo: (r['pickup_no'] as num?)?.toInt(),
+        pickupPoint: r['pickup_point'] as String?,
+        collectedAt: r['collected_at'] == null ? null : DateTime.parse(r['collected_at'] as String).toLocal(),
       );
 }
 
@@ -1169,6 +1287,9 @@ class OrderLine {
   /// For station tickets: where it's going.
   final String? tableLabel;
   final String? tabName;
+
+  /// For station tickets: the number the guest collects it by (059), or null at a table.
+  final int? pickupNo;
   const OrderLine({
     required this.id,
     required this.tabId,
@@ -1186,13 +1307,15 @@ class OrderLine {
     this.voidReason,
     this.tableLabel,
     this.tabName,
+    this.pickupNo,
   });
 
   double get total => status == 'void' ? 0 : unitPrice * qty;
 
-  OrderLine copyWith({String? status, DateTime? readyAt, String? voidReason}) => OrderLine(
+  /// [clearReady] forgets when it was ready (a recall).
+  OrderLine copyWith({String? status, DateTime? readyAt, bool clearReady = false, String? voidReason, String? tabId}) => OrderLine(
         id: id,
-        tabId: tabId,
+        tabId: tabId ?? this.tabId,
         menuItemId: menuItemId,
         name: name,
         unitPrice: unitPrice,
@@ -1203,10 +1326,11 @@ class OrderLine {
         status: status ?? this.status,
         source: source,
         createdAt: createdAt,
-        readyAt: readyAt ?? this.readyAt,
+        readyAt: clearReady ? null : (readyAt ?? this.readyAt),
         voidReason: voidReason ?? this.voidReason,
         tableLabel: tableLabel,
         tabName: tabName,
+        pickupNo: pickupNo,
       );
 
   factory OrderLine.fromRow(Map<String, dynamic> r) {
@@ -1229,6 +1353,7 @@ class OrderLine {
       voidReason: r['void_reason'] as String?,
       tableLabel: table?['label'] as String?,
       tabName: tab?['name'] as String?,
+      pickupNo: (tab?['pickup_no'] as num?)?.toInt(),
     );
   }
 }
@@ -1259,6 +1384,20 @@ class InboxItem {
         note: r['note'] as String?,
         callKind: r['call_kind'] as String?,
         hasAlcohol: r['has_alcohol'] == true,
+      );
+}
+
+/// One number on the ready board (pickup_board(), 059): numbers and states, never who.
+class PickupNumber {
+  final int no;
+  final bool ready;
+  final DateTime since;
+  const PickupNumber({required this.no, required this.ready, required this.since});
+
+  factory PickupNumber.fromRow(Map<String, dynamic> r) => PickupNumber(
+        no: _int(r['pickup_no']),
+        ready: r['state'] == 'ready',
+        since: DateTime.parse(r['since'] as String).toLocal(),
       );
 }
 
@@ -1319,5 +1458,184 @@ class ServiceBoard {
         barMinutes: _numOrNull(j['bar_minutes']),
         kitchenMinutes: _numOrNull(j['kitchen_minutes']),
         methods: {for (final e in ((j['methods'] as Map?) ?? const {}).entries) '${e.key}': _numOrNull(e.value) ?? 0},
+      );
+}
+
+// ── the shift's notes, the cash drawer, bookings (058) ──────────────────────
+/// A pre-shift note or a log entry. [seenBy] is filled only for supervisors and
+/// managers (names, in name order — never a ranking); null for everyone else.
+class ShiftNote {
+  final String id;
+  final String body;
+  final String author;
+  final DateTime createdAt;
+  final DateTime? shownUntil;
+  final bool seenByMe;
+  final List<String>? seenBy;
+  const ShiftNote({required this.id, required this.body, required this.author, required this.createdAt, this.shownUntil, this.seenByMe = false, this.seenBy});
+
+  factory ShiftNote.fromJson(Map<String, dynamic> j) => ShiftNote(
+        id: j['id'] as String,
+        body: j['body'] as String,
+        author: (j['author'] as String?) ?? 'someone',
+        createdAt: DateTime.parse(j['created_at'] as String).toLocal(),
+        shownUntil: j['shown_until'] == null ? null : DateTime.parse(j['shown_until'] as String).toLocal(),
+        seenByMe: j['seen_by_me'] == true,
+        seenBy: j['seen_by'] == null ? null : [for (final n in j['seen_by'] as List) '$n'],
+      );
+}
+
+class ShiftNotes {
+  final List<ShiftNote> preshift;
+  final List<ShiftNote> log;
+  const ShiftNotes({this.preshift = const [], this.log = const []});
+}
+
+class CashMove {
+  final String kind; // pay_in | pay_out | drop
+  final double amount;
+  final String reason;
+  final DateTime madeAt;
+  final String by;
+  const CashMove({required this.kind, required this.amount, required this.reason, required this.madeAt, required this.by});
+
+  factory CashMove.fromJson(Map<String, dynamic> j) => CashMove(
+        kind: j['kind'] as String,
+        amount: _numOrNull(j['amount']) ?? 0,
+        reason: (j['reason'] as String?) ?? '',
+        madeAt: DateTime.parse(j['made_at'] as String).toLocal(),
+        by: (j['by'] as String?) ?? 'someone',
+      );
+}
+
+/// What a drawer's close kept (close_drawer()): it can't change afterwards.
+class CashReport {
+  final double float, expected, counted, difference, payIns, payOuts, drops, sales, tips;
+  final int bills, voids;
+  final Map<String, double> byMethod;
+  const CashReport({
+    this.float = 0,
+    this.expected = 0,
+    this.counted = 0,
+    this.difference = 0,
+    this.payIns = 0,
+    this.payOuts = 0,
+    this.drops = 0,
+    this.sales = 0,
+    this.tips = 0,
+    this.bills = 0,
+    this.voids = 0,
+    this.byMethod = const {},
+  });
+
+  factory CashReport.fromJson(Map<String, dynamic> j) => CashReport(
+        float: _numOrNull(j['float']) ?? 0,
+        expected: _numOrNull(j['expected']) ?? 0,
+        counted: _numOrNull(j['counted']) ?? 0,
+        difference: _numOrNull(j['difference']) ?? 0,
+        payIns: _numOrNull(j['pay_ins']) ?? 0,
+        payOuts: _numOrNull(j['pay_outs']) ?? 0,
+        drops: _numOrNull(j['drops']) ?? 0,
+        sales: _numOrNull(j['sales']) ?? 0,
+        tips: _numOrNull(j['tips']) ?? 0,
+        bills: _int(j['bills']),
+        voids: _int(j['voids']),
+        byMethod: {for (final e in ((j['by_method'] as Map?) ?? const {}).entries) '${e.key}': _numOrNull(e.value) ?? 0},
+      );
+}
+
+class OpenDrawer {
+  final String id;
+  final String label;
+  final double float;
+  final DateTime openedAt;
+  final String openedBy;
+  final bool mine;
+
+  /// What should be in it now — only for whoever closes a day (a blind count for the rest).
+  final double? expected;
+  final List<CashMove> moves;
+  const OpenDrawer({required this.id, required this.label, required this.float, required this.openedAt, required this.openedBy, this.mine = false, this.expected, this.moves = const []});
+
+  factory OpenDrawer.fromJson(Map<String, dynamic> j) => OpenDrawer(
+        id: j['id'] as String,
+        label: (j['label'] as String?) ?? 'Drawer',
+        float: _numOrNull(j['float']) ?? 0,
+        openedAt: DateTime.parse(j['opened_at'] as String).toLocal(),
+        openedBy: (j['opened_by'] as String?) ?? 'someone',
+        mine: j['mine'] == true,
+        expected: _numOrNull(j['expected']),
+        moves: [for (final m in (j['moves'] as List?) ?? const []) CashMove.fromJson(Map<String, dynamic>.from(m as Map))],
+      );
+}
+
+class ClosedDrawer {
+  final String id;
+  final String label;
+  final DateTime openedAt;
+  final DateTime closedAt;
+  final String closedBy;
+  final CashReport report;
+  final String? note;
+  const ClosedDrawer({required this.id, required this.label, required this.openedAt, required this.closedAt, required this.closedBy, required this.report, this.note});
+
+  factory ClosedDrawer.fromJson(Map<String, dynamic> j) => ClosedDrawer(
+        id: j['id'] as String,
+        label: (j['label'] as String?) ?? 'Drawer',
+        openedAt: DateTime.parse(j['opened_at'] as String).toLocal(),
+        closedAt: DateTime.parse(j['closed_at'] as String).toLocal(),
+        closedBy: (j['closed_by'] as String?) ?? 'someone',
+        report: CashReport.fromJson(Map<String, dynamic>.from((j['report'] as Map?) ?? const {})),
+        note: j['note'] as String?,
+      );
+}
+
+class DrawerState {
+  final OpenDrawer? open;
+  final List<ClosedDrawer> closed;
+  const DrawerState({this.open, this.closed = const []});
+}
+
+/// A booking by name for a time (058). The phone number is forgotten the day after.
+class Booking {
+  final String id;
+  final String name;
+  final int party;
+  final DateTime startsAt;
+  final int minutes;
+  final String? tableId;
+  final String? phone;
+  final String? note;
+  final String status; // booked | arrived | seated | no_show | cancelled
+  final String? tabId;
+  const Booking({required this.id, required this.name, required this.party, required this.startsAt, this.minutes = 90, this.tableId, this.phone, this.note, this.status = 'booked', this.tabId});
+
+  DateTime get endsAt => startsAt.add(Duration(minutes: minutes));
+  bool get live => status == 'booked' || status == 'arrived';
+
+  Booking copyWith({String? status, String? tabId, String? tableId}) => Booking(
+        id: id,
+        name: name,
+        party: party,
+        startsAt: startsAt,
+        minutes: minutes,
+        tableId: tableId ?? this.tableId,
+        phone: phone,
+        note: note,
+        status: status ?? this.status,
+        tabId: tabId ?? this.tabId,
+      );
+
+  factory Booking.fromRow(Map<String, dynamic> r) => Booking(
+        id: r['id'] as String,
+        name: r['name'] as String,
+        party: _int(r['party']),
+        startsAt: DateTime.parse(r['starts_at'] as String).toLocal(),
+        minutes: r['minutes'] == null ? 90 : _int(r['minutes']),
+        tableId: r['table_id'] as String?,
+        phone: r['phone'] as String?,
+        note: r['note'] as String?,
+        status: (r['status'] as String?) ?? 'booked',
+        tabId: r['tab_id'] as String?,
       );
 }

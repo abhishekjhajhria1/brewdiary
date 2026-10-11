@@ -14,8 +14,10 @@ import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
+import 'cash_screen.dart';
 import 'excise_screen.dart';
 import 'floor_setup_screen.dart';
+import 'log_book_screen.dart';
 import 'payroll_screen.dart';
 import 'perks_screen.dart';
 import 'rota_screen.dart';
@@ -38,7 +40,6 @@ class MoreScreen extends StatelessWidget {
       title: 'More',
       subtitle: '${venue.name} · ${roleLabel(venue.myRole, venue.kind)}',
       children: [
-        const DemoNote(),
         Group(children: [
           GroupTile(
             icon: Ph.usersThree,
@@ -63,10 +64,16 @@ class MoreScreen extends StatelessWidget {
               chevron: true,
               onTap: () => push(TimeOffScreen(venue: venue)),
             ),
+          if (s.can(Cap.cashUpOwn))
+            GroupTile(icon: Ph.money, title: 'Cash drawer', subtitle: s.can(Cap.closeDay) ? 'Float, drops, pay-outs, the count, past closes' : 'Float, drops, count and close your drawer', chevron: true, onTap: () => push(CashScreen(venue: venue))),
+          if (s.can(Cap.approveVoids))
+            GroupTile(icon: Ph.notepad, title: 'Shift notes', subtitle: 'Tonight\'s pre-shift note and the manager\'s log', chevron: true, onTap: () => push(LogBookScreen(venue: venue))),
           if (s.can(Cap.manageTeam))
             GroupTile(icon: Ph.wallet, title: 'Payroll', subtitle: 'Hours and pay by person — share as CSV', chevron: true, onTap: () => push(PayrollScreen(venue: venue))),
           if (!venue.kind.isCounter && (s.can(Cap.editSettings) || s.can(Cap.floorView)))
-            GroupTile(icon: Ph.squaresFour, title: 'Floor setup', subtitle: 'Areas, tables, table QRs, ordering from the table', chevron: true, onTap: () => push(FloorSetupScreen(venue: venue))),
+            GroupTile(icon: Ph.squaresFour, title: 'Floor setup', subtitle: 'Tables, pickup points, QRs and NFC tags, phone orders', chevron: true, onTap: () => push(FloorSetupScreen(venue: venue))),
+          if (venue.kind.isCounter && (s.can(Cap.editSettings) || s.can(Cap.takeOrders)))
+            GroupTile(icon: Ph.storefront, title: 'Phone orders', subtitle: 'Your counter\'s QR or NFC tag — order ahead, collect by number', chevron: true, onTap: () => push(FloorSetupScreen(venue: venue))),
           if (venue.kind.isCounter && (s.can(Cap.countStock) || s.can(Cap.receiveStock) || s.can(Cap.editMenu)))
             GroupTile(icon: Ph.package, title: 'Stock', subtitle: 'What you sell, deliveries, suppliers', chevron: true, onTap: () => push(StockScreen(venue: venue))),
           if (venue.kind == VenueKind.store && s.can(Cap.reports))
@@ -87,6 +94,22 @@ class MoreScreen extends StatelessWidget {
             title: 'Dark theme',
             hint: 'Bars are dark — this is the default.',
             trailing: BdToggle(on: ThemeStore.instance.isDark, label: 'Dark theme', onChanged: (_) => ThemeStore.instance.toggle()),
+          ),
+          ListenableBuilder(
+            listenable: HapticsStore.instance,
+            builder: (context, _) => SettingRow(
+              title: 'Haptics',
+              hint: 'A tap under your finger when an order goes, a sale rings up, or something didn\'t work.',
+              trailing: BdToggle(
+                on: HapticsStore.instance.on,
+                label: 'Haptics',
+                onChanged: (v) {
+                  HapticsStore.instance.set(v);
+                  Haptics.enabled = v;
+                  if (v) Haptics.tap(); // turning them on answers, so you feel what you chose
+                },
+              ),
+            ),
           ),
           if (s.venues.length > 1 || true) GroupTile(icon: Ph.storefront, title: 'Switch venue', chevron: true, onTap: s.leaveVenue),
           GroupTile(icon: Ph.signOut, title: 'Sign out', onTap: () async {

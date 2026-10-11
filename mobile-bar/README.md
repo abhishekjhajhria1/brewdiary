@@ -30,8 +30,8 @@ Everything else (location, verification, perks, menu, team) is optional and come
 ```bash
 cd mobile-bar
 flutter pub get
-flutter run                                   # no env: a clearly labelled DEMO venue, no network
-flutter run --dart-define-from-file=env.json  # the real backend (copy env.example.json → env.json)
+flutter run --dart-define-from-file=env.json  # copy env.example.json → env.json first
+# without env.json the app opens a "not connected yet" page — there is no demo venue
 ```
 
 `env.json` holds the Supabase URL, the **anon** key and `SITE_URL` (the website, for Ninkasi). Never a
@@ -40,10 +40,10 @@ service-role key; it's git-ignored. Phones stay portrait; tablets rotate.
 **An APK to test without a laptop:** every pull request that touches the apps builds both of them on
 GitHub ([`.github/workflows/android.yml`](../.github/workflows/android.yml)). Open the run's summary
 page and download `brewdiary-venue-apk` or `brewdiary-guest-apk` under **Artifacts** (kept 14 days).
-They run in demo / local mode unless the repository variables `SUPABASE_URL` and `SUPABASE_ANON_KEY`
-are set (the run's summary says which it built), need Android 12 or newer, and are signed with the
-debug key, so allow installs from unknown sources. In the demo, *Café Nilgiri* waits for your code:
-**482913**.
+They connect to your server only when the repository variables `SUPABASE_URL` and `SUPABASE_ANON_KEY`
+are set (the run's summary says which it built — without them the APK opens a "not connected yet"
+page), need Android 12 or newer, and are signed with the debug key, so allow installs from unknown
+sources.
 
 ## The database it needs
 

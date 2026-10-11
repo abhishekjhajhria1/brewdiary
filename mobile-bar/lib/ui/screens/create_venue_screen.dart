@@ -206,7 +206,7 @@ class _CreateVenueScreenState extends State<CreateVenueScreen> {
             ),
             if (_error != null) ...[
               const SizedBox(height: S.m),
-              Semantics(liveRegion: true, child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+              ErrorLine(_error!, style: T.sans(bd, size: 14, color: bd.accentText)),
             ],
             const SizedBox(height: S.xl),
             BdButton('Create venue', busy: _busy, onTap: _create),

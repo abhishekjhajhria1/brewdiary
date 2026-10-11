@@ -14,6 +14,7 @@
     "db:verify": "node scripts/verify-flow.mjs",
     "db:contract": "node scripts/check-app-contract.mjs",
     "db:local": "bash scripts/db-local.sh",
+    "live:local": "bash scripts/live-local.sh",
     "gates": "npm run lint && npm test && npm run build",
     "signals:import": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/import-signals.mjs"
   },

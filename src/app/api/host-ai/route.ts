@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { HOST_SYSTEM_PROMPT, coerceHostBrief, hostBriefing, hostFallbackAnswer, summarizeHostBrief, type ChatMessage } from "@/lib/hostAdvisor";
+import { HOST_SYSTEM_PROMPT, coerceHostBrief, summarizeHostBrief, type ChatMessage } from "@/lib/hostAdvisor";
 import { rateLimit, clientKey } from "@/lib/ratelimit";
 import { getServerUser } from "@/lib/supabase-server";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // The payload is the brief the app built from what THIS person's role can already see,
 // counts only: tonight's state, the menu, the card, public facts about the area. No
 // guest is ever described, so there is nothing to look up here, and it never joins the
-// training corpus. With no AI key it answers from the same rules the app uses offline.
+// training corpus. With no AI key it says so (503) — it never answers from a script.
 const MAX_MSGS = 10;
 const MAX_MSG_CHARS = 800;
 const MAX_TOTAL_CHARS = 5_000;
@@ -27,19 +27,10 @@ function isChatMessage(m: unknown): m is ChatMessage {
   return (role === "user" || role === "assistant") && typeof content === "string";
 }
 
-function streamText(text: string): Response {
-  const encoder = new TextEncoder();
-  const words = text.split(/(\s+)/);
-  const body = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      for (const w of words) {
-        controller.enqueue(encoder.encode(w));
-        await new Promise((r) => setTimeout(r, 10));
-      }
-      controller.close();
-    },
-  });
-  return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "x-host-mode": "fallback" } });
+/** Ninkasi can't answer: say so with a status the apps understand (503 = not switched
+ *  on yet, 502 = the model didn't answer). She never answers from a script. */
+function unavailable(status: 502 | 503, message: string): Response {
+  return new Response(message, { status, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
 export async function POST(req: Request) {
@@ -66,11 +57,8 @@ export async function POST(req: Request) {
     .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_MSG_CHARS) }));
   if (messages.reduce((n, m) => n + m.content.length, 0) > MAX_TOTAL_CHARS) return new Response("Message too long", { status: 413 });
 
-  const lastQuestion = [...messages].reverse().find((m) => m.role === "user")?.content;
-  const fallback = () => streamText(lastQuestion ? hostFallbackAnswer(brief, lastQuestion) : hostBriefing(brief).join("\n"));
-
   const key = process.env.AI_API_KEY;
-  if (!key) return fallback();
+  if (!key) return unavailable(503, "Ninkasi isn't switched on yet.");
 
   const turns: ChatMessage[] = messages.length ? messages : [{ role: "user", content: "Brief me for this shift: the few things I need to know, most important first." }];
   try {
@@ -96,8 +84,8 @@ export async function POST(req: Request) {
         }
       },
     });
-    return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "x-host-mode": "live", "x-host-model": MODEL } });
+    return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "x-host-model": MODEL } });
   } catch {
-    return fallback();
+    return unavailable(502, "Ninkasi couldn't answer just now — try again.");
   }
 }

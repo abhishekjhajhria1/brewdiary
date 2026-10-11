@@ -2,19 +2,35 @@
 
 // The menu on the table, opened by an NFC tag or QR (bwdy.site/m/<slug>), or by a
 // table's own link (bwdy.site/t/<code>), which knows the table: there, if the venue
-// switched it on, a signed-in guest can send an order and call staff (051).
+// switched it on, a guest can send an order and call staff (051). How it goes in is the
+// venue's choice (059): a staff OK first, or straight to the bar and kitchen; at a
+// counter (a pickup point) it gets a number, followed here until it's ready. A liquor
+// store's bottles are never phone-ordered — its shelf makes a list for the till.
 // "You'd probably like" is worked out here, on this device, from this person's own
 // diary — the venue never learns who looked or what they like. "Log it" writes the
 // drink straight into the diary with the venue filled in.
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { fetchMenu, menuPicks, type Menu, type MenuItem } from "@/lib/menus";
 import { addEntry, useEntries } from "@/lib/store";
 import { todayKey } from "@/lib/date";
 import { formatMoney } from "@/lib/money";
 import { useAuth } from "@/lib/profile";
-import { basketTotal, callStaff, requestOrder, useMyRequests, withdrawRequest, type CallKind, type TableInfo } from "@/lib/tableOrder";
+import {
+  basketTotal,
+  callStaff,
+  isCounterKind,
+  orderLive,
+  orderStep,
+  orderWords,
+  placeOrder,
+  useMyOrders,
+  withdrawRequest,
+  type CallKind,
+  type OrderStatus,
+  type TableInfo,
+} from "@/lib/tableOrder";
 
 const ALLERGEN_LABEL: Record<string, string> = {
   gluten: "gluten",
@@ -62,8 +78,34 @@ export function MenuView({ slug, table }: { slug: string; table?: TableInfo }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const signedIn = auth.status === "authed";
-  const ordering = Boolean(table?.tableService);
-  const mine = useMyRequests(ordering && signedIn, nonce);
+  const takesOrders = Boolean(table?.tableService);
+  // Signed in — or the venue takes orders without an account (this browser's secret).
+  const ordering = takesOrders && (signedIn || Boolean(table?.ordersAnon));
+  const atPickup = table?.pointKind === "pickup";
+  const allOrders = useMyOrders(ordering, signedIn, nonce);
+  const venueName = menu && typeof menu === "object" ? menu.venueName : "";
+  const mine = allOrders.filter((o) => !o.venueName || o.venueName === venueName);
+  const saidReady = useRef<Map<string, string>>(new Map());
+
+  // An order turning ready: a buzz, a word on the page, and a notification if allowed.
+  useEffect(() => {
+    for (const o of mine) {
+      const before = saidReady.current.get(o.id);
+      saidReady.current.set(o.id, o.status);
+      if (o.status !== "ready" || before === undefined || before === "ready") continue;
+      const what = o.pickupNo != null ? `Number ${o.pickupNo} is ready` : "Your order is ready";
+      const where = o.atPickup ? `collect it${o.point ? ` at ${o.point}` : ""}` : "it's on its way to you";
+      setMsg(`${what} — ${where}.`);
+      try {
+        navigator.vibrate?.([120, 60, 120]);
+        if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.visibilityState !== "visible") {
+          new Notification(`${what} · ${venueName}`, { body: where[0].toUpperCase() + where.slice(1) + "." });
+        }
+      } catch {
+        /* the word on the page is enough */
+      }
+    }
+  }, [mine, venueName]);
 
   useEffect(() => {
     let active = true;
@@ -121,20 +163,31 @@ export function MenuView({ slug, table }: { slug: string; table?: TableInfo }) {
 
   async function send() {
     if (!table || count === 0) return;
+    if (table.ordersPaused) return setMsg("The kitchen has paused phone orders for a few minutes — order at the bar.");
     setSending(true);
     setMsg(null);
-    const err = await requestOrder(table.code, [...basket].map(([item, qty]) => ({ item, qty })), orderNote.trim() || undefined);
+    const { status, error } = await placeOrder(table.code, [...basket].map(([item, qty]) => ({ item, qty })), signedIn, orderNote.trim() || undefined);
     setSending(false);
-    if (err) return setMsg(err);
+    if (error) return setMsg(error[0].toUpperCase() + error.slice(1));
     setBasket(new Map());
     setOrderNote("");
-    setMsg("Sent — the staff will confirm it.");
+    setMsg(
+      status?.pickupNo != null
+        ? `Ordered — your number is ${status.pickupNo}. Keep this page open; it says when it's ready.`
+        : !status || status.status === "pending"
+          ? "Sent — the staff will confirm it."
+          : "Sent to the bar and the kitchen.",
+    );
+    // So "ready" can reach you when you look away: asked once, at the moment it matters.
+    if (status?.pickupNo != null && typeof Notification !== "undefined" && Notification.permission === "default") {
+      void Notification.requestPermission().catch(() => {});
+    }
     setNonce((n) => n + 1);
   }
 
   async function call(kind: CallKind) {
     if (!table) return;
-    const err = await callStaff(table.code, kind);
+    const err = await callStaff(table.code, kind, signedIn);
     setMsg(err ?? (kind === "bill" ? "They're bringing the bill." : kind === "water" ? "Water's on its way." : "Someone's coming over."));
   }
 
@@ -164,7 +217,8 @@ export function MenuView({ slug, table }: { slug: string; table?: TableInfo }) {
       </span>
       <span className="flex shrink-0 flex-col items-end gap-1">
         {item.price != null && <span className="tnum text-[15px] text-ink">{formatMoney(item.price, (menu as Menu).currency)}</span>}
-        {ordering && signedIn && (
+        {ordering && table?.legalClass === "off_trade" && !item.noAlcohol && <span className="text-xs text-faint">at the counter</span>}
+        {ordering && !(table?.legalClass === "off_trade" && !item.noAlcohol) && (
           <span className="flex items-center gap-1">
             {(basket.get(item.id) ?? 0) > 0 && (
               <>
@@ -198,7 +252,7 @@ export function MenuView({ slug, table }: { slug: string; table?: TableInfo }) {
   return (
     <main className="flex-1">
       <header className="mb-6 border-b border-line pb-5">
-        {table && <p className="label mb-1 text-accent">Table {table.tableLabel}</p>}
+        {table && <p className="label mb-1 text-accent">{atPickup ? table.tableLabel : `Table ${table.tableLabel}`}</p>}
         <p className="label mb-1 text-faint">{menu.venueKind === "store" || menu.venueKind === "shop"
             ? "On the shelf"
             : menu.venueKind === "sweet_shop" || menu.venueKind === "bakery"
@@ -208,8 +262,41 @@ export function MenuView({ slug, table }: { slug: string; table?: TableInfo }) {
         {menu.venueCity && <p className="mt-1.5 text-sm text-faint">{menu.venueCity}</p>}
       </header>
 
+      {isCounterKind(menu.venueKind) && (
+        <Link href={`/m/${slug}/shelf`} className="glass glass-press mb-6 flex items-center justify-between gap-4 rounded-tile p-5">
+          <span>
+            <span className="block text-[15px] text-ink">The shelf — make a list</span>
+            <span className="mt-0.5 block text-sm text-muted">What&apos;s in stock, at its price. Show the list at the till and it&apos;s in their basket.</span>
+          </span>
+          <span aria-hidden className="text-faint">→</span>
+        </Link>
+      )}
+
+      {ordering && table?.ordersPaused && (
+        <p role="status" className="glass mb-6 rounded-tile p-5 text-[15px] text-ink">
+          The kitchen has paused phone orders for a few minutes. Order at the bar, or try again shortly.
+        </p>
+      )}
+      {ordering && atPickup && !table?.ordersPaused && mine.length === 0 && (
+        <p className="mb-6 text-sm text-muted">Order here and get a number. This page says when it&apos;s ready — then collect it at {table?.tableLabel}.</p>
+      )}
+      {ordering && mine.filter((o) => orderLive(o) || Date.now() - Date.parse(o.createdAt) < 30 * 60_000).slice(0, 4).map((o) => (
+        <OrderCard
+          key={o.id}
+          order={o}
+          onCancel={
+            o.status === "pending"
+              ? async () => {
+                  await withdrawRequest(o.id, signedIn);
+                  setNonce((n) => n + 1);
+                }
+              : undefined
+          }
+        />
+      ))}
+
       {menu.sections.length === 0 ? (
-        <p className="mt-10 text-center text-sm text-faint">The menu isn&apos;t up yet — ask at the bar.</p>
+        isCounterKind(menu.venueKind) ? null : <p className="mt-10 text-center text-sm text-faint">The menu isn&apos;t up yet — ask at the bar.</p>
       ) : (
         <>
           {pickItems.length > 0 && !noAlcoholOnly && (
@@ -242,9 +329,9 @@ export function MenuView({ slug, table }: { slug: string; table?: TableInfo }) {
         </>
       )}
 
-      {table && ordering && !signedIn && (
+      {table && takesOrders && !ordering && !signedIn && (
         <section className="glass mt-6 rounded-tile p-5">
-          <p className="text-[15px] text-ink">Order from your phone, or call staff</p>
+          <p className="text-[15px] text-ink">{atPickup ? "Order here and collect by number" : "Order from your phone, or call staff"}</p>
           <p className="mt-1 text-sm text-muted">Sign in to brewdiary (it&apos;s free) and come back to this page. Or just wave — they&apos;ll see you.</p>
           <Link href="/" className="mt-3 inline-block text-sm font-medium text-accent hover:opacity-80">
             Sign in →
@@ -252,7 +339,7 @@ export function MenuView({ slug, table }: { slug: string; table?: TableInfo }) {
         </section>
       )}
 
-      {table && ordering && signedIn && (
+      {table && ordering && !atPickup && (
         <section className="mt-6">
           <p className="label mb-2 text-faint">At table {table.tableLabel}</p>
           <div className="flex flex-wrap gap-2">
@@ -268,36 +355,11 @@ export function MenuView({ slug, table }: { slug: string; table?: TableInfo }) {
               </button>
             ))}
           </div>
-          {mine.length > 0 && (
-            <ul className="mt-5 divide-y divide-line border-y border-line">
-              {mine.map((r) => (
-                <li key={r.id} className="flex items-start justify-between gap-4 py-3 text-sm">
-                  <span className="text-ink">{r.lines.map((l) => `${l.qty} × ${l.name}`).join(", ")}</span>
-                  <span className={clsx("shrink-0 text-right", r.status === "accepted" ? "text-accent" : "text-faint")}>
-                    {r.status === "pending"
-                      ? "waiting for staff"
-                      : r.status === "accepted"
-                        ? "on its way"
-                        : r.status === "declined"
-                          ? `declined${r.declineReason ? ` — ${r.declineReason}` : ""}`
-                          : "withdrawn"}
-                    {r.status === "pending" && (
-                      <button
-                        onClick={async () => {
-                          await withdrawRequest(r.id);
-                          setNonce((n) => n + 1);
-                        }}
-                        className="ml-3 underline-offset-2 hover:text-ink hover:underline"
-                      >
-                        Cancel
-                      </button>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
         </section>
+      )}
+
+      {ordering && table?.legalClass === "off_trade" && menu.sections.some((sec) => sec.items.some((i) => !i.noAlcohol)) && (
+        <p className="mt-6 text-sm text-muted">Bottles are bought at the counter — the law asks for an ID check there. Make a list from the shelf and show it at the till.</p>
       )}
 
       {msg && (
@@ -308,10 +370,13 @@ export function MenuView({ slug, table }: { slug: string; table?: TableInfo }) {
 
       <p className="mt-8 border-t border-line pt-5 text-xs leading-relaxed text-faint">
         Opening a menu tells {menu.venueName} nothing about you. Prices are the venue&apos;s own.
-        {ordering && " An order from the table waits for the staff to confirm it; they see the table, never your name."}
+        {ordering &&
+          (table?.ordersDirect
+            ? ` An order goes straight to the bar and the kitchen; they see ${atPickup ? "a number" : "the table"}, never your name.`
+            : ` An order waits for the staff to confirm it; they see ${atPickup ? "a number" : "the table"}, never your name.`)}
       </p>
 
-      {table && ordering && signedIn && count > 0 && (
+      {table && ordering && count > 0 && (
         <div className="sticky bottom-3 mt-6">
           <div className="glass-strong flex flex-col gap-3 rounded-tile p-4">
             <input
@@ -326,12 +391,52 @@ export function MenuView({ slug, table }: { slug: string; table?: TableInfo }) {
               disabled={sending}
               className="min-h-12 rounded-ctl bg-ink px-4 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {sending ? "Sending…" : `Send ${count} ${count === 1 ? "item" : "items"} · ${formatMoney(basketTotal(basket, prices), menu.currency)}`}
+              {sending
+                ? "Sending…"
+                : `${atPickup ? "Order" : table.ordersDirect ? "Send to the bar" : "Send"} ${count} ${count === 1 ? "item" : "items"} · ${formatMoney(basketTotal(basket, prices), menu.currency)}`}
             </button>
           </div>
         </div>
       )}
     </main>
 
+  );
+}
+
+/** One of your orders: its number (at a counter), what's on it, and the four steps. */
+function OrderCard({ order: o, onCancel }: { order: OrderStatus; onCancel?: () => void }) {
+  const step = orderStep(o);
+  const ready = o.status === "ready";
+  const steps = o.atPickup ? ["Sent", "Making", "Ready", "Collected"] : ["Sent", "Making", "Ready", "Served"];
+  return (
+    <section className={clsx("glass mb-4 rounded-tile p-5", ready && "ring-1 ring-accent")} aria-live="polite">
+      <div className="flex items-start gap-5">
+        {o.pickupNo != null && (
+          <div aria-label={`Your number is ${o.pickupNo}`}>
+            <p className={clsx("label", ready ? "text-accent" : "text-faint")}>Your number</p>
+            <p className={clsx("tnum font-display text-5xl leading-none", ready ? "text-accent" : "text-ink")}>{o.pickupNo}</p>
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] text-ink">{o.lines.map((l) => `${l.qty} × ${l.name}`).join(", ")}</p>
+          <p className={clsx("mt-0.5 text-sm", ready ? "text-accent" : "text-muted")}>{orderWords(o)}</p>
+        </div>
+        {onCancel && (
+          <button onClick={onCancel} className="shrink-0 text-xs text-faint hover:text-ink">
+            Cancel
+          </button>
+        )}
+      </div>
+      {step >= 0 && (
+        <ol className="mt-4 grid grid-cols-4 gap-1.5" aria-label={`Step ${step + 1} of 4: ${steps[step]}`}>
+          {steps.map((label, i) => (
+            <li key={label}>
+              <span className={clsx("block h-1 rounded-full transition-colors", i <= step ? "bg-accent" : "bg-line")} />
+              <span className={clsx("mt-1 block text-[11px]", i === step ? "text-ink" : "text-faint")}>{label}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }

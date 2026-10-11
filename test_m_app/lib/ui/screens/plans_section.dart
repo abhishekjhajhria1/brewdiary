@@ -235,7 +235,7 @@ class _PlanCardState extends State<PlanCard> {
           ...actions,
           const SizedBox(width: S.xs),
         ]),
-        if (_err != null) Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_err!, style: T.caption(bd, color: bd.accentText))),
+        if (_err != null) ErrorLine(_err!, padding: const EdgeInsets.only(top: S.s), style: T.caption(bd, color: bd.accentText)),
       ]),
     );
   }
@@ -337,13 +337,13 @@ class _MyPlanCardState extends State<MyPlanCard> {
       child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: _confirmDelete
           ? [
               Padding(padding: const EdgeInsets.only(right: S.xs), child: Text('Delete for good?', style: T.sans(bd, size: 14, color: bd.muted))),
-              TextAction('Delete', accent: true, onTap: () => PlansApi.delete(p.id)),
+              TextAction('Delete', accent: true, onTap: () => attempt(context, () => PlansApi.delete(p.id))),
               TextAction('Keep', faint: true, onTap: () => setState(() => _confirmDelete = false)),
             ]
           : [
-              if (p.status == PlanStatus.open) TextAction('Stop taking people', faint: true, onTap: () => PlansApi.setStatus(p.id, PlanStatus.closed)),
-              if (p.status == PlanStatus.closed) TextAction('Reopen', faint: true, onTap: () => PlansApi.setStatus(p.id, PlanStatus.open)),
-              if (!cancelled) TextAction('Call it off', faint: true, onTap: () => PlansApi.setStatus(p.id, PlanStatus.cancelled)),
+              if (p.status == PlanStatus.open) TextAction('Stop taking people', faint: true, onTap: () => attempt(context, () => PlansApi.setStatus(p.id, PlanStatus.closed))),
+              if (p.status == PlanStatus.closed) TextAction('Reopen', faint: true, onTap: () => attempt(context, () => PlansApi.setStatus(p.id, PlanStatus.open))),
+              if (!cancelled) TextAction('Call it off', faint: true, onTap: () => attempt(context, () => PlansApi.setStatus(p.id, PlanStatus.cancelled))),
               TextAction('Delete', faint: true, onTap: () => setState(() => _confirmDelete = true)),
             ]),
     );
@@ -461,9 +461,9 @@ class _Requests extends StatelessWidget {
                     ),
                     TextAction('Approve', accent: true, onTap: () async {
                       final e = await PlansApi.respondJoin(r.joinId, true);
-                      if (e != null && context.mounted) toast(context, e);
+                      if (e != null && context.mounted) toast(context, e, tone: ToastTone.error);
                     }),
-                    IconBtn(Ph.x, tooltip: 'Decline ${r.name}', size: 18, color: bd.faint, onTap: () => PlansApi.respondJoin(r.joinId, false)),
+                    IconBtn(Ph.x, tooltip: 'Decline ${r.name}', size: 18, color: bd.faint, onTap: () => attempt(context, () => PlansApi.respondJoin(r.joinId, false))),
                   ]),
                 ),
             ]),
@@ -498,13 +498,13 @@ class _Guests extends StatelessWidget {
                       Text('@${g.handle}', style: T.caption(bd)),
                     ]),
                   ),
-                  IconBtn(Ph.x, tooltip: 'Uninvite ${g.name}', size: 18, color: bd.faint, onTap: () => PlansApi.uninvite(planId, g.userId)),
+                  IconBtn(Ph.x, tooltip: 'Uninvite ${g.name}', size: 18, color: bd.faint, onTap: () => attempt(context, () => PlansApi.uninvite(planId, g.userId))),
                 ]),
             ]),
           const SizedBox(height: S.s),
           UserSearch(exclude: list.map((g) => g.userId).toSet(), onPick: (u) async {
             final e = await PlansApi.invite(planId, u.id);
-            if (e != null && context.mounted) toast(context, e);
+            if (e != null && context.mounted) toast(context, e, tone: ToastTone.error);
           }),
         ]);
       },
@@ -638,7 +638,7 @@ class _CreatePlanState extends State<_CreatePlan> {
     }
     if (!mounted) return;
     Navigator.pop(context);
-    toast(context, isPrivate ? 'Saved to your calendar.' : 'Plan made — friends can ask to join.');
+    toast(context, isPrivate ? 'Saved to your calendar.' : 'Plan made — friends can ask to join.', tone: ToastTone.success);
   }
 
   @override
@@ -700,7 +700,7 @@ class _CreatePlanState extends State<_CreatePlan> {
           ),
         ]),
       ],
-      if (_err != null) Padding(padding: const EdgeInsets.only(top: S.m), child: Text(_err!, style: T.sans(bd, size: 14, color: bd.accentText))),
+      if (_err != null) ErrorLine(_err!, padding: const EdgeInsets.only(top: S.m), style: T.sans(bd, size: 14, color: bd.accentText)),
       const SizedBox(height: S.xxl),
       BdButton(isPrivate ? 'Save to my calendar' : 'Make the plan', busy: _busy, onTap: _title.text.trim().isEmpty || _date == null ? null : _submit),
     ]);

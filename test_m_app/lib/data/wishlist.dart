@@ -60,7 +60,7 @@ class WishlistStore extends ChangeNotifier {
     final a = auth;
     if (a.status == AuthStatus.loading) return;
     final c = db;
-    if (a.isAuthed && c != null && a.meId != 'local') {
+    if (a.isAuthed && c != null) {
       if (_remote && _user == a.meId) return;
       _user = a.meId;
       _remote = true;

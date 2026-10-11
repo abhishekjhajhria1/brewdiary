@@ -1,13 +1,25 @@
-// Walk-throughs on the demo venue: the real screens, the real rules, no network.
+// Walk-throughs on the stand-in venues: the real screens, the real rules, no network.
+import 'package:brewdiary_bar/data/prefs.dart';
 import 'package:brewdiary_bar/data/session.dart';
+import 'package:brewdiary_bar/ui/screens/not_connected_screen.dart';
 import 'package:brewdiary_bar/ui/widgets/common.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers.dart';
 
 void main() {
   setUpAll(loadFonts);
+
+  testWidgets('a build without the server address says so — no pretend venue', (t) async {
+    SharedPreferences.setMockInitialValues({});
+    Prefs.useInstance(await SharedPreferences.getInstance());
+    await t.pumpWidget(const NotConnectedApp());
+    await t.pumpAndSettle();
+    expect(find.text('Not connected yet'), findsOneWidget);
+    expect(find.text('The Amber Room'), findsNothing);
+  });
 
   testWidgets('sign in with an emailed code, then pick a venue', (t) async {
     await bootApp(t, signedIn: false);
@@ -30,8 +42,8 @@ void main() {
     // Before the shift: Ninkasi's briefing sits on top of the floor.
     expect(find.text('BEFORE YOUR SHIFT'), findsOneWidget);
 
-    // Tonight's room is one tap from the floor: the demo room is live, its guests listed.
-    await tapText(t, 'Tonight\'s room');
+    // Tonight's room is one tap from the floor: the room is live, its guests listed.
+    await tapInView(t, 'Tonight\'s room');
     expect(find.textContaining('amberfox'), findsWidgets);
     expect(find.text('Anita'), findsOneWidget);
 
@@ -67,6 +79,7 @@ void main() {
     expect(find.text('Kokum Cooler'), findsOneWidget);
 
     await tapText(t, 'NUMBERS');
+    await t.scrollUntilVisible(find.text('64'), 200, scrollable: find.byType(Scrollable).first);
     expect(find.text('64'), findsOneWidget); // guests in the window
     expect(find.textContaining('never a ranking'), findsOneWidget);
 
@@ -129,7 +142,7 @@ void main() {
     expect(find.text('A new brewpub opened on 12th Main'), findsOneWidget);
   });
 
-  testWidgets('Ninkasi for the whole team: a briefing, and answers that never push drink', (t) async {
+  testWidgets('Ninkasi for the whole team: a briefing, and the question goes to her', (t) async {
     await bootApp(t);
     await tapText(t, 'The Amber Room');
     await tapText(t, 'Ask Ninkasi');
@@ -139,7 +152,19 @@ void main() {
     await tapText(t, 'Someone\'s had enough — what do I do?');
     await t.pump(const Duration(seconds: 2));
     await t.pumpAndSettle();
-    expect(find.textContaining('Stop serving them alcohol'), findsOneWidget);
+    expect(find.textContaining('You asked: Someone\'s had enough'), findsOneWidget);
+  });
+
+  testWidgets('Ninkasi switched off: an honest line, never a scripted answer', (t) async {
+    final backend = await bootApp(t);
+    backend.ninkasiOff = true;
+    await tapText(t, 'The Amber Room');
+    await tapText(t, 'Ask Ninkasi');
+    await tapText(t, 'Someone\'s had enough — what do I do?');
+    await t.pumpAndSettle();
+    expect(find.text('Ninkasi isn\'t switched on yet.'), findsOneWidget);
+    expect(find.textContaining('Stop serving them alcohol'), findsNothing);
+    expect(find.text('THIS SHIFT'), findsOneWidget, reason: 'the briefing is worked out on the phone and stays');
   });
 
   testWidgets('a liquor store: a sale needs an ID check, and the stock follows', (t) async {
@@ -240,15 +265,15 @@ void main() {
     await tapText(t, 'The Amber Room');
     await tapText(t, 'MORE');
     await tapText(t, 'Floor setup');
-    expect(find.text('Guests can order from the table'), findsOneWidget);
-    await t.scrollUntilVisible(find.text('Add a table'), 200, scrollable: find.byType(Scrollable).first);
-    await tapText(t, 'Add a table');
+    expect(find.text('STAFF OK FIRST'), findsOneWidget, reason: 'how phone orders come in');
+    await tapInView(t, 'Add a table');
     await t.enterText(find.byType(TextField).first, 'W1');
     await tapText(t, 'Save');
     await t.scrollUntilVisible(find.text('W1'), 200, scrollable: find.byType(Scrollable).first);
     await tapText(t, 'W1');
     expect(find.textContaining('bwdy.site/t/'), findsWidgets);
     expect(find.text('Share the link'), findsOneWidget);
+    expect(find.text('Write an NFC sticker'), findsOneWidget);
   });
 
   testWidgets('switching venue goes back to the list', (t) async {

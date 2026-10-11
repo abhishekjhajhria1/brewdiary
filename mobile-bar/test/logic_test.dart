@@ -251,11 +251,6 @@ void main() {
       expect(lines.join(' ').toLowerCase(), isNot(contains('alcohol')));
     });
 
-    test('answers the hard question the same way every time', () {
-      expect(hostFallbackAnswer(brief, 'Someone\'s had enough — what do I do?'), startsWith('Stop serving them alcohol'));
-      expect(hostFallbackAnswer(brief, 'How do I explain the loyalty card?'), contains('never how much anyone drinks'));
-    });
-
     test('the wire shape carries counts and titles, never a guest', () {
       final j = brief.toJson();
       expect(j['today'], '2026-10-01');

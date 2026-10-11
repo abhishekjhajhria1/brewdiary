@@ -8,6 +8,7 @@ import 'package:brewdiary/app.dart';
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/data/settings.dart';
+import 'package:brewdiary/ui/screens/not_connected_screen.dart';
 import 'package:brewdiary/ui/screens/together_intro.dart';
 import 'package:brewdiary/ui/screens/you_screen.dart';
 import 'package:brewdiary/ui/widgets/log_sheet.dart';
@@ -62,11 +63,11 @@ void main() {
     await tester.pump(const Duration(seconds: 2)); // let the 'Logged ✓' flash finish
   });
 
-  testWidgets('signed-in (local) shell: calendar, year mosaic, You, Ninkasi', (tester) async {
+  testWidgets('signed-in shell: calendar, year mosaic, You, Ninkasi', (tester) async {
     YouScreen.random = Random(7);
     await bootApp(tester, prefs: _placed, signedIn: true);
 
-    expect(find.text('night streak'.toUpperCase()), findsOneWidget);
+    expect(find.text('night streak', skipOffstage: false), findsOneWidget); // the glance under the calendar
     await expectLater(find.byType(BrewdiaryApp), matchesGoldenFile('goldens/04_calendar.png'));
 
     await tester.tap(find.byTooltip('Show the year'));
@@ -81,18 +82,41 @@ void main() {
     expect(find.text('YOUR YEAR'), findsOneWidget);
     await expectLater(find.byType(BrewdiaryApp), matchesGoldenFile('goldens/06_you.png'));
 
-    // Together is always in the bar; without the cloud it's the introduction.
+    // Together is always in the bar; with no server behind the test it's the introduction
+    // — what lives there and one way in, and no made-up friends.
     await tester.tap(find.byKey(const ValueKey('tab-together')));
     await tester.pumpAndSettle();
     expect(find.text('WHAT LIVES HERE'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text("This build isn't connected yet"), 300,
+    expect(find.text('Mira'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Bring your friends in.'), 300,
         scrollable: find.descendant(of: find.byType(TogetherIntro), matching: find.byType(Scrollable)).first);
-    expect(find.text("This build isn't connected yet"), findsOneWidget);
+    expect(find.text('Bring your friends in.'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tab-ninkasi')));
     await tester.pumpAndSettle();
     expect(find.text('TRY ASKING'), findsOneWidget);
     await expectLater(find.byType(BrewdiaryApp), matchesGoldenFile('goldens/07_ninkasi.png'));
+  });
+
+  testWidgets('Ninkasi unreachable: an honest line and the question handed back, never a script', (tester) async {
+    // Tests have no network: every request fails, which is exactly the case to check.
+    await bootApp(tester, prefs: _placed, signedIn: true);
+    await tester.tap(find.byKey(const ValueKey('tab-ninkasi')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Something cozy and low-effort.'));
+    await tester.pumpAndSettle();
+    expect(find.text("Ninkasi couldn't answer just now — ask again."), findsOneWidget);
+    expect(find.textContaining('Old Fashioned'), findsNothing, reason: 'no scripted bartender reply');
+    expect(find.widgetWithText(TextField, 'Something cozy and low-effort.'), findsOneWidget, reason: 'the question is back in the box');
+    expect(find.text('TRY ASKING'), findsOneWidget, reason: 'nothing she did not say is kept');
+  });
+
+  testWidgets('a build without the server address says so — no pretend accounts', (tester) async {
+    await bootApp(tester, prefs: _placed);
+    await tester.pumpWidget(const NotConnectedApp());
+    await tester.pumpAndSettle();
+    expect(find.text('Not connected yet'), findsOneWidget);
+    expect(find.text('Create a diary'), findsNothing);
   });
 
   testWidgets('light theme renders the same shell', (tester) async {

@@ -106,6 +106,12 @@ void main() {
     showLogSheet(navigatorKey.currentContext!, dateKey: '2026-09-02', recentDrinks: const ['Negroni', 'Flat white', 'Riesling'], recentMoods: const ['cozy', 'bright']);
     await t.pumpAndSettle(const Duration(milliseconds: 500));
     await _shot(t, 'c7_log_empty_day');
+    // a dry night earns miles: the strip above the button says so
+    await t.tap(find.text('Nothing today — log a dry day'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 400));
+    await _shot(t, 'c8_log_unlock');
+    await t.pump(const Duration(seconds: 5));
   });
 
   _tourTest('log sheet with keyboard', (t) async {

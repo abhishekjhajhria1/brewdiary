@@ -12,11 +12,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/types.dart';
 import '../../data/entries.dart';
 import '../../data/reminder.dart';
 import '../../data/settings.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'photo_studio.dart';
 
 Future<void> showTonight(BuildContext context) => showBdSheet(context, title: 'Tonight', builder: (_) => const TonightSheet());
 
@@ -50,7 +52,7 @@ class _TonightSheetState extends State<TonightSheet> {
 
   Future<void> _open(Uri uri) async {
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) toast(context, "Couldn't open that — try from your home screen.");
+    if (!ok && mounted) toast(context, "Couldn't open that — try from your home screen.", tone: ToastTone.error);
   }
 
   Future<void> _togglePace(bool on) async {
@@ -58,7 +60,7 @@ class _TonightSheetState extends State<TonightSheet> {
     if (!on) return r.stopPacing();
     final ok = await r.startPacing();
     if (!mounted) return;
-    toast(context, ok ? "A water-break nudge every 45 minutes, five times. That's all." : 'Notifications are off for brewdiary — allow them in your phone settings.');
+    toast(context, ok ? "A water-break nudge every 45 minutes, five times. That's all." : 'Notifications are off for brewdiary — allow them in your phone settings.', tone: ok ? ToastTone.success : ToastTone.error);
   }
 
   Future<void> _shareWhereIAm() async {
@@ -67,14 +69,14 @@ class _TonightSheetState extends State<TonightSheet> {
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
       if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
-        if (mounted) toast(context, 'Location is off for brewdiary — you can still share from your maps app.');
+        if (mounted) toast(context, 'Location is off for brewdiary — you can still share from your maps app.', tone: ToastTone.error);
         return;
       }
       final p = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 15)));
       final link = 'https://maps.google.com/?q=${p.latitude.toStringAsFixed(5)},${p.longitude.toStringAsFixed(5)}';
       await SharePlus.instance.share(ShareParams(text: 'Heading home. Here\'s where I am right now: $link'));
     } catch (_) {
-      if (mounted) toast(context, "Couldn't get a location fix — try again outside, or share from your maps app.");
+      if (mounted) toast(context, "Couldn't get a location fix — try again outside, or share from your maps app.", tone: ToastTone.error);
     } finally {
       if (mounted) setState(() => _locating = false);
     }
@@ -103,7 +105,7 @@ class _TonightSheetState extends State<TonightSheet> {
               label: 'Morning check-in',
               onChanged: (v) async {
                 final ok = await r.setMorningCheck(v);
-                if (!ok && context.mounted) toast(context, 'Notifications are off for brewdiary — allow them in your phone settings.');
+                if (!ok && context.mounted) toast(context, 'Notifications are off for brewdiary — allow them in your phone settings.', tone: ToastTone.error);
               },
             ),
           ),
@@ -132,6 +134,22 @@ class _TonightSheetState extends State<TonightSheet> {
         ]),
         const SizedBox(height: S.l),
         Text('Not sure you should drive? Then don\'t — the ride is cheaper than the morning after.', style: T.caption(bd)),
+        if (entryStore.entries.any((e) => e.date == todayKey())) ...[
+          const SizedBox(height: S.xl),
+          Group(children: [
+            GroupTile(
+              icon: Ph.sticker,
+              title: 'Share tonight',
+              subtitle: 'A photo from tonight, with one small sticker.',
+              chevron: true,
+              onTap: () {
+                final today = todayKey();
+                final photo = entryStore.entries.where((e) => e.date == today).expand((e) => e.photos ?? const <Photo>[]).firstOrNull?.url;
+                showPhotoStudio(context, NightStory.fromDay(today, entryStore.entries, currency: PlaceStore.instance.currency), photo: photo);
+              },
+            ),
+          ]),
+        ],
       ]),
     );
   }

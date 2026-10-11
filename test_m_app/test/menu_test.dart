@@ -5,9 +5,10 @@ import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary/data/entries.dart';
 import 'package:brewdiary/ui/screens/menu_screen.dart';
 import 'package:brewdiary/ui/screens/taste_card.dart';
-import 'package:brewdiary/ui/widgets/common.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:brewdiary/data/taste_share.dart';
+import 'package:brewdiary_core/game.dart';
 
 import 'helpers.dart';
 
@@ -49,22 +50,39 @@ void main() {
     expect(find.textContaining("isn't connected"), findsOneWidget);
   });
 
-  testWidgets('the taste card: from the diary, lines can be hidden, and a dry night goes first', (t) async {
+  testWidgets('at the bar: lines can be kept from the bar; a dry night goes first', (t) async {
     await bootApp(t, prefs: const {'brewdiary.age.v2': 'ok', 'brewdiary.country.v1': 'IN'}, signedIn: true);
-    navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const TasteCardScreen()));
+    navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const TasteAtTheBarScreen()));
     await t.pumpAndSettle();
-    expect(find.text('INTO'), findsOneWidget);
-    await t.ensureVisible(find.bySemanticsLabel('Show Into'));
+    expect(TasteShareStore.instance.payload().containsKey('into'), isTrue);
+    await t.ensureVisible(find.bySemanticsLabel('Share Into'));
     await t.pumpAndSettle();
-    await t.tap(find.bySemanticsLabel('Show Into'));
+    await t.tap(find.bySemanticsLabel('Share Into'));
     await t.pumpAndSettle();
-    expect(find.text('INTO'), findsNothing);
+    expect(TasteShareStore.instance.payload().containsKey('into'), isFalse, reason: 'a hidden line never reaches the bar');
     await t.ensureVisible(find.bySemanticsLabel('Nothing with alcohol tonight'));
     await t.pumpAndSettle();
     await t.tap(find.bySemanticsLabel('Nothing with alcohol tonight'));
     await t.pumpAndSettle();
-    expect(find.text('NOTHING WITH ALCOHOL TONIGHT'), findsOneWidget);
-    expect(find.byType(BdToggle), findsWidgets);
+    expect(tasteChips(TasteShareStore.instance.payload()).first, ('Nothing with alcohol tonight', true));
+    expect(find.text('Nothing with alcohol tonight'), findsWidgets, reason: 'the bar preview leads with it');
+  });
+
+  testWidgets('the passport: rank and miles, the taste map, quests, feats — one page', (t) async {
+    await bootApp(t, prefs: const {'brewdiary.age.v2': 'ok', 'brewdiary.country.v1': 'IN'}, signedIn: true);
+    navigatorKey.currentState!.push(MaterialPageRoute(builder: (_) => const TasteCardScreen()));
+    await t.pumpAndSettle();
+    final g = passportGame(entryStore.entries);
+    expect(find.bySemanticsLabel(RegExp('${g.rank.title}, ${g.miles} miles')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(r'^Coffee bar, \d+ of 10')), findsOneWidget);
+    await t.tap(find.bySemanticsLabel(RegExp(r'^Coffee bar, \d+ of 10')));
+    await t.pumpAndSettle();
+    expect(find.text('Espresso'), findsWidgets, reason: 'a row opens its families');
+    Navigator.of(t.element(find.text('Espresso').first)).pop();
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('FEATS'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.text('THIS WEEK', skipOffstage: false), findsOneWidget);
+    expect(find.text('FEATS'), findsOneWidget);
   });
 
   testWidgets('the menu shows the veg mark and allergens (051)', (t) async {

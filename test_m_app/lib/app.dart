@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:app_links/app_links.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -31,6 +32,7 @@ import 'ui/screens/together_intro.dart';
 import 'ui/screens/together_screen.dart';
 import 'ui/screens/you_screen.dart';
 import 'ui/theme.dart';
+import 'ui/widgets/app_lock.dart';
 import 'ui/widgets/common.dart';
 import 'ui/widgets/moments.dart';
 import 'ui/widgets/page.dart';
@@ -63,7 +65,7 @@ class BrewdiaryApp extends StatelessWidget {
             // Honour the person's text size, within the range the layouts are built for.
             child: MediaQuery(
               data: mq.copyWith(textScaler: mq.textScaler.clamp(minScaleFactor: .9, maxScaleFactor: 1.3)),
-              child: KeyboardScope(inset: mq.viewInsets.bottom, child: child!),
+              child: AppLockGate(child: KeyboardScope(inset: mq.viewInsets.bottom, child: child!)),
             ),
           );
         },
@@ -90,7 +92,13 @@ class _Root extends StatelessWidget {
         }
         // The scaffold resizes for the keyboard (so a focused field scrolls into
         // view); the ambient layer stays outside it so the background never jumps.
-        return Ambient(child: Scaffold(backgroundColor: Colors.transparent, body: body));
+        // Passing the age gate cross-fades into the app rather than cutting to it.
+        return Ambient(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: AnimatedSwitcher(duration: context.reduceMotion ? Duration.zero : Motion.slow, child: KeyedSubtree(key: ValueKey(body.runtimeType), child: body)),
+          ),
+        );
       },
     );
   }
@@ -102,11 +110,26 @@ class Shell extends StatefulWidget {
   /// Off in widget tests, where the native link plugin doesn't exist.
   static bool deepLinks = true;
   const Shell({super.key});
+
+  /// Open a link as if the phone had just handed it over: a code scanned or a tag read
+  /// inside the app (device/scan.dart), and the tests. Links from outside come through
+  /// the link plugin.
+  static void openLink(Uri uri) => _ShellState._live?._route(uri);
+
+  /// Switch to a tab from anywhere (the guide's "take me there").
+  static void goTo(Tab t) => _ShellState._live?._select(t);
+
+  /// A context inside the navigator (for a sheet or a toast raised from outside a screen).
+  static BuildContext? get contextOrNull {
+    final s = _ShellState._live;
+    return s != null && s.mounted ? s.context : null;
+  }
   @override
   State<Shell> createState() => _ShellState();
 }
 
 class _ShellState extends State<Shell> {
+  static _ShellState? _live;
   Tab _tab = Tab.calendar;
   final Set<Tab> _visited = {Tab.calendar};
   final Map<String, ScrollController> _scrollers = {};
@@ -120,6 +143,7 @@ class _ShellState extends State<Shell> {
           AccentPill('Discover', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DiscoverScreen()))),
           ThemeDot(dark: ThemeStore.instance.isDark, onTap: ThemeStore.instance.toggle),
         ];
+    _live = this;
     if (Shell.deepLinks) _listenForLinks();
     ReminderStore.instance.openToday.addListener(_openToday);
     ReminderStore.instance.openMorning.addListener(_openMorning);
@@ -129,6 +153,7 @@ class _ShellState extends State<Shell> {
 
   @override
   void dispose() {
+    if (_live == this) _live = null;
     ReminderStore.instance.openToday.removeListener(_openToday);
     ReminderStore.instance.openMorning.removeListener(_openMorning);
     _links?.cancel();
@@ -169,7 +194,10 @@ class _ShellState extends State<Shell> {
 
   void _route(Uri uri) {
     // Home-screen widgets open brewdiary://quick/<water|cigarette> and brewdiary://split.
-    if (uri.scheme == 'brewdiary') return _widgetLink(uri);
+    if (uri.scheme == 'brewdiary') {
+      _widgetLink(uri);
+      return;
+    }
     final seg = uri.pathSegments.where((s) => s.isNotEmpty).toList();
     if (seg.length < 2) return;
     final nav = navigatorKey.currentState;
@@ -187,26 +215,48 @@ class _ShellState extends State<Shell> {
         if (slug != null) nav.push(MaterialPageRoute(builder: (_) => MenuScreen(slug: slug)));
       case 't':
         // A table's own link (bwdy.site/t/<code>, 051) — the menu with the table known,
-        // ordering and "call staff" when the venue has them on.
+        // ordering and "call staff" when the venue has them on. A counter's (059) is the
+        // same link: order there and collect by number.
         final code = tableCodeFrom(uri);
         if (code != null) nav.push(MaterialPageRoute(builder: (_) => TableMenuScreen(code: code)));
+      case 'ready':
+        // A venue's ready board is for a screen on the wall: the browser shows it.
+        launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
-  void _widgetLink(Uri uri) {
-    final ctx = navigatorKey.currentContext;
-    if (ctx == null) return;
+  /// A widget tap can be what started the app: the saved sign-in is still being read.
+  /// Wait for it (a few seconds at most) so the tap lands in the right diary.
+  Future<void> _whenSignInSettles() async {
+    if (auth.status != AuthStatus.loading) return;
+    final settled = Completer<void>();
+    void check() {
+      if (auth.status != AuthStatus.loading && !settled.isCompleted) settled.complete();
+    }
+
+    auth.addListener(check);
+    await settled.future.timeout(const Duration(seconds: 8), onTimeout: () {});
+    auth.removeListener(check);
+  }
+
+  Future<void> _widgetLink(Uri uri) async {
+    await _whenSignInSettles();
+    // The shell's own context — it sits inside the navigator, so a toast finds the
+    // Overlay above it (the navigator's own context is above that Overlay, and a
+    // toast from there silently never showed).
+    if (!mounted) return;
     if (uri.host == 'quick') {
       final what = uri.pathSegments.firstOrNull;
       final def = extras.where((d) => d.entryDrink.toLowerCase() == what).firstOrNull;
       if (def == null) return;
-      entryStore.addEntry(date: todayKey(), drink: def.entryDrink, type: def.entryType);
-      toast(ctx, 'Logged one ${def.unit} for today.');
+      final e = entryStore.addEntry(date: todayKey(), drink: def.entryDrink, type: def.entryType);
+      // A home-screen tap can be a pocket tap: say what happened, and offer it back.
+      toast(context, 'Logged one ${def.unit} for today.', tone: ToastTone.success, action: 'Undo', onAction: () => entryStore.deleteEntry(e.id));
     } else if (uri.host == 'split') {
       if (auth.isAuthed && db != null) {
         navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const SplitScreen()));
       } else {
-        toast(ctx, 'Split needs you signed in to the brewdiary cloud.');
+        toast(context, 'Split needs you signed in to the brewdiary cloud.');
       }
     }
   }
@@ -259,7 +309,7 @@ class _ShellState extends State<Shell> {
         // signing in starts from a clean slate.
         return Stack(children: [
           Positioned.fill(
-            child: IndexedStack(
+            child: FadeThroughStack(
               key: ValueKey(auth.meId ?? 'guest'),
               index: tabs.indexOf(_tab),
               children: [
@@ -369,7 +419,7 @@ class _TabBar extends StatelessWidget {
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () {
-                            if (t != current) HapticFeedback.selectionClick();
+                            if (t != current) Haptics.tick();
                             onSelect(t);
                           },
                           child: Stack(alignment: Alignment.topCenter, children: [
@@ -386,11 +436,16 @@ class _TabBar extends StatelessWidget {
                             ),
                             Positioned.fill(
                               // Text-only, in the website's spaced capitals: the amber mark says where you are.
-                              child: Center(
-                                child: AnimatedDefaultTextStyle(
-                                  duration: Motion.fast,
-                                  style: T.sans(bd, size: 11.5, spacing: 11.5 * .16, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint),
-                                  child: Text(_labels[t]!.toUpperCase(), maxLines: 1),
+                              // Large text: the label shrinks to fit instead of being cut off.
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: AnimatedDefaultTextStyle(
+                                    duration: Motion.fast,
+                                    style: T.sans(bd, size: 11.5, spacing: 11.5 * .16, weight: t == current ? FontWeight.w600 : FontWeight.w500, color: t == current ? bd.ink : bd.faint),
+                                    child: Text(_labels[t]!.toUpperCase(), maxLines: 1),
+                                  ),
                                 ),
                               ),
                             ),

@@ -57,7 +57,6 @@ class _StaffHoursScreenState extends State<StaffHoursScreen> {
           tabBar: false,
           onRefresh: () async => shiftRev.bump(),
           children: [
-            const DemoNote(),
             if (s.can(Cap.manageTeam)) ...[
               BdButton('Payroll', icon: Ph.wallet, kind: BtnKind.secondary, onTap: () => open(PayrollScreen(venue: venue))),
               const SizedBox(height: S.l),

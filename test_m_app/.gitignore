@@ -51,4 +51,5 @@ app.*.map.json
 env.json
 /android/build/
 test/tour/
+test/live/tour/
 test/failures/

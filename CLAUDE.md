@@ -42,6 +42,7 @@ npm run db:audit    # READ-ONLY. Asserts the SHAPE of the live schema + every se
 npm run db:verify   # Plays a whole night against the real schema IN A TRANSACTION IT ROLLS BACK.
 npm run db:contract # READ-ONLY. Every .from()/.rpc() call in the three apps, checked against the schema.
 npm run db:local    # All three, on a THROWAWAY local Postgres built from supabase/ (no secrets needed).
+npm run live:local  # The guest app's REAL data code vs a throwaway local Supabase in Docker (docs/12).
 ```
 
 `db:audit` is what caught `perk_policy()` judging every venue on earth by Massachusetts law —
@@ -50,6 +51,13 @@ Both run in CI (`.github/workflows/ci.yml`) on every push to `main`. `db:local`
 (`scripts/db-local.sh`) applies schema.sql + every numbered migration to a fresh Postgres and runs
 the same two checks there — on every push and PR — so a new migration is proven before the
 maintainer runs it for real. It needs the Postgres server binaries (`initdb`, `pg_ctl`).
+
+**Unit tests and the schema checks still can't see the app talking to a server.** `live:local`
+(`scripts/live-local.sh`) can: it runs real Supabase (auth, API, storage, a mailbox for sign-in codes)
+plus the website, and `test_m_app/test/live` walks every guest flow with real accounts. It is what
+caught the diary loading a friend's shared drinks as your own, and a drink vanishing when logged while
+the diary was still loading. Run it after touching `test_m_app/lib/data`, `src/lib/store.ts` or a
+migration the guest app reads.
 
 ---
 
@@ -64,13 +72,13 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `src/components/` | Feature-grouped UI: `calendar/`, `log/`, `you/`, `together/`, `discover/`, `bartender/`, `share/`, `onboarding/`, `venue/`, `kiosk/`, `profile/`, `ui/`. |
 | `src/lib/` | Framework-free logic — the "brains". See the table below. |
 | `public/` | Static assets: PWA `manifest.webmanifest`, `sw.js`, app icons. |
-| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`053`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
+| `supabase/` | App-database SQL (`schema.sql` + numbered migrations `002`–`059`). Run with `node scripts/db.mjs <file.sql>` — **the maintainer runs these, not the agent.** Each file is one implicit transaction: it lands whole or not at all. |
 | `ai-db/` | The **separate** AI database schema (pseudonymous Ninkasi corpus; deny-all RLS). |
 | `scripts/` | Dev/ops tooling: `db.mjs` (migration runner), `gen-icons.mjs`, `verify-venue.mjs` (the only path that approves a venue), `ninkasi/` (dataset export, trend sync, AI-DB verify). |
 | `tests/` | Vitest unit tests for `src/lib` (excluded from `next build`). |
 | `test_m_app/` | The **Flutter mobile user app** (Android + iOS) on the same Supabase backend. Its pure logic lives in `packages/brewdiary_core/` (shared with the venue app), a 1:1 port of `src/lib` with parity tests — change one, change both. See `test_m_app/README.md`; connecting it to the server, Ninkasi, email-code sign-in and the bar side: `docs/12-mobile-server-and-venues.md`. |
 | `packages/brewdiary_core/` | The pure-Dart logic both Flutter apps share (dates, derive, drinks, money, jurisdiction, menus), with the parity tests. `dart test` inside it. |
-| `mobile-bar/` | The **venue staff app** (Flutter; iOS + Android, phones + tablets) for bars, clubs, restaurants, cafés, liquor stores, sweet shops, bakeries and other shops — role-based. Same backend. Runs as a demo venue with no env. The build list and what's done: `mobile-bar/PLAN.md`. |
+| `mobile-bar/` | The **venue staff app** (Flutter; iOS + Android, phones + tablets) for bars, clubs, restaurants, cafés, liquor stores, sweet shops, bakeries and other shops — role-based. Same backend. No demo mode: without env it opens a "not connected" page; tests use an in-memory stand-in (`mobile-bar/test/support`). The build list and what's done: `mobile-bar/PLAN.md`. |
 | `docs/` | The beginner-proof handbook (committed — for every developer you hire). |
 | `.claude/skills/taste-engine/` | The design/product spec + anti-slop engine. Loaded as a Claude Code skill; **keep it here** (moving it breaks the skill). |
 | `internal/` | **Git-ignored** local planning/handoff. Not in a fresh clone. |
@@ -106,11 +114,12 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
 | `goals.ts` | Gentle limits — optional weekly-limit/dry-days goals, per-device localStorage, off by default (standing derived via `derive.weekBalance`). |
 | `expenses.ts` | Split (Splitwise-style) balance math. |
 | `wishlist.ts` / `trends.ts` / `training.ts` | To-try list, opt-in taste trends, local Ninkasi training export. |
-| `bartender.ts` | Ninkasi persona + system prompt + scripted fallback. |
+| `bartender.ts` | Ninkasi persona + system prompt + context block. No scripted fallback: without a key the routes answer 503 and every client says she's switched off. |
 | `hostAdvisor.ts` | **Ninkasi for hosts** (`/api/host-ai`): the shift companion for every staff role. The brief is built on the phone from what that role can already see — counts and titles, never a guest — and the briefing rules are twinned in `mobile-bar/lib/logic/host_brief.dart` (same test cases). Signed-in only; never writes the training corpus. |
 | `appLinks.ts` | The `/.well-known` app-link files (rewritten in `next.config.mjs` to `/api/app-links/*`): bwdy.site → the guest app, bar.bwdy.site → the venue app, from server env (fingerprints, Apple team id); 404 until set. How all four windows connect (Supabase, Cloudflare, hosting): `docs/14`. |
 | *(counter, 050)* | Counters' till lives in the venue app (`mobile-bar/lib/logic/counter.dart`) over `supabase/050_shop_counter.sql`: products (never above MRP), a stock ledger (on hand is derived), suppliers, `ring_sale()` (the SERVER prices it), and alcohol that is **deny-by-default** — no `retail_alcohol_rules` row with a source, no bottle sale; a listed dry day stops it; hours, per-sale ml limit and an ID check (a yes, never the ID) apply. A sale has no customer column. `docs/15`. |
-| `tableOrder.ts` | The table's own link `bwdy.site/t/<code>` (051): the menu with the table known, and — when the venue switches `table_service` on — a signed-in guest's order REQUEST (staff accept it onto a tab or decline) and "call staff / bill please / water". Staff never see who asked. The venue side (floor, tabs, bar/kitchen tickets, bills where STAFF decide how it was paid, waitlist, live board) is in `mobile-bar/`; `docs/16`. |
+| `tableOrder.ts` | The table's own link `bwdy.site/t/<code>` (051, 059): the menu with the table known, and — when the venue switches `table_service` on — a guest's order, either a REQUEST staff accept or decline, or (059 `orders_direct`) straight onto the bar's and kitchen's tickets; at a PICKUP POINT it gets a number, followed here until ready (`/ready/<code>` is the wall board). Signed in, or — where the venue allows — with only a browser secret's hash. "Call staff / bill please / water". A counter's shelf makes a list for the till (a liquor store's bottles are never phone-ordered). Staff never see who asked. The venue side (floor, tabs, tickets, printers, NFC tags, bills where STAFF decide how it was paid) is in `mobile-bar/`; `docs/16` §9. |
+| `scanCodes.ts` | What a QR or an NFC tag can carry: table / menu / ready-board links, a guest card (`bwdy:g:CODE`) and a shopping list (`bwdy:l:slug:items`) — not links on purpose. Twinned in `packages/brewdiary_core/lib/links.dart` (with the NFC record encoding) — same test cases. |
 | `ratelimit.ts` / `aidb.ts` / `supabase-server.ts` | AI-route rate limiting; server-only pseudonymized AI-DB writer; SSR session reader. |
 
 ---
@@ -131,6 +140,15 @@ alias → `./src/*` (e.g. `@/lib/derive`, `@/components/ui/Chip`).
   A dry day keeps the streak. A quiet-night boost doubles **perk progress**, never a spark and never a
   discount. A flexed tab shows a **band** ("₹2,500+"), never a figure — an exact number turns a wall board
   into a spending race you win by buying one more drink.
+- **A diary is never deleted, only put away (055).** Removing an entry or clearing the diary sets
+  `archived_at`; every read sees only the live diary. Clearing it all takes a fresh emailed code,
+  checked in the database from the session's `amr` claim. Account deletion is still real erasure
+  (the law). Photos are kept a year at most (057, a daily cron).
+- **Taste at the table (056) is the taste card, never the diary.** When a guest who has said yes
+  once opens a venue's table or menu link, that venue's drink-makers (`guests.taste`) see what they're
+  into, what they usually have, mood words, alcohol-free, allergies — for 8 hours. No entries, no
+  dates, no counts, no other venues; no visit or perk is recorded. Staff find a guest by the 6-letter
+  code on their guest card, never by searching everyone.
 - **A guest can never write their own reward.** Spend, visits and perk claims are **staff-recorded only**,
   enforced server-side (no client write policy on `spend_events` / `venue_checkins` / `perk_redemptions`).
   If a guest could punch their own card, the whole thing is a free-drinks machine.
@@ -159,7 +177,7 @@ If `internal/` is missing (a fresh clone), rely on `docs/` + this file — nothi
 
 **Built & working (no keys):** calendar/logging/mosaic, auth + cloud sync (entries, photos, wishlist),
 Together (friends/feed/cheers/comments/share), circles, parties + host-approval, split, age-gate, PWA,
-Ninkasi (live when `AI_API_KEY` set, scripted fallback otherwise) + the two-database AI data plane,
+Ninkasi (live when `AI_API_KEY` set, honestly "switched off" otherwise) + the two-database AI data plane,
 drink canonicalization + log autocomplete + Extras, and the **Rooms/Points/Venues layer** (Phase 7):
 sparks + positive-only vibe inside parties, the venue dashboard on the `bar.` subdomain (staff, rooms,
 verification requests, house perks for verified venues), the public kiosk board, opt-in public profiles
@@ -168,4 +186,5 @@ verification requests, house perks for verified venues), the public kiosk board,
 **Blocked on keys/resources (not code):** live Discover venues (Google Places), payments (Stripe), the
 actual model fine-tune (GPU/managed + ~500 corpus). See `docs/08-founder-playbook.md`.
 
-**Next milestone:** deploy to Vercel (`docs/10-deploy.md`) → then Android via Capacitor (`docs/09-…`).
+**Next milestone:** follow [`docs/18-the-track.md`](docs/18-the-track.md) — the ordered plan for both apps and the
+website, phase by phase, each with a gate. Phase 0 is switching the real server on (`docs/10`, `docs/14`).

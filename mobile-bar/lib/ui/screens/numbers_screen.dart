@@ -39,7 +39,6 @@ class _NumbersScreenState extends State<NumbersScreen> {
       subtitle: v.name,
       onRefresh: () async => venueRev.bump(),
       children: [
-        const DemoNote(),
         if (!v.kind.isCounter && s.can(Cap.liveBoard)) ...[
           LiveBoard(venue: v),
           const SectionHeader('Over time'),

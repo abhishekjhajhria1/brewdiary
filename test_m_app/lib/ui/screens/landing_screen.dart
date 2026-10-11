@@ -4,7 +4,6 @@
 // age gate, which checks the legal age WHERE YOU ARE.
 import 'package:flutter/material.dart';
 
-import '../../config.dart';
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
 import 'package:brewdiary_core/jurisdiction.dart';
@@ -70,9 +69,11 @@ class _LandingScreenState extends State<LandingScreen> {
               const SizedBox(height: S.xl),
               Text('Coffee, wine, a midnight kombucha — whatever you poured. Tap a day, log it in a breath, and watch the year quietly fill in.', style: T.bodyMuted(bd)),
               const SizedBox(height: S.m),
-              Text('The squares darken the more you drink, so a month of habits is one glance, not a spreadsheet. Keep it private, or pour with friends.', style: T.bodyMuted(bd)),
+              Text('Every night you log fills a square — dry nights too — so a month is one glance, not a spreadsheet. Keep it private, or pour with friends.', style: T.bodyMuted(bd)),
               const SizedBox(height: S.x3),
-              const YearPreview(),
+              // The real year, from what's been logged on this phone — empty until the
+              // first square, never a made-up pattern.
+              YearMosaic(year: now.year, counts: countsByDate(entries), onSelect: _open),
               const SectionHeader('Try it — tap a day'),
               MonthCalendar(
                 year: _y,
@@ -124,7 +125,7 @@ class _LandingScreenState extends State<LandingScreen> {
                   Text(
                     entries.isNotEmpty
                         ? 'Your entries live on this device until you make a diary. Sign up and they come with you — phone, laptop, next year.'
-                        : 'A diary takes an email and a password. Free, no card, and the first square is one tap away.',
+                        : 'A diary takes just your email — we send a code, no password to remember. Free, no card, and the first square is one tap away.',
                     style: T.bodyMuted(bd),
                   ),
                   const SizedBox(height: S.xxl),
@@ -136,10 +137,6 @@ class _LandingScreenState extends State<LandingScreen> {
                   Center(child: TextAction('I already have one — sign in', onTap: () => showAuthSheet(context, signup: false))),
                 ]),
               ),
-              if (!Config.cloud) ...[
-                const SizedBox(height: S.l),
-                Text('Running without a cloud backend — "Create a diary" keeps everything on this phone.', textAlign: TextAlign.center, style: T.caption(bd)),
-              ],
             ]);
           },
         ),
@@ -192,8 +189,8 @@ class _AuthSheetState extends State<_AuthSheet> {
   String? _error;
   bool _confirm = false;
   bool _resetSent = false;
-  // Email-code sign-in (cloud builds): no password, a 6-digit code instead.
-  bool _useCode = false;
+  // Email-code sign-in: no password, a 6-digit code instead.
+  bool _useCode = true; // the emailed code first; a password is the other way
   bool _codeSent = false;
   final _code = TextEditingController();
 
@@ -314,7 +311,8 @@ class _AuthSheetState extends State<_AuthSheet> {
     }
     final n = entryStore.entries.length;
     final kicker = _signup ? (n > 0 ? (n > 1 ? '$n nights logged' : 'First night logged') : 'New diary') : 'Welcome back';
-    final ready = _email.text.trim().isNotEmpty && _password.text.length >= 6;
+    // New passwords need 8 characters; older ones of 6 still sign in.
+    final ready = _email.text.trim().isNotEmpty && _password.text.length >= (_signup ? 8 : 6);
     return AutofillGroup(
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const SizedBox(height: S.xs),
@@ -322,21 +320,18 @@ class _AuthSheetState extends State<_AuthSheet> {
         const SizedBox(height: S.s),
         Text(_signup ? 'Keep your diary.' : 'Sign in.', style: T.title(bd)),
         const SizedBox(height: S.s),
-        Text(_signup ? "Save what you logged and start a streak. Email and a password — that's it." : 'Pick up where you left off.', style: T.bodyMuted(bd)),
+        Text(_signup ? (_useCode ? "Save what you logged and start a streak. Your email and the code we send — that's it." : "Save what you logged and start a streak. Email and a password — that's it.") : 'Pick up where you left off.', style: T.bodyMuted(bd)),
         const SizedBox(height: S.xl),
-        if (Config.cloud) ...[
-          Segmented<bool>(
-            options: const [(false, 'Password'), (true, 'Email me a code')],
-            value: _useCode,
-            onChanged: (v) => setState(() {
-              _useCode = v;
-              _codeSent = false;
-              _error = null;
-            }),
-          ),
-          const SizedBox(height: S.xl),
-        ] else
-          const SizedBox(height: S.s),
+        Segmented<bool>(
+          options: const [(true, 'Email me a code'), (false, 'Password')],
+          value: _useCode,
+          onChanged: (v) => setState(() {
+            _useCode = v;
+            _codeSent = false;
+            _error = null;
+          }),
+        ),
+        const SizedBox(height: S.xl),
         if (_signup) ...[
           LineField(controller: _name, label: 'Name', hint: 'What should we call you?', caps: TextCapitalization.words, action: TextInputAction.next, autofill: const [AutofillHints.name], onChanged: (_) => setState(() {})),
           const SizedBox(height: S.xl),
@@ -367,7 +362,7 @@ class _AuthSheetState extends State<_AuthSheet> {
             ),
             Padding(padding: const EdgeInsets.only(top: S.s), child: Text('Sent to ${_email.text.trim()}. It works for a few minutes.', style: T.caption(bd))),
           ],
-          if (_error != null) Padding(padding: const EdgeInsets.only(top: S.m), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+          if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.m), style: T.sans(bd, size: 14, color: bd.accentText)),
           const SizedBox(height: S.xxl),
           _codeSent
               ? BdButton(_signup ? 'Start my diary' : 'Sign in', busy: _busy, onTap: _code.text.trim().length >= 6 ? _verifyCode : null)
@@ -379,7 +374,7 @@ class _AuthSheetState extends State<_AuthSheet> {
           LineField(
             controller: _password,
             label: 'Password',
-            hint: _signup ? 'At least 6 characters' : 'Your password',
+            hint: _signup ? 'At least 8 characters' : 'Your password',
             obscure: !_showPassword,
             caps: TextCapitalization.none,
             action: TextInputAction.done,
@@ -389,7 +384,7 @@ class _AuthSheetState extends State<_AuthSheet> {
           ),
           IconBtn(_showPassword ? Ph.eyeSlash : Ph.eye, size: 20, color: bd.faint, tooltip: _showPassword ? 'Hide password' : 'Show password', onTap: () => setState(() => _showPassword = !_showPassword)),
         ]),
-        if (_error != null) Padding(padding: const EdgeInsets.only(top: S.m), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+        if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.m), style: T.sans(bd, size: 14, color: bd.accentText)),
         const SizedBox(height: S.xxl),
         BdButton(_signup ? 'Start my diary' : 'Sign in', busy: _busy, onTap: ready ? _submit : null),
         ],
@@ -500,7 +495,7 @@ class _AgeGateScreenState extends State<AgeGateScreen> {
                     icon: Ph.calendarBlank,
                     onTap: _pickDob,
                   ),
-                  if (_error != null) Padding(padding: const EdgeInsets.only(top: S.s), child: Text(_error!, style: T.sans(bd, size: 14, color: bd.accentText))),
+                  if (_error != null) ErrorLine(_error!, padding: const EdgeInsets.only(top: S.s), style: T.sans(bd, size: 14, color: bd.accentText)),
                   const SizedBox(height: S.xxl),
                   BdButton('Enter', onTap: _enter),
                   const SizedBox(height: S.l),

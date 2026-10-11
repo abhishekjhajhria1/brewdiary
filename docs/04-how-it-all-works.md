@@ -122,8 +122,9 @@ This one matters most for the AI work, so we go slow.
    in the browser — and asks the AI provider (Groq, for now) to answer, wearing **Ninkasi's
    personality** (the system prompt from `lib/bartender.ts`).
 5. The answer is **streamed** back word-by-word, so the chat types out live.
-6. **If there's no key yet, or the provider errors,** the back-end falls back to charming **scripted
-   replies** (also in `bartender.ts`) — so Ninkasi is never broken, just "pouring from memory."
+6. **If there's no key yet, or the provider errors,** the back-end says so (503 "not switched on yet",
+   or 502 "couldn't answer") and the chat shows that line and hands the question back. There are no
+   scripted stand-in replies: what she says is always the real model.
 7. **Consent + learning:** if the user left the **"Help train Ninkasi"** switch on (You → Settings),
    the finished exchange is saved to the `ninkasi_exchanges` table (`lib/training.ts`) — this is the
    raw material for training *our own* model later. Users can turn it off or delete their data anytime,

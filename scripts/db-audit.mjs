@@ -423,6 +423,58 @@ try {
     console.log("  ~ venue_menu (042) not applied — skipping");
   }
 
+  // ── a diary is never deleted (055): put away, with a fresh code to clear it all ──
+  const arcCol = await one(`select 1 x from information_schema.columns where table_schema='public' and table_name='entries' and column_name='archived_at'`);
+  if (arcCol) {
+    const entPol = await all(`select policyname, cmd, permissive from pg_policies where schemaname='public' and tablename='entries'`);
+    ok("entries: no client DELETE policy (nothing is destroyed from an app)", !entPol.some((p) => p.cmd === "DELETE"), `— ${entPol.map((p) => p.policyname).join(", ")}`);
+    ok("entries: a RESTRICTIVE read policy keeps put-away entries out of every read",
+      entPol.some((p) => p.cmd === "SELECT" && p.permissive === "RESTRICTIVE"));
+    const trig = await one(`select 1 x from pg_trigger where tgrelid='public.entries'::regclass and tgname='entries_guard_archive' and not tgisinternal`);
+    ok("entries: a trigger stops a client setting archived_at itself", !!trig);
+    const amd = await one(`select pg_get_functiondef('public.archive_my_diary()'::regprocedure) d`);
+    ok("archive_my_diary(): refuses without a fresh emailed code", amd && /signed_in_by_code_recently/.test(amd.d));
+    ok("archive_my_diary(): puts away, never deletes", amd && !/\bdelete\b/i.test(amd.d));
+  } else {
+    console.log("  ~ diary archive (055) not applied — skipping");
+  }
+
+  // ── your taste at the table (056): tonight only, the drink-makers only ──────
+  const vgt = await one(`select pg_get_functiondef(p.oid) d from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='venue_guests_tonight'`);
+  if (vgt) {
+    ok("venue_guests_tonight(): gated by venue_can(…, 'guests.taste')", /venue_can\(.*'guests\.taste'\)/.test(vgt.d));
+    ok("venue_guests_tonight(): only live shares (expires_at > now())", /expires_at\s*>\s*now\(\)/.test(vgt.d));
+    ok("venue_guests_tonight(): never reads the diary", !/\bentries\b/.test(vgt.d));
+    const tsPol = await all(`select cmd from pg_policies where schemaname='public' and tablename='taste_shares'`);
+    ok("taste_shares: no client INSERT or UPDATE (share_taste() is the only way in)", !tsPol.some((p) => p.cmd === "INSERT" || p.cmd === "UPDATE" || p.cmd === "ALL"));
+    const st = await one(`select pg_get_functiondef('public.share_taste(text,jsonb)'::regprocedure) d`);
+    ok("share_taste(): cleans what's shared and expires it", st && /clean_taste/.test(st.d) && /interval '8 hours'/.test(st.d));
+    ok("share_taste(): records no visit and no perk (a guest can't write their own reward)", st && !/venue_checkins|perk_redemptions|spend_events|record_visit/.test(st.d));
+    const sta = await one(`select pg_get_functiondef('public.share_taste_at(text,jsonb)'::regprocedure) d`);
+    ok("share_taste_at(): verified venues only, cleaned, expires, no reward", sta && /verified/.test(sta.d) && /clean_taste/.test(sta.d) && /interval '8 hours'/.test(sta.d) && !/venue_checkins|perk_redemptions|spend_events/.test(sta.d));
+    const caps = await all(`select role from public.role_capabilities where capability='guests.taste'`);
+    ok("guests.taste: never the host or the kitchen", !caps.some((r) => r.role === "host" || r.role === "kitchen"), `— ${caps.map((r) => r.role).join(", ")}`);
+    const gcPol = await all(`select 1 from pg_policies where schemaname='public' and tablename='guest_codes'`);
+    ok("guest_codes: no client policy at all", gcPol.length === 0);
+    const vfg = await one(`select pg_get_functiondef('public.venue_find_guest(uuid,text)'::regprocedure) d`);
+    ok("venue_find_guest(): gated by perks.redeem, live codes only", vfg && /'perks\.redeem'/.test(vfg.d) && /expires_at\s*>\s*now\(\)/.test(vfg.d));
+  } else {
+    console.log("  ~ taste at the table (056) not applied — skipping");
+  }
+
+  // ── photos kept a year at most (057): server-only helpers ───────────────────
+  const pf = await one(`select to_regprocedure('public.photo_files_older_than(int,int)') f`);
+  if (pf.f) {
+    for (const fn of ["photo_files_older_than(int,int)", "photo_files_of(uuid)"]) {
+      const g = await one(`select has_function_privilege('authenticated', 'public.${fn}', 'execute') a, has_function_privilege('anon', 'public.${fn}', 'execute') n`);
+      ok(`${fn}: the server's key only — no app can list other people's files`, !g.a && !g.n);
+    }
+    const pd = await one(`select pg_get_functiondef('public.photo_files_older_than(int,int)'::regprocedure) d`);
+    ok("photo_files_older_than(): never younger than 30 days, whatever it's asked", /greatest\(days, 30\)/.test(pd.d));
+  } else {
+    console.log("  ~ photo retention (057) not applied — skipping");
+  }
+
   // ── more challenges (043): counts only, inside the circle ─────────────────
   const cb2 = await one(`
     select pg_get_functiondef(p.oid) d from pg_proc p
@@ -647,8 +699,14 @@ try {
     const sl = await one(`select pg_get_functiondef('public.set_line_status(uuid,text)'::regprocedure) d`);
     ok("set_line_status(): the bar moves bar tickets, the kitchen kitchen tickets, forward only", sl && /station\.bar/.test(sl.d) && /station\.kitchen/.test(sl.d) && /rank_to <= rank_from/.test(sl.d));
     const ro = await one(`select pg_get_functiondef('public.request_order(text,uuid,jsonb,text)'::regprocedure) d`);
-    ok("request_order(): signed in, the venue switched it on, rate-limited — a request, never lines",
-      ro && /auth\.uid\(\) is null/.test(ro.d) && /v\.table_service/.test(ro.d) && /interval '20 seconds'/.test(ro.d) && !/insert into public\.order_lines/.test(ro.d));
+    // 059 routes request_order() through place_order_inner(): still signed in, still the
+    // venue's switch and the rate limits — and lines only where the venue chose
+    // "straight to the bar and kitchen".
+    const pin = fns.includes("place_order_inner") ? await one(`select pg_get_functiondef('public.place_order_inner(text,uuid,jsonb,text,uuid,text)'::regprocedure) d`) : null;
+    const body = pin ? ro.d + pin.d : ro?.d;
+    ok("request_order(): signed in, the venue switched it on, rate-limited — lines only if the venue chose straight-to-the-bar",
+      ro && /auth\.uid\(\) is null/.test(ro.d) && /v\.table_service/.test(body) && /interval '20 seconds'/.test(body)
+        && !/insert into public\.order_lines/.test(body) && (!pin || /if v\.orders_direct then perform public\.land_order/.test(pin.d)));
     const si = await one(`select pg_get_functiondef('public.service_inbox(uuid)'::regprocedure) d`);
     ok("service_inbox(): never returns who asked", si && !/returns table \([^)]*requested_by/.test(si.d) && !/select[^;]*r\.requested_by/.test(si.d));
     const rq = await all(`select policyname, qual from pg_policies where schemaname = 'public' and tablename in ('order_requests', 'table_calls')`);
@@ -771,6 +829,98 @@ try {
     const kc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'staff_events_kind_check'`);
     ok("the team's history knows rota, swap, time-off, correction, break and pay changes",
       kc && ["rota_published", "swap_decided", "time_off_decided", "shift_corrected", "shift_added", "pay_changed", "break_changed"].every((k) => kc.d.includes(k)));
+  }
+
+  // ── the floor in motion, notes, the cash drawer, bookings (058) ────────────
+  if (!fns.includes("close_drawer")) {
+    console.log("  ~ the floor in motion, notes, the drawer, bookings (058) not applied — skipping");
+  } else {
+    console.log("\n── moving tables, merging, recall, 86, notes, the drawer, bookings (058) ──");
+    for (const f of ["move_tab", "merge_tabs", "move_lines", "assign_tab", "recall_line", "set_item_off", "post_note", "end_note",
+                     "mark_note_seen", "shift_notes", "open_drawer", "cash_move", "drawer_state", "close_drawer"]) {
+      ok(`fn ${f}()`, fns.includes(f), "— MISSING");
+    }
+    const w = await all(`select tablename, cmd from pg_policies where schemaname = 'public'
+      and tablename in ('cash_sessions', 'cash_moves', 'venue_notes', 'venue_note_reads') and cmd <> 'SELECT'`);
+    ok("drawers, cash moves, notes and reads: no client write policy (functions only)", w.length === 0, `— ${w.map((x) => `${x.tablename}:${x.cmd}`).join(", ")}`);
+    const rd = await all(`select cmd from pg_policies where schemaname = 'public' and tablename = 'reservations' and cmd = 'DELETE'`);
+    ok("bookings are cancelled, never deleted (no delete policy)", rd.length === 0);
+    const sc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'tabs_status_check'`);
+    ok("a merged tab is kept, marked 'merged'", sc && /merged/.test(sc.d));
+    const vm = await one(`select pg_get_functiondef('public.venue_menu(text)'::regprocedure) d`);
+    ok("a spec card is the team's: venue_menu() never returns it", vm && !/\bspec\b/.test(vm.d));
+    const cd = await one(`select pg_get_functiondef('public.close_drawer(uuid,numeric,text)'::regprocedure) d`);
+    ok("close_drawer(): your own drawer, or whoever closes a day; the report kept with the close",
+      cd && /cash\.close_day/.test(cd.d) && /opened_by = auth\.uid\(\)/.test(cd.d) && /report = rep/.test(cd.d));
+    const ds = await one(`select pg_get_functiondef('public.drawer_state(uuid)'::regprocedure) d`);
+    ok("drawer_state(): the expected figure only for whoever closes a day (a blind count)", ds && /case when lead then public\.cash_expected/.test(ds.d));
+    const cm = await one(`select pg_get_functiondef('public.cash_move(uuid,text,numeric,text)'::regprocedure) d`);
+    ok("cash_move(): a reason always; a pay-out is a supervisor's or manager's", cm && /say what it was for/.test(cm.d) && /move_kind = 'pay_out' and not public\.venue_can\(s\.venue_id, auth\.uid\(\), 'cash\.close_day'\)/.test(cm.d));
+    const sn = await one(`select pg_get_functiondef('public.shift_notes(uuid)'::regprocedure) d`);
+    ok("shift_notes(): who has seen a note, by name, only for supervisors and managers — never ranked",
+      sn && /case when lead then/.test(sn.d) && /order by lower/.test(sn.d) && !/count\(\*\)[^;]*order by/i.test(sn.d));
+    const rf = await one(`select pg_get_functiondef('public.reservations_forget()'::regprocedure) d`);
+    ok("a booking forgets its phone the day after and its name in a month", rf && /phone = null/.test(rf.d) && /interval '1 day'/.test(rf.d) && /interval '30 days'/.test(rf.d));
+    for (const f of ["public.cash_expected(uuid)", "public.reservations_forget()", "public.reservations_guard()", "public.tabs_server_default()"]) {
+      const g = await one(`select has_function_privilege('authenticated', $1, 'EXECUTE') a,
+                                  coalesce((select has_function_privilege('anon', $1, 'EXECUTE')), false) b`, [f]);
+      ok(`${f.split("(")[0].replace("public.", "")}(): not callable from an app`, g && !g.a && !g.b);
+    }
+    for (const tg of ["tabs_server_default", "reservations_guard", "reservations_forget"]) {
+      ok(`trigger ${tg}`, !!(await one(`select 1 from pg_trigger where tgname = $1 and not tgisinternal`, [tg])));
+    }
+    for (const tb of ["cash_sessions", "cash_moves", "venue_notes", "venue_note_reads", "reservations"]) {
+      const r = await one(`select relrowsecurity r from pg_class where oid = $1::regclass`, [`public.${tb}`]);
+      ok(`${tb}: RLS on`, r && r.r === true);
+    }
+  }
+
+  // ── orders straight to the bar and kitchen, pickup points, no-account orders (059) ──
+  if (!fns.includes("place_order_guest")) {
+    console.log("  ~ direct orders, pickup points, no-account orders (059) not applied — skipping");
+  } else {
+    console.log("\n── straight to the bar and kitchen, pickup points, the ready board, no-account orders (059) ──");
+    for (const f of ["place_order", "place_order_guest", "my_orders", "guest_orders", "withdraw_guest_order", "call_table_staff_guest",
+                     "collect_pickup", "pause_phone_orders", "pickup_board", "store_shelf", "land_order", "next_pickup_no"]) {
+      ok(`fn ${f}()`, fns.includes(f), "— MISSING");
+    }
+    const sw = await one(`select count(*)::int n from information_schema.columns where table_schema = 'public' and table_name = 'venues'
+      and column_name in ('orders_direct', 'orders_paused', 'orders_anon') and column_default = 'false'`);
+    ok("the three switches exist and start off (confirm first, not paused, sign-in needed)", sw && sw.n === 3);
+    const pc = await one(`select column_default d from information_schema.columns where table_schema = 'public' and table_name = 'retail_alcohol_rules' and column_name = 'allow_phone_orders'`);
+    ok("a state's retail row allows bottles by phone only if it says so (default false)", pc && pc.d === "false");
+    const any = await one(`select count(*)::int n from public.retail_alcohol_rules where allow_phone_orders`);
+    ok("…and no row says so (deny by default)", any && any.n === 0);
+    const cg = await one(`select pg_get_functiondef('public.check_guest_lines(public.venues,jsonb)'::regprocedure) d`);
+    ok("check_guest_lines(): a liquor store's bottle needs the state's allow_phone_orders", cg && /off_trade/.test(cg.d) && /allow_phone_orders/.test(cg.d));
+    const pi = await one(`select pg_get_functiondef('public.place_order_inner(text,uuid,jsonb,text,uuid,text)'::regprocedure) d`);
+    ok("place_order_inner(): a verified venue with phone orders on; no account only where allowed; the pause holds; rate-limited",
+      pi && /not v\.verified or not v\.table_service/.test(pi.d) && /who is null and not v\.orders_anon/.test(pi.d) && /v\.orders_paused/.test(pi.d) && /interval '20 seconds'/.test(pi.d) && /interval '10 minutes'/.test(pi.d));
+    const dh = await one(`select pg_get_functiondef('public.device_hash_of(text)'::regprocedure) d`);
+    ok("a no-account phone's secret is hashed (sha256), never stored", dh && /sha256/.test(dh.d));
+    const pb = await one(`select pg_get_functiondef('public.pickup_board(text)'::regprocedure) d`);
+    ok("pickup_board(): numbers and states only — no names, no items, no guests", pb && !/requested_by|device_hash|o\.name|display_name/.test(pb.d));
+    const sh = await one(`select pg_get_functiondef('public.store_shelf(text)'::regprocedure) d`);
+    ok("store_shelf(): a verified counter's in-stock shelf — whether in stock, never the count", sh && /v\.verified/.test(sh.d) && /> 0/.test(sh.d) && !/as on_hand|qty\)\s*,/.test(sh.d));
+    const inbox = await one(`select pg_get_functiondef('public.service_inbox(uuid)'::regprocedure) d`);
+    ok("the inbox still never says who asked", inbox && !/requested_by,|device_hash/.test(inbox.d.split("return query")[1] ?? ""));
+    for (const f of ["public.next_pickup_no(uuid)", "public.check_guest_lines(public.venues,jsonb)", "public.land_order(uuid,uuid)",
+                     "public.order_status_json(uuid)", "public.place_order_inner(text,uuid,jsonb,text,uuid,text)", "public.device_hash_of(text)"]) {
+      const g = await one(`select has_function_privilege('authenticated', $1, 'EXECUTE') a,
+                                  coalesce((select has_function_privilege('anon', $1, 'EXECUTE')), false) b`, [f]);
+      ok(`${f.split("(")[0].replace("public.", "")}(): not callable from an app`, g && !g.a && !g.b);
+    }
+    for (const [f, who] of [["public.place_order_guest(text,uuid,text,jsonb,text)", "anon"], ["public.guest_orders(text)", "anon"],
+                            ["public.pickup_board(text)", "anon"], ["public.store_shelf(text)", "anon"], ["public.table_info(text)", "anon"]]) {
+      const g = await one(`select has_function_privilege($2, $1, 'EXECUTE') a`, [f, who]);
+      ok(`${f.split("(")[0].replace("public.", "")}(): open to a phone without an account`, g && g.a);
+    }
+    for (const f of ["public.place_order(text,uuid,jsonb,text)", "public.collect_pickup(uuid)", "public.pause_phone_orders(uuid,boolean)", "public.my_orders()"]) {
+      const g = await one(`select has_function_privilege('anon', $1, 'EXECUTE') a`, [f]);
+      ok(`${f.split("(")[0].replace("public.", "")}(): signed-in only`, g && !g.a);
+    }
+    const vt = await one(`select pg_get_functiondef('public.venue_tables_guard()'::regprocedure) d`);
+    ok("a counter holds pickup points, never tables", vt && /new\.kind <> 'pickup'/.test(vt.d));
   }
 
   // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function

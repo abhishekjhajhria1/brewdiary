@@ -119,7 +119,7 @@ not the form itself.
 | Checks | `scripts/db-audit.mjs` (the counter section), `scripts/verify-flow.mjs` (scene 20) |
 | The till's arithmetic, the pre-checks, the CSV | `mobile-bar/lib/logic/counter.dart` |
 | Screens | `mobile-bar/lib/ui/screens/checkout_screen.dart`, `stock_screen.dart`, `excise_screen.dart` |
-| Demo | the demo's **Cellar Door Wines** (a liquor store) and **Mithai Mahal** (sweets by weight) |
+| Tests | `mobile-bar/test/app_test.dart` rings up a liquor-store sale (ID check, stock) and a sweet shop sale by weight |
 
 Next (PLAN M9, M16): purchase orders and par levels, barcode scanning with the camera, receipts, a
 day-close (Z) for the counter, and the guest code, so a card is punched only when the customer shows

@@ -54,6 +54,12 @@ dependencies:
   # The shared pure logic (a 1:1 port of src/lib), also used by the venue app.
   brewdiary_core:
     path: ../packages/brewdiary_core
+  pdf: ^3.13.1
+  local_auth: ^3.0.2
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.4.2
+  nfc_manager: ^4.2.1
+  nfc_manager_ndef: ^1.1.0
 
 dev_dependencies:
   flutter_test:
@@ -92,6 +98,12 @@ flutter:
         - asset: assets/fonts/Newsreader.ttf
         - asset: assets/fonts/Newsreader-Italic.ttf
           style: italic
+    # IBM Plex Mono (OFL) — the receipt, the ticket and the "Mono" type on share stickers.
+    - family: IBM Plex Mono
+      fonts:
+        - asset: assets/fonts/IBMPlexMono-Regular.ttf
+        - asset: assets/fonts/IBMPlexMono-Medium.ttf
+          weight: 500
     # Phosphor Icons (MIT) — see lib/ui/icons.dart.
     - family: Phosphor
       fonts:

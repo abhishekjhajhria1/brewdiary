@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import {
   SYSTEM_PROMPT,
   contextBlock,
-  fallbackReply,
+  sanitizeContext,
   type BartenderContext,
   type ChatMessage,
 } from "@/lib/bartender";
@@ -50,26 +50,10 @@ function isChatMessage(m: unknown): m is ChatMessage {
   return (role === "user" || role === "assistant") && typeof content === "string";
 }
 
-function streamText(text: string): Response {
-  // Stream a fixed string token-ish so the client renders identically to a live model.
-  const encoder = new TextEncoder();
-  const words = text.split(/(\s+)/);
-  const body = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      for (const w of words) {
-        controller.enqueue(encoder.encode(w));
-        await new Promise((r) => setTimeout(r, 12));
-      }
-      controller.close();
-    },
-  });
-  return new Response(body, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-store",
-      "x-bartender-mode": "fallback",
-    },
-  });
+/** Ninkasi can't answer: say so with a status the apps understand (503 = not switched
+ *  on yet, 502 = the model didn't answer). She never answers from a script. */
+function unavailable(status: 502 | 503, message: string): Response {
+  return new Response(message, { status, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
 export async function POST(req: Request) {
@@ -97,7 +81,7 @@ export async function POST(req: Request) {
       .filter(isChatMessage)
       .slice(-MAX_MSGS)
       .map((m: ChatMessage) => ({ role: m.role, content: m.content.slice(0, MAX_MSG_CHARS) }));
-    context = body.context;
+    context = sanitizeContext(body.context);
   } catch {
     return new Response("Bad request", { status: 400 });
   }
@@ -107,10 +91,7 @@ export async function POST(req: Request) {
   if (totalChars > MAX_TOTAL_CHARS) return new Response("Message too long", { status: 413 });
 
   const key = process.env.AI_API_KEY;
-  if (!key) {
-    // No provider configured yet — keep the feature usable with scripted replies.
-    return streamText(fallbackReply(messages, context));
-  }
+  if (!key) return unavailable(503, "Ninkasi isn't switched on yet.");
 
   const client = new OpenAI({ apiKey: key, baseURL: BASE_URL });
   const lastUser = messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
@@ -170,14 +151,13 @@ export async function POST(req: Request) {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-store",
-        "x-bartender-mode": "live",
         // which teacher answered — stored with each consented exchange so the
         // training corpus knows its provenance
         "x-bartender-model": MODEL,
       },
     });
   } catch {
-    // Provider/auth/network error → graceful scripted fallback rather than a hard 500.
-    return streamText(fallbackReply(messages, context));
+    // Provider/auth/network error: an honest failure the app shows as such.
+    return unavailable(502, "Ninkasi couldn't answer just now — try again.");
   }
 }

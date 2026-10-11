@@ -64,7 +64,6 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
           tabBar: false,
           onRefresh: () async => shiftRev.bump(),
           children: [
-            const DemoNote(),
             Segmented<_Span>(
               options: const [(_Span.week, 'This week'), (_Span.fortnight, '14 days'), (_Span.month, '30 days')],
               value: _span,

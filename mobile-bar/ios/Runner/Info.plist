@@ -66,6 +66,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>To scan a guest card, a customer's shopping list or a product's barcode. Nothing is recorded.</string>
+	<key>NFCReaderUsageDescription</key>
+	<string>To write your table's or counter's link onto an NFC sticker.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Once, to set your venue's coarse area (about 40 km) for area trends. It isn't tracked.</string>
 </dict>

@@ -6,7 +6,6 @@ import { useEntries } from "@/lib/store";
 import { recentDrinks, recentMoods } from "@/lib/derive";
 import {
   STARTERS,
-  OFFLINE_NOTE,
   NINKASI_NAME,
   contextBlock,
   type BartenderContext,
@@ -15,15 +14,20 @@ import {
 import { logExchange, isCollecting } from "@/lib/training";
 import { useFeed } from "@/lib/friends";
 import { useTasteTrends } from "@/lib/trends";
+import { usePantry } from "@/lib/pantry";
+
+/** Why Ninkasi couldn't answer, worded for the reader. */
+class NinkasiUnavailable extends Error {}
 
 export function Bartender() {
   const entries = useEntries();
   const { feed } = useFeed();
   const { trends } = useTasteTrends();
+  const homeBar = usePantry();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [offline, setOffline] = useState(false);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,6 +40,7 @@ export function Bartender() {
     const next: ChatMessage[] = [...messages, { role: "user", content }];
     setMessages(next);
     setInput("");
+    setUnavailable(null);
     setBusy(true);
     // Optimistic empty assistant turn we stream into.
     setMessages((m) => [...m, { role: "assistant", content: "" }]);
@@ -46,6 +51,7 @@ export function Bartender() {
       total: entries.length,
       friendsPouring: [...new Set(feed.map((f) => f.drink))].slice(0, 5),
       trending: trends.filter((t) => t.kind === "drink").map((t) => t.name).slice(0, 5),
+      homeBar,
     };
 
     let acc = "";
@@ -57,8 +63,16 @@ export function Bartender() {
         // which does the (pseudonymized) write into the separate AI database.
         body: JSON.stringify({ messages: next, context, collect: isCollecting() }),
       });
-      const mode = res.headers.get("x-bartender-mode");
-      setOffline(mode === "fallback");
+      // Off (503), busy (429) or failed: an honest line, never a scripted answer.
+      if (!res.ok) {
+        const why =
+          res.status === 503
+            ? "Ninkasi isn't switched on yet."
+            : res.status === 429
+              ? "Too many questions at once — ask again in a minute."
+              : "Ninkasi couldn't answer just now — ask again.";
+        throw new NinkasiUnavailable(why);
+      }
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
@@ -76,15 +90,11 @@ export function Bartender() {
       // The central corpus write happens server-side, into the separate AI database —
       // /api/bartender records each consented, live exchange itself (see training.ts).
       logExchange({ user: content, assistant: acc, context: contextBlock(context) });
-    } catch {
-      setMessages((m) => {
-        const copy = m.slice();
-        copy[copy.length - 1] = {
-          role: "assistant",
-          content: "The bar went quiet for a moment — ask me again, love.",
-        };
-        return copy;
-      });
+    } catch (e) {
+      // Hand the question back to ask again; nothing she didn't say is kept.
+      setMessages((m) => m.slice(0, -2));
+      setInput(content);
+      setUnavailable(e instanceof NinkasiUnavailable ? e.message : "Ninkasi can't be reached — check your connection.");
     } finally {
       setBusy(false);
     }
@@ -134,7 +144,11 @@ export function Bartender() {
         )}
       </div>
 
-      {offline && <p className="mb-2 text-xs text-faint">{OFFLINE_NOTE}</p>}
+      {unavailable && (
+        <p role="alert" className="mb-2 text-xs text-accent">
+          {unavailable}
+        </p>
+      )}
 
       <form
         onSubmit={(e) => {

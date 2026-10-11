@@ -15,9 +15,11 @@ cp env.example.json env.json          # fill in your Supabase URL + anon key
 flutter run --dart-define-from-file=env.json
 ```
 
-With no `env.json` the app runs in **local mode**, like the website without its env:
-the diary lives on the phone, and the Together tab shows an introduction that says
-this build isn't connected. With `env.json`, Together switches on once you sign in.
+`env.json` is required: without it the app opens a short "not connected yet" page —
+there is no demo mode and no pretend account. Signed out, the first nights someone
+logs stay on the phone and move into their diary when they make one; Together
+switches on once they sign in. The widget tests run without a server and use test
+seams (`auth.debugSignIn`, `entryStore.debugUseLocal`, `test/support/seed.dart`).
 
 ## Devices
 
@@ -95,7 +97,7 @@ states that break layouts: scrolled, keyboard up, small phone, large text, table
 | Parties + party room (RSVP, invite, recap, points, vibe, check-in, house perk, thank the bar, screen consent) | ✅ |
 | Split (balances, add expense, settle up) | ✅ |
 | Discover (compass, near-me, venues on brewdiary, area + global trends) | ✅ |
-| Ninkasi (streamed from `/api/bartender`, scripted fallback offline) | ✅ |
+| Ninkasi (streamed from `/api/bartender`; an honest "switched off / can't be reached" line otherwise) | ✅ |
 | You: stats, year, to-try, words, photos, shelf, pantry, journey, all settings | ✅ |
 | Handle re-roll, trust standing, profile privacy, blocks, venue notes | ✅ |
 | Data export + real account deletion | ✅ |
@@ -103,8 +105,8 @@ states that break layouts: scrolled, keyboard up, small phone, large text, table
 | **Table menus** (new, web + app) | ✅ tap the venue's NFC tag (or scan its QR) → the menu opens in the app, with picks from your diary worked out on the phone and "Log it" per drink. Venues build the menu and write tags from the bar dashboard (Menu tab). Needs migration `042_menus.sql` |
 | **Taste card** (mobile) | ✅ what you're into, worked out on the phone from your diary, to hold up for a bartender; hide any line; "Nothing with alcohol tonight" goes first in big type. Never sent to a venue |
 | **Tonight** (mobile) | ✅ opt-in water-break nudges for one night; getting home: Uber (Ola, Rapido in India), directions home, send a friend a map link of where you are, call someone |
-| **Home-screen widgets** (Android) | ✅ this month's mosaic; quick log (+ water, + cigarette, with today's counts); your Split balance. iOS needs a WidgetKit extension added in Xcode (not in this repo yet) |
-| **Photo studio** (mobile) | ✅ 11 overlays for a photo from the night (Classic, Mosaic, Big date, Nights kept, Mood, The party, Place, Ticket, Polaroid, Stamp, Film) — never a drink count |
+| **Home-screen widgets** (Android) | ✅ this month's mosaic (tap: the diary); quick log (+ water, + cigarette, today's counts; a tap logs one with Undo); your Split balance (read when you sign in and after any change — no need to open Split first; tap: Split). The widget picker shows real previews (`test/widget_previews_test.dart` draws them). A tap that starts the app waits for the saved sign-in before it lands. iOS needs a WidgetKit extension added in Xcode (not in this repo yet) |
+| **Photo studio** (mobile) | ✅ Your photo with one small sticker — Stats, Line, Mosaic, Stamp, Receipt, Date — dragged and pinched into place; white, black or amber ink; Story, Post or Square; "Sticker only" shares it see-through. Opened from "Share this night" in every day's log sheet, Tonight, the morning after, You → Photos and a party. Never a drink count |
 | **Taste passport** (mobile) | ✅ stamps for places, kinds, drinks met and dry nights; share it as an image if you choose |
 | **Morning after** (mobile) | ✅ opt-in morning check-in and a care page: water, electrolytes, food, rest, painkiller caution, and when to call 112 |
 | **Nightly reminder** | ✅ **real scheduled notifications** (the website's toggle never fired one): skips evenings you've already logged, and tapping one opens today's log sheet |

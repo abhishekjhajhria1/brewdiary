@@ -4,6 +4,7 @@
 // seated one to see it. The inbox (a guest's order from the table, "bill please"), the
 // bar and kitchen tickets, the waitlist and tonight's room are one tap away.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -16,7 +17,10 @@ import '../../logic/service.dart';
 import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
+import '../widgets/next_steps.dart';
 import '../widgets/page.dart';
+import '../widgets/shift_notes.dart';
+import 'bookings_screen.dart';
 import 'door_screen.dart';
 import 'floor_setup_screen.dart';
 import 'host_screen.dart';
@@ -33,6 +37,7 @@ typedef FloorData = ({
   Map<String, List<OrderLine>> lines,
   List<InboxItem> inbox,
   int waiting,
+  List<Booking> bookings,
 });
 
 Future<FloorData> loadFloor(Venue v) async {
@@ -43,6 +48,10 @@ Future<FloorData> loadFloor(Venue v) async {
     Backend.i.openTabs(v.id),
     s.can(Cap.floorView) ? Backend.i.inbox(v.id).catchError((_) => const <InboxItem>[]) : Future.value(const <InboxItem>[]),
     Backend.i.waitlist(v.id).catchError((_) => const <WaitParty>[]),
+    // Tonight's bookings (058): the count on the shortcut, the next one on a free table.
+    s.can(Cap.floorView)
+        ? Backend.i.bookings(v.id, nightStart(DateTime.now()), nightStart(DateTime.now()).add(const Duration(days: 1))).catchError((_) => const <Booking>[])
+        : Future.value(const <Booking>[]),
   ]);
   final tabs = results[2] as List<ServiceTab>;
   final lines = <String, List<OrderLine>>{};
@@ -51,11 +60,13 @@ Future<FloorData> loadFloor(Venue v) async {
   }
   return (
     areas: results[0] as List<VenueArea>,
-    tables: (results[1] as List<VenueTable>).where((t) => t.active).toList(),
+    // Pickup points (059) aren't seats: their orders show under Tabs at the bar, by number.
+    tables: (results[1] as List<VenueTable>).where((t) => t.active && !t.isPickup).toList(),
     tabs: tabs,
     lines: lines,
     inbox: results[3] as List<InboxItem>,
     waiting: (results[4] as List<WaitParty>).where((p) => p.status == 'waiting').length,
+    bookings: results[5] as List<Booking>,
   );
 }
 
@@ -68,6 +79,19 @@ class FloorScreen extends StatefulWidget {
 
 class _FloorScreenState extends State<FloorScreen> {
   Timer? _tick;
+
+  /// What the inbox held at the last read: a new order or call on the 20-second
+  /// heartbeat earns one "look up" buzz (and the banner's pulse), never a stream of them.
+  int? _asks;
+  Object? _lastRead;
+
+  void _heard(FloorData f) {
+    if (identical(f.inbox, _lastRead)) return; // once per read, not per rebuild
+    _lastRead = f.inbox;
+    final n = f.inbox.length;
+    if (_asks != null && n > _asks!) Haptics.warning();
+    _asks = n;
+  }
 
   Venue get v => widget.venue;
 
@@ -95,17 +119,19 @@ class _FloorScreenState extends State<FloorScreen> {
       maxWidth: kWideMaxWidth,
       onRefresh: () async => floorRev.bump(),
       children: [
-        const DemoNote(),
         ShiftCard(venue: v),
+        ShiftNotesCard(venue: v),
+        NextSteps(venue: v),
         Loader<FloorData>(
           load: () => loadFloor(v),
           refresh: floorRev,
           retry: true,
           builder: (context, f, loading) {
             if (f == null) return const Skeleton(height: 320);
+            _heard(f);
             return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              if (f.inbox.isNotEmpty) _InboxBanner(items: f.inbox, onTap: () => _push(InboxScreen(venue: v))),
-              _Shortcuts(venue: v, waiting: f.waiting, onPush: _push),
+              Appear(visible: f.inbox.isNotEmpty, child: f.inbox.isEmpty ? const SizedBox.shrink() : _InboxBanner(items: f.inbox, onTap: () => _push(InboxScreen(venue: v)))),
+              _Shortcuts(venue: v, waiting: f.waiting, booked: f.bookings.where((b) => b.live).length, onPush: _push),
               const SizedBox(height: S.l),
               if (f.tables.isEmpty)
                 EmptyNote(
@@ -214,15 +240,23 @@ class _TableTile extends StatelessWidget {
     final total = tabs.fold<double>(0, (s, t) => s + tabTotal(f.lines[t.id] ?? const []));
     final mins = tabs.isEmpty ? null : DateTime.now().difference(tabs.map((t) => t.openedAt).reduce((a, b) => a.isBefore(b) ? a : b)).inMinutes;
     final covers = tabs.fold<int>(0, (s, t) => s + (t.covers ?? 0));
+    final booked = state == TableState.free ? nextBookingAt(table.id, f.bookings, DateTime.now()) : null;
     final tone = switch (state) { TableState.attention => Tone.late, TableState.ready => Tone.good, TableState.open => Tone.info, TableState.free => Tone.calm };
     final color = bd.tone(tone);
     return Semantics(
       button: true,
-      label: '${table.label}, ${tableStateWord(state)}${covers > 0 ? ', $covers guests' : ''}',
+      label: '${table.label}, ${tableStateWord(state)}${covers > 0 ? ', $covers guests' : ''}${booked != null ? ', booked for ${timeWord(booked.startsAt)}' : ''}',
       excludeSemantics: true,
       child: Pressable(
         onTap: onTap,
-        child: Container(
+        scale: .96,
+        // A table that starts asking (or whose food is ready) rings out a few times.
+        child: Pulse(
+          active: state == TableState.attention || state == TableState.ready,
+          color: color,
+          child: AnimatedContainer(
+          duration: Motion.slow,
+          curve: Motion.curve,
           height: 104,
           padding: const EdgeInsets.all(S.m),
           decoration: BoxDecoration(
@@ -242,12 +276,13 @@ class _TableTile extends StatelessWidget {
             const Spacer(),
             Text(tableStateWord(state), style: T.sans(bd, size: 12.5, weight: FontWeight.w600, color: state == TableState.free ? bd.faint : color)),
             Text(
-              mins == null ? '${table.seats} seats' : '${mins}m · ${money(total, venue.currency)}',
+              mins == null ? (booked != null ? 'booked ${timeWord(booked.startsAt)} · ${booked.party}' : '${table.seats} seats') : '${mins}m · ${money(total, venue.currency)}',
               style: T.caption(bd).copyWith(fontFeatures: T.tnum),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ]),
+          ),
         ),
       ),
     );
@@ -272,9 +307,9 @@ class _InboxBanner extends StatelessWidget {
           padding: const EdgeInsets.all(S.l),
           decoration: BoxDecoration(color: bd.accent.withValues(alpha: .16), borderRadius: BorderRadius.circular(rTile), border: Border.all(color: bd.accent.withValues(alpha: .6))),
           child: Row(children: [
-            Icon(Ph.bellRinging, color: bd.accentText),
+            _Ring(key: ValueKey(items.length), child: Icon(Ph.bellRinging, color: bd.accentText)),
             const SizedBox(width: S.m),
-            Expanded(child: Text(text, style: T.sans(bd, size: 15.5, weight: FontWeight.w600))),
+            Expanded(child: RollingText(text, style: T.sans(bd, size: 15.5, weight: FontWeight.w600))),
             Text('Open', style: T.sans(bd, size: 14, weight: FontWeight.w600, color: bd.accentText)),
           ]),
         ),
@@ -286,14 +321,16 @@ class _InboxBanner extends StatelessWidget {
 class _Shortcuts extends StatelessWidget {
   final Venue venue;
   final int waiting;
+  final int booked;
   final void Function(Widget) onPush;
-  const _Shortcuts({required this.venue, required this.waiting, required this.onPush});
+  const _Shortcuts({required this.venue, required this.waiting, required this.onPush, this.booked = 0});
   @override
   Widget build(BuildContext context) {
     final s = Session.instance;
     return Wrap(spacing: S.s, runSpacing: S.s, children: [
       if (s.can(Cap.barStation)) BdChip('Bar tickets', icon: Ph.beerStein, onTap: () => onPush(StationScreen(venue: venue, station: 'bar'))),
       if (s.can(Cap.kitchenStation)) BdChip('Kitchen tickets', icon: Ph.cookingPot, onTap: () => onPush(StationScreen(venue: venue, station: 'kitchen'))),
+      if (s.can(Cap.floorView)) BdChip(booked > 0 ? 'Bookings · $booked' : 'Bookings', icon: Ph.calendarCheck, onTap: () => onPush(BookingsScreen(venue: venue))),
       if (s.can(Cap.floorView)) BdChip(waiting > 0 ? 'Waitlist · $waiting' : 'Waitlist', icon: Ph.hourglass, onTap: () => onPush(WaitlistScreen(venue: venue))),
       if (s.can(Cap.floorView)) BdChip('Inbox', icon: Ph.chatCircleDots, onTap: () => onPush(InboxScreen(venue: venue))),
       if (s.can(Cap.floorView)) BdChip('Door', icon: Ph.door, onTap: () => onPush(DoorScreen(venue: venue))),
@@ -325,4 +362,39 @@ class _OpenTabsWithoutTable extends StatelessWidget {
       ]),
     ]);
   }
+}
+
+/// A bell that swings a few times when it appears (keyed by the count, so each new
+/// ask rings it again), then hangs still.
+class _Ring extends StatefulWidget {
+  final Widget child;
+  const _Ring({super.key, required this.child});
+  @override
+  State<_Ring> createState() => _RingState();
+}
+
+class _RingState extends State<_Ring> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_c.isAnimating && _c.value == 0 && !context.reduceMotion) _c.forward();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        child: widget.child,
+        builder: (context, child) {
+          final t = _c.value;
+          return Transform.rotate(angle: math.sin(t * math.pi * 6) * .35 * (1 - t), alignment: Alignment.topCenter, child: child);
+        },
+      );
 }

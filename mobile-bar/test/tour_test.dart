@@ -1,9 +1,12 @@
 // A screenshot tour for design review — NOT part of the normal suite (skipped unless
-// TOUR is defined). Renders the staff-access and rota/payroll screens on the demo venue,
+// TOUR is defined). Renders the staff-access and rota/payroll screens on the stand-in venues,
 // dark (the default):
 //   flutter test test/tour_test.dart --dart-define=TOUR=true --update-goldens
 // Output: test/tour/*.png (git-ignored).
 import 'package:brewdiary_bar/app.dart';
+import 'package:brewdiary_bar/data/session.dart';
+import 'package:brewdiary_bar/ui/screens/guests_screen.dart';
+import 'package:brewdiary_bar/ui/screens/station_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -128,5 +131,82 @@ void main() {
     await _shot(t, 'w1_rota_mine');
     await tapText(t, 'Open shift');
     await _shot(t, 'w2_ask_for_it');
+  });
+
+  _tourTest('guests tonight, the code, the taste on the ticket, next steps', (t) async {
+    await bootApp(t);
+    await tapText(t, 'The Amber Room');
+    await _shot(t, 'g1_tonight_next_steps');
+    final v = Session.instance.venue!;
+    final nav = Navigator.of(t.element(find.byType(Scaffold).first));
+    nav.push(MaterialPageRoute(builder: (_) => Scaffold(body: GuestsScreen(venue: v))));
+    await t.pumpAndSettle();
+    await _shot(t, 'g2_guests_in_tonight');
+    nav.push(MaterialPageRoute(builder: (_) => StationScreen(venue: v, station: 'bar')));
+    await t.pumpAndSettle();
+    await _shot(t, 'g3_bar_ticket_taste');
+  });
+
+  _tourTest('the floor in motion, stations, notes, the drawer, bookings (058)', (t) async {
+    final backend = await bootApp(t, size: const Size(390, 844));
+    await backend.addLines('tab-t5', [
+      {'item': 'm1', 'qty': 2},
+    ]);
+    await tapText(t, 'The Amber Room');
+    await _shot(t, 'n1_floor_note_bookings');
+    await tapInView(t, 'T2');
+    await t.scrollUntilVisible(find.text('Hand over'), 200, scrollable: find.byType(Scrollable).first);
+    await _shot(t, 'n2_tab_tools');
+    await tapInView(t, 'Split by item');
+    await tapInSheet(t, '2 × Kokum Cooler');
+    await _shot(t, 'n3_split_by_item');
+    await t.tap(find.byTooltip('Close').last);
+    await t.pumpAndSettle();
+    await t.pageBack();
+    await t.pumpAndSettle();
+    await tapInView(t, 'Bar tickets');
+    await _shot(t, 'n4_bar_to_make');
+    await t.tap(find.byTooltip('More for Negroni').first);
+    await t.pumpAndSettle();
+    await _shot(t, 'n5_line_more');
+    await tapInSheet(t, 'Spec card');
+    await _shot(t, 'n6_spec_card');
+    await t.tap(find.byTooltip('Close').last);
+    await t.pumpAndSettle();
+    await t.pageBack();
+    await t.pumpAndSettle();
+    await tapInView(t, 'Bookings · 2');
+    await _shot(t, 'n7_bookings');
+    await tapText(t, 'New booking');
+    await _shot(t, 'n8_new_booking');
+    await t.tap(find.byTooltip('Close').last);
+    await t.pumpAndSettle();
+    await t.pageBack();
+    await t.pumpAndSettle();
+    await tapText(t, 'MORE');
+    await tapInView(t, 'Cash drawer');
+    await t.enterText(find.byType(TextField).first, '2000');
+    await t.pumpAndSettle();
+    await tapText(t, 'Open the drawer');
+    await backend.closeTab('tab-b1', [
+      {'method': 'Cash', 'amount': 380},
+    ]);
+    await backend.cashMove((await backend.drawerState('demo-bar')).open!.id, 'drop', 500, 'safe drop at 9');
+    await t.pumpAndSettle();
+    await _shot(t, 'n9_drawer_open');
+    await tapInView(t, 'Count and close');
+    await t.enterText(find.byType(TextField).at(0), '3');
+    await t.enterText(find.byType(TextField).at(2), '3');
+    await t.enterText(find.byType(TextField).at(5), '7');
+    await t.pumpAndSettle();
+    await _shot(t, 'n10_blind_count');
+    await tapInSheet(t, 'Close the drawer');
+    await _shot(t, 'n11_drawer_report');
+    await t.tap(find.byTooltip('Close').last);
+    await t.pumpAndSettle();
+    await t.pageBack();
+    await t.pumpAndSettle();
+    await tapInView(t, 'Shift notes');
+    await _shot(t, 'n12_shift_notes');
   });
 }

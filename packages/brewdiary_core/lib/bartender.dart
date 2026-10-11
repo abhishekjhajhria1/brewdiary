@@ -1,7 +1,7 @@
 // Ninkasi — the bartender persona. A port of src/lib/bartender.ts. The system prompt
 // itself lives server-side (the /api/bartender route); the app only needs the
-// context block shape, the starters, and the scripted fallback for when the
-// server is unreachable.
+// context block shape and the starters. There is no scripted stand-in: she is the
+// real model or honestly away.
 
 const ninkasiName = 'Ninkasi';
 
@@ -11,12 +11,20 @@ class BartenderContext {
   final int total;
   final List<String> friendsPouring;
   final List<String> trending;
+
+  /// What they keep at home (You → Your bar), so Ninkasi can suggest what they can make.
+  final List<String> homeBar;
+
+  /// Their palate's top flavour notes.
+  final List<String> palate;
   const BartenderContext({
     this.recentDrinks = const [],
     this.moods = const [],
     this.total = 0,
     this.friendsPouring = const [],
     this.trending = const [],
+    this.homeBar = const [],
+    this.palate = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -25,6 +33,8 @@ class BartenderContext {
         'total': total,
         'friendsPouring': friendsPouring,
         'trending': trending,
+        if (homeBar.isNotEmpty) 'homeBar': homeBar,
+        if (palate.isNotEmpty) 'palate': palate,
       };
 }
 
@@ -44,23 +54,3 @@ const starters = [
   'A beautiful drink with no alcohol.',
 ];
 
-/// Scripted reply when the server can't be reached — Ninkasi still speaks, in character.
-String fallbackReply(List<ChatMessage> messages, [BartenderContext? ctx]) {
-  final users = messages.where((m) => m.role == ChatRole.user).toList();
-  final last = users.isEmpty ? '' : users.last.content.toLowerCase();
-  final recent = (ctx?.recentDrinks.isNotEmpty ?? false) ? ctx!.recentDrinks.first : null;
-
-  if (RegExp(r'non.?alcohol|na |mocktail|sober|no alcohol').hasMatch(last)) {
-    return 'Then let me pour you something bright, darling — lime and soda over crushed ice, a few mint leaves crushed under the spoon, a whisper of honey. Or a cold-brew over ice with a splash of milk, if the night wants quiet. No spirit, all pleasure.';
-  }
-  if (RegExp(r'cozy|cosy|nightcap|warm|wind down|relax').hasMatch(last)) {
-    return recent != null
-        ? "You've been keeping company with $recent, I see. For a cozy night I'd set down an Old Fashioned — two ounces of bourbon, a sugar cube, two dashes of bitters, one great piece of ice, an orange peel pressed over the top. Prefer to stay clear-headed? Warm chamomile and honey does the same gentle work."
-        : "A cozy night asks for an Old Fashioned, love — bourbon, a sugar cube, two dashes of bitters, one big piece of ice, an orange peel pressed over the glass. Or warm chamomile with honey, if you'd rather keep your head clear.";
-  }
-  return recent != null
-      ? "Lately it's been $recent in your glass. Tonight, step one door over with me — if it's coffee, a cortado; if it's wine, a dry riesling; if it's beer, a saison with a little pepper to it. Tell me the mood you're chasing and I'll pour more precisely."
-      : "Tell me the mood you're chasing tonight — cozy, celebratory, clear-headed, or merely curious — and what you tend to like, and I'll pour you something worth writing down.";
-}
-
-const offlineNote = "Ninkasi can't reach the bar server right now — she's pouring from memory.";

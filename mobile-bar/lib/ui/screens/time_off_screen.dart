@@ -34,7 +34,6 @@ class TimeOffScreen extends StatelessWidget {
           tabBar: false,
           onRefresh: () async => rotaRev.bump(),
           children: [
-            const DemoNote(),
             if (s.can(Cap.ownShift)) BdButton('Ask for time off', icon: Ph.calendarPlus, onTap: () => _ask(context)),
             Loader<(List<TimeOff>, RotaWeek)>(
               load: () async {

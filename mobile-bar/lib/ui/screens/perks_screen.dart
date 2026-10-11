@@ -125,8 +125,8 @@ class _PerksScreenState extends State<PerksScreen> {
           const SizedBox(height: S.xl),
           BdButton('Add tier', onTap: () async {
             final n = double.tryParse(threshold.text.replaceAll(',', '').trim());
-            if (n == null || n <= 0) return toast(ctx, 'Type a number above zero.');
-            if (reward.text.trim().isEmpty) return toast(ctx, 'Say what they get.');
+            if (n == null || n <= 0) return toast(ctx, 'Type a number above zero.', tone: ToastTone.error);
+            if (reward.text.trim().isEmpty) return toast(ctx, 'Say what they get.', tone: ToastTone.error);
             final ok = await runAction(ctx, () => Backend.i.addPerk(v.id, kind: kind, threshold: n, reward: reward.text, rewardAlcoholic: alcoholic), done: 'Tier added.');
             if (ok && ctx.mounted) Navigator.pop(ctx);
           }),

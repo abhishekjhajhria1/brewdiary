@@ -146,7 +146,11 @@ class _ScrollPageState extends State<ScrollPage> {
     );
     if (widget.onRefresh != null) {
       scroll = RefreshIndicator(
-        onRefresh: widget.onRefresh!,
+        // A light tap as the pull lets go: the refresh caught.
+        onRefresh: () {
+          Haptics.tap();
+          return widget.onRefresh!();
+        },
         edgeOffset: top + kTopBarHeight,
         color: bd.accent,
         backgroundColor: bd.sheet,

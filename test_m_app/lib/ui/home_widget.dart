@@ -18,20 +18,55 @@ import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
 import 'package:brewdiary_core/money.dart';
 import 'package:brewdiary_core/types.dart';
+import 'package:brewdiary_core/misc.dart';
+import '../data/auth.dart';
 import '../data/base.dart';
 import '../data/entries.dart';
+import '../data/settings.dart';
+import '../data/split.dart';
 import 'theme.dart';
+
+/// What you're owed and what you owe, from per-friend balances (+ owed to you).
+({double owed, double owe}) splitTotals(Map<String, double> balances) => (
+      owed: balances.values.where((v) => v > 0).fold<double>(0, (a, b) => a + b),
+      owe: balances.values.where((v) => v < 0).fold<double>(0, (a, b) => a - b),
+    );
 
 class HomeWidget {
   static const _channel = MethodChannel('brewdiary/widget');
   static const fileName = 'mosaic_widget.png';
   static Timer? _debounce;
 
-  /// Follow the diary (Android only). Call once at startup.
+  /// Follow the diary — and, signed in, your Split balance — (Android only). Call
+  /// once at startup.
   static void wire() {
     if (kIsWeb || !Platform.isAndroid) return;
     entryStore.addListener(_soon);
     _soon();
+    // The Split widget shows your balance without you having to open Split first:
+    // it's read when you sign in (or the app opens signed in) and after any change.
+    auth.addListener(_splitSoon);
+    splitRev.addListener(_splitSoon);
+    _splitSoon();
+  }
+
+  static Timer? _splitDebounce;
+  static void _splitSoon() {
+    _splitDebounce?.cancel();
+    _splitDebounce = Timer(const Duration(seconds: 3), refreshSplit);
+  }
+
+  /// Read the balances and redraw the Split widget (only when they changed).
+  static Future<void> refreshSplit() async {
+    final me = auth.meId;
+    if (!auth.isAuthed || me == null || db == null) return;
+    try {
+      final s = await SplitApi.load();
+      final b = splitTotals(computeBalances(s.expenses, s.settlements, me));
+      noteSplit(owed: b.owed, owe: b.owe, currency: PlaceStore.instance.currency);
+    } catch (e) {
+      logDebug(e);
+    }
   }
 
   static void _soon() {
@@ -51,6 +86,18 @@ class HomeWidget {
       await _channel.invokeMethod('quick', {'water': count('water'), 'cigarettes': count('cigarette')});
     } catch (e) {
       logDebug(e);
+    }
+  }
+
+  /// Ask Android to put a widget on the home screen ([which]: mosaic, quick, split).
+  /// False when the launcher can't — then the person adds it from the widget list.
+  static Future<bool> pin(String which) async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      return await _channel.invokeMethod<bool>('pin', {'which': which}) ?? false;
+    } catch (e) {
+      logDebug(e);
+      return false;
     }
   }
 

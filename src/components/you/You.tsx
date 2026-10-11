@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import clsx from "clsx";
-import { useEntries, addEntry, reseed, resetAll, replaceAll, snapshot } from "@/lib/store";
+import { useEntries, addEntry, resetAll, replaceAll, snapshot } from "@/lib/store";
 import { lexicon, stats, yearReview, weekBalance } from "@/lib/derive";
 import { DRINKS, canonicalize, normalize } from "@/lib/drinks";
 import { useGoals, setGoal, anyGoalSet, GOAL_MAX, type GoalKey } from "@/lib/goals";
@@ -304,9 +304,6 @@ function Settings() {
         </button>
         <button onClick={() => fileRef.current?.click()} className="transition-colors hover:text-ink">
           import data
-        </button>
-        <button onClick={reseed} className="transition-colors hover:text-ink">
-          reseed demo
         </button>
         <button onClick={resetAll} className="transition-colors hover:text-ink">
           reset diary
@@ -1350,9 +1347,8 @@ function Metric({ value, label }: { value: number; label: string }) {
   );
 }
 
-// Your bar — the ingredients you keep at home. Feeds nothing yet; it's the store
-// Ninkasi will read to suggest what you can make (see lib/pantry.ts). Tap a chip to
-// remove it.
+// Your bar — the ingredients you keep at home. Ninkasi reads it when you ask what to
+// make (it rides along in her context, see lib/pantry.ts). Tap a chip to remove it.
 function Pantry() {
   const items = usePantry();
   const [draft, setDraft] = useState("");
@@ -1403,7 +1399,7 @@ function Pantry() {
         </div>
       )}
       <p className="mt-2.5 text-xs text-faint">
-        Ninkasi will use this to suggest what you can make at home — coming soon.
+        Ask Ninkasi what to make tonight and she builds from what&apos;s here first.
       </p>
     </div>
   );

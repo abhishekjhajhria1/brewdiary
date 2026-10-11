@@ -28,6 +28,20 @@ class ThemeStore extends ChangeNotifier {
   }
 }
 
+// ── haptics (on by default; Settings can switch them off) ────────────────────
+/// Whether brewdiary taps back under your finger. main.dart hands the choice to
+/// the UI's haptic vocabulary (ui/widgets/motion.dart) and keeps it in step.
+class HapticsStore extends ChangeNotifier {
+  static final instance = HapticsStore();
+  static const _key = 'brewdiary.haptics.v1';
+  bool get on => Prefs.getString(_key) != 'off';
+
+  void set(bool v) {
+    Prefs.setString(_key, v ? 'on' : 'off');
+    notifyListeners();
+  }
+}
+
 // ── calendar view (month | year) ─────────────────────────────────────────────
 enum CalendarView { month, year }
 

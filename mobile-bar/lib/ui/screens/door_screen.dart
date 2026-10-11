@@ -66,6 +66,9 @@ class _DoorScreenState extends State<DoorScreen> {
   }
 
   Future<void> _tap(int n, {bool undo = false}) async {
+    final c = _count;
+    // Reaching capacity is worth a "look up", once, as it happens.
+    if (c != null && n > 0 && doorState((c.inside + _pending).clamp(0, 1 << 30), c.capacity) != DoorState.full && doorState(c.inside + _pending + n, c.capacity) == DoorState.full) Haptics.warning();
     setState(() => _pending += n);
     final ok = await runAction(context, () => Backend.i.doorTick(widget.venue.id, n));
     if (!mounted) return;
@@ -177,7 +180,8 @@ class _Count extends StatelessWidget {
             const Label('INSIDE NOW'),
             const SizedBox(height: S.s),
             Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-              Text('$inside', style: T.serif(bd, size: 72, color: state == DoorState.full ? color : bd.ink).copyWith(fontFeatures: T.tnum)),
+              // The clicker: each tap rolls the number up (or down).
+              RollingNumber(inside, style: T.serif(bd, size: 72, color: state == DoorState.full ? color : bd.ink)),
               if (capacity != null) ...[
                 const SizedBox(width: S.s),
                 Text('of $capacity', style: T.sans(bd, size: 18, color: bd.muted)),
@@ -191,7 +195,12 @@ class _Count extends StatelessWidget {
                   height: 6,
                   child: Stack(children: [
                     Container(color: bd.line),
-                    FractionallySizedBox(widthFactor: (inside / capacity!).clamp(0.0, 1.0), child: Container(color: color)),
+                    TweenAnimationBuilder<double>(
+                      tween: Tween(end: (inside / capacity!).clamp(0.0, 1.0)),
+                      duration: Motion.slow,
+                      curve: Motion.curve,
+                      builder: (context, v, _) => FractionallySizedBox(widthFactor: v, child: AnimatedContainer(duration: Motion.slow, color: color)),
+                    ),
                   ]),
                 ),
               ),
@@ -219,17 +228,23 @@ class _BigTap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
+    // A clicker button: every tap ticks under the thumb, so the door can count
+    // without looking down.
     return Semantics(
       button: true,
       label: '1 $label',
-      child: Glass(
+      excludeSemantics: true,
+      child: Pressable(
         onTap: onTap,
-        padding: const EdgeInsets.symmetric(vertical: S.xl),
-        child: Column(children: [
-          Icon(icon, size: 32, color: bd.accentText),
-          const SizedBox(height: S.s),
-          Text(label, style: T.sans(bd, size: 18, weight: FontWeight.w500)),
-        ]),
+        scale: .95,
+        child: Glass(
+          padding: const EdgeInsets.symmetric(vertical: S.xl),
+          child: Column(children: [
+            Icon(icon, size: 32, color: bd.accentText),
+            const SizedBox(height: S.s),
+            Text(label, style: T.sans(bd, size: 18, weight: FontWeight.w500)),
+          ]),
+        ),
       ),
     );
   }

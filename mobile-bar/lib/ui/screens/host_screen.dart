@@ -150,6 +150,7 @@ class _HostScreenState extends State<HostScreen> {
   final _input = TextEditingController();
   final List<Map<String, String>> _messages = [];
   bool _busy = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -166,6 +167,7 @@ class _HostScreenState extends State<HostScreen> {
         ..addAll(sent)
         ..add({'role': 'assistant', 'content': ''});
       _busy = true;
+      _error = null;
     });
     var acc = '';
     try {
@@ -174,10 +176,14 @@ class _HostScreenState extends State<HostScreen> {
         if (!mounted) return;
         setState(() => _messages[_messages.length - 1] = {'role': 'assistant', 'content': acc});
       }
-    } on BackendError {
-      // Out of reach: answer from the same rules, on the phone.
-      acc = hostFallbackAnswer(widget.brief, question);
-      if (mounted) setState(() => _messages[_messages.length - 1] = {'role': 'assistant', 'content': acc});
+    } on BackendError catch (e) {
+      // Off or out of reach: say so. She never answers from a script.
+      if (mounted) {
+        setState(() {
+          _messages.removeLast();
+          _error = e.message;
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -228,6 +234,7 @@ class _HostScreenState extends State<HostScreen> {
                         child: Text(m['content']!.isEmpty ? '…' : m['content']!, style: T.serif(bd, size: 18, height: 1.45)),
                       ),
               ),
+            if (_error != null) ErrorLine(_error!, style: T.sans(context.bd, size: 14, color: context.bd.accentText), padding: const EdgeInsets.only(bottom: S.m)),
             if (!_busy && _messages.isEmpty)
               Wrap(spacing: S.s, runSpacing: S.s, children: [for (final q in hostStarters(widget.brief)) BdChip(q, onTap: () => _ask(q))]),
             const SizedBox(height: S.l),

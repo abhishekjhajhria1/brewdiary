@@ -1,7 +1,7 @@
-// First-run demo history — a port of src/lib/seed.ts. Realistic, contextual content
-// so the mosaic has something to show before the person logs anything.
-import 'date.dart';
-import 'types.dart';
+// A month of diary for the widget tests and screenshot tours — realistic, contextual
+// content so a golden shows a lived-in calendar. Never part of the app.
+import 'package:brewdiary_core/date.dart';
+import 'package:brewdiary_core/types.dart';
 
 class _Seed {
   final int offset;

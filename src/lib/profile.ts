@@ -41,25 +41,9 @@ function setState(next: AuthState) {
   emit();
 }
 
-// ---- local fallback (only when Supabase env is absent) ---------------------
-const LKEY = "brewdiary.profile.v1";
-function readLocal(): Profile | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(LKEY);
-    return raw ? (JSON.parse(raw) as Profile) : null;
-  } catch {
-    return null;
-  }
-}
-function writeLocal(p: Profile | null) {
-  try {
-    if (p) window.localStorage.setItem(LKEY, JSON.stringify(p));
-    else window.localStorage.removeItem(LKEY);
-  } catch {
-    /* ignore */
-  }
-}
+// No offline account: without the Supabase env nobody is signed in, and the auth
+// actions say so instead of pretending.
+const NOT_CONNECTED: AuthResult = { ok: false, error: "This site isn't connected to the brewdiary server yet." };
 
 // ---- helpers ---------------------------------------------------------------
 interface ProfileRow {
@@ -133,8 +117,7 @@ function init() {
   initialized = true;
 
   if (!supabase) {
-    const p = readLocal();
-    setState(p ? { status: "authed", profile: p } : ANON);
+    setState(ANON);
     return;
   }
   supabase.auth.getSession().then(({ data }) => applySession(data.session));
@@ -177,12 +160,7 @@ export function useProfile(): Profile | null {
 export async function markPresenceChecked(): Promise<boolean> {
   const profile = state.profile;
   if (!profile) return false;
-  if (!supabase) {
-    const next = { ...profile, presenceChecked: true };
-    writeLocal(next);
-    setState({ status: "authed", profile: next });
-    return true;
-  }
+  if (!supabase) return false;
   const { error } = await supabase
     .from("profiles")
     .update({ presence_checked: true, presence_checked_at: new Date().toISOString() })
@@ -196,12 +174,7 @@ export async function markPresenceChecked(): Promise<boolean> {
 export type AuthResult = { ok: true; needsConfirm?: boolean } | { ok: false; error: string };
 
 export async function signUp(email: string, password: string, name: string): Promise<AuthResult> {
-  if (!supabase) {
-    const p: Profile = { id: "local", name: name.trim() || "you", handle: "", createdAt: new Date().toISOString() };
-    writeLocal(p);
-    setState({ status: "authed", profile: p });
-    return { ok: true };
-  }
+  if (!supabase) return NOT_CONNECTED;
   const { data, error } = await supabase.auth.signUp({
     email: email.trim(),
     password,
@@ -216,12 +189,7 @@ export async function signUp(email: string, password: string, name: string): Pro
 }
 
 export async function signIn(email: string, password: string): Promise<AuthResult> {
-  if (!supabase) {
-    const p = readLocal() ?? { id: "local", name: "you", handle: "", createdAt: new Date().toISOString() };
-    writeLocal(p);
-    setState({ status: "authed", profile: p });
-    return { ok: true };
-  }
+  if (!supabase) return NOT_CONNECTED;
   const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
@@ -229,7 +197,6 @@ export async function signIn(email: string, password: string): Promise<AuthResul
 
 export async function signOut(): Promise<void> {
   if (!supabase) {
-    writeLocal(null);
     setState(ANON);
     return;
   }
@@ -239,7 +206,7 @@ export async function signOut(): Promise<void> {
 /** Email a password-reset link. Redirects to /reset on THIS origin (dev or prod).
  *  Requires the reset redirect URL to be allow-listed in Supabase Auth settings. */
 export async function sendPasswordReset(email: string): Promise<AuthResult> {
-  if (!supabase) return { ok: false, error: "Password reset needs the cloud backend." };
+  if (!supabase) return NOT_CONNECTED;
   const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/reset` : undefined;
   const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
   return error ? { ok: false, error: error.message } : { ok: true };
@@ -253,12 +220,7 @@ export async function updateHandle(handle: string): Promise<AuthResult> {
   const profile = state.profile;
   if (!profile) return { ok: false, error: "Not signed in." };
 
-  if (!supabase) {
-    const next = { ...profile, handle };
-    writeLocal(next);
-    setState({ status: "authed", profile: next });
-    return { ok: true };
-  }
+  if (!supabase) return NOT_CONNECTED;
 
   const { error } = await supabase.from("profiles").update({ handle }).eq("id", profile.id);
   if (error) {

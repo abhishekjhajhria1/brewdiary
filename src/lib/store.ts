@@ -1,7 +1,7 @@
 "use client";
 
 // Entry store. Two modes, one API (so components never change):
-//   • logged OUT  → local mode: entries live in localStorage (the onboarding demo).
+//   • logged OUT  → local mode: entries live in localStorage until you make a diary.
 //   • logged IN   → remote mode: entries live in Supabase, scoped to the user.
 // On sign-in, any local entries are migrated up (preserving the first-logged drink).
 // Writes are OPTIMISTIC: the in-memory cache updates immediately (snappy darken),
@@ -11,7 +11,6 @@
 import { useSyncExternalStore } from "react";
 import type { Entry } from "./types";
 import { addDays, toKey } from "./date";
-import { seedEntries } from "./seed";
 import { supabase } from "./supabase";
 import { getAuthState, subscribeAuth, type AuthState } from "./profile";
 
@@ -30,6 +29,15 @@ function emit() {
 function setCache(next: Entry[]) {
   cache = next;
   emit();
+}
+
+// Every add / edit / removal made here, numbered. A reload answers with the server as
+// it was when the read began, so anything written after that moment wins over the
+// answer — otherwise a drink logged while the diary is still loading would vanish.
+let writeSeq = 0;
+const touched = new Map<string, number>();
+function touch(id: string) {
+  touched.set(id, ++writeSeq);
 }
 
 // ── local persistence ───────────────────────────────────────────────────────
@@ -133,12 +141,21 @@ async function syncPhotos(entry: Entry, userId: string): Promise<Entry["photos"]
 
 // ── remote ops ──────────────────────────────────────────────────────────────
 async function loadRemote() {
-  if (!supabase) return;
+  const me = currentUser;
+  if (!supabase || !me) return;
+  const since = writeSeq;
+  // Only MY rows. The read policy also lets me see friends' shared entries (for the
+  // feed) and anything shared into my circles and parties — none of that is my diary,
+  // and without this filter it would count toward my calendar, streak and passport.
   const { data, error } = await supabase
     .from("entries")
     .select("id, date, drink, type, mood, note, venue, who_with, visibility, created_at, entry_photos(id, url, sort_order)")
+    .eq("user_id", me)
     .order("date", { ascending: true });
-  if (!error && data) setCache((data as EntryRow[]).map(rowToEntry));
+  if (currentUser !== me) return; // they switched account meanwhile
+  if (error || !data) return;
+  const mine = new Set([...touched].filter(([, seq]) => seq > since).map(([id]) => id));
+  setCache([...(data as EntryRow[]).map(rowToEntry).filter((e) => !mine.has(e.id)), ...cache.filter((e) => mine.has(e.id))]);
 }
 
 /** Returns true only if the rows actually landed — the caller must NOT clear the
@@ -170,6 +187,7 @@ async function applyAuth(s: AuthState) {
     // signed out → back to the local (onboarding) diary
     mode = "local";
     currentUser = null;
+    touched.clear();
     setCache(readLocal());
   }
 }
@@ -209,7 +227,7 @@ export interface NewEntry {
 
 function uuid(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
+    ? uuid()
     : `e_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
@@ -221,6 +239,7 @@ export function addEntry(input: NewEntry): Entry {
     drink: input.drink.trim(),
     mood: input.mood?.trim() || undefined,
   };
+  touch(entry.id);
   setCache([...cache, entry]); // optimistic
 
   if (mode === "remote" && currentUser && supabase) {
@@ -252,6 +271,7 @@ export function addEntry(input: NewEntry): Entry {
 
 export function updateEntry(id: string, patch: Partial<Entry>) {
   const prev = cache.find((e) => e.id === id);
+  touch(id);
   setCache(cache.map((e) => (e.id === id ? { ...e, ...patch } : e))); // optimistic
 
   if (mode === "remote" && currentUser && supabase) {
@@ -293,42 +313,34 @@ async function reconcilePhotos(entryId: string, photos: NonNullable<Entry["photo
 }
 
 export function deleteEntry(id: string) {
+  touch(id);
   setCache(cache.filter((e) => e.id !== id)); // optimistic
   if (mode === "remote" && currentUser && supabase) {
-    void supabase.from("entries").delete().eq("id", id); // cascade removes photos rows
+    // Put away, never destroyed (055). If it didn't go, show it again.
+    void supabase.rpc("archive_entry", { eid: id }).then(({ error }) => {
+      if (error) void loadRemote();
+    });
   } else {
     writeLocal(cache);
   }
 }
 
+/** A fresh diary. In the cloud the database puts everything away (055) — and only
+ *  for a session signed in with an emailed code in the last 10 minutes; otherwise
+ *  it refuses and the diary stays as it was. The apps run that flow. */
 export function resetAll() {
   if (mode === "remote" && currentUser && supabase) {
-    const userId = currentUser;
-    setCache(EMPTY);
-    void supabase.from("entries").delete().eq("user_id", userId);
+    void supabase.rpc("archive_my_diary").then(({ error }) => {
+      if (!error) setCache(EMPTY);
+    });
   } else {
     setCache(EMPTY);
     writeLocal(EMPTY);
   }
 }
 
-/** Wipe and re-seed the demo history (for the current diary). */
-export function reseed() {
-  const seeded = seedEntries();
-  if (mode === "remote" && currentUser && supabase) {
-    const userId = currentUser;
-    setCache(seeded);
-    void (async () => {
-      await supabase!.from("entries").delete().eq("user_id", userId);
-      await supabase!.from("entries").insert(seeded.map((e) => entryToRow(e, userId)));
-    })();
-  } else {
-    setCache(seeded);
-    writeLocal(seeded);
-  }
-}
-
-/** Replace the whole diary (used by import). Drops malformed rows — a bad file
+/** Add a diary file's entries (used by import) — nothing is removed (055): an entry
+ *  already here is skipped, the rest come in under fresh ids. Drops malformed rows — a bad file
  *  must never crash the app later (day sorts call `createdAt.localeCompare`) or
  *  corrupt the mosaic with non-day keys. */
 export function replaceAll(entries: Entry[]) {
@@ -346,16 +358,18 @@ export function replaceAll(entries: Entry[]) {
           (e.whoWith === undefined || Array.isArray(e.whoWith)),
       ),
   );
+  const have = new Set(cache.map((e) => e.id));
+  const fresh = clean.filter((e) => !have.has(e.id)).map((e) => ({ ...e, id: uuid() }));
+  if (!fresh.length) return;
   if (mode === "remote" && currentUser && supabase) {
     const userId = currentUser;
-    setCache(clean);
-    void (async () => {
-      await supabase!.from("entries").delete().eq("user_id", userId);
-      if (clean.length) await supabase!.from("entries").insert(clean.map((e) => entryToRow(e, userId)));
-    })();
+    setCache([...cache, ...fresh]);
+    void supabase.from("entries").insert(fresh.map((e) => entryToRow(e, userId))).then(({ error }) => {
+      if (error) void loadRemote();
+    });
   } else {
-    setCache(clean);
-    writeLocal(clean);
+    setCache([...cache, ...fresh]);
+    writeLocal(cache);
   }
 }
 

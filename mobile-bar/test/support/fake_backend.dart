@@ -1,29 +1,29 @@
-// The demo venue: a seeded bar and a sweet shop that live entirely on this phone.
+// A stand-in server for the widget tests and screenshot tours: a seeded bar, a sweet
+// shop and a liquor store that live in memory. It is never part of the app — the app
+// only ever talks to the real database (SupabaseBackend).
 //
-// It powers the app when no Supabase values are built in — screenshots, the widget
-// tests, and showing an owner what the app does before they sign up. It keeps the
-// same rules the database enforces where a demo would otherwise mislead (a perk can't
-// be claimed before it's earned, a card is punched once a day, a sweet shop's reward
-// is never alcohol), so what you see here is what you'd get for real.
+// It keeps the rules the database enforces (a perk can't be claimed before it's
+// earned, a card is punched once a day, a sweet shop's reward is never alcohol), so a
+// test that passes here exercises the same behaviour the server would allow.
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'backend.dart';
-import 'models.dart';
-import 'prefs.dart';
-import '../logic/area.dart' show HeatRow;
-import '../logic/host_brief.dart';
-import '../logic/roles.dart';
-import '../logic/service.dart' show nightStart;
-import '../logic/rota.dart' show canTakeRole;
-import '../logic/staff.dart';
-import '../logic/venue_kinds.dart';
+import 'package:brewdiary_bar/data/backend.dart';
+import 'package:brewdiary_bar/data/models.dart';
+import 'package:brewdiary_bar/data/prefs.dart';
+import 'package:brewdiary_bar/logic/area.dart' show HeatRow;
+import 'package:brewdiary_bar/logic/host_brief.dart';
+import 'package:brewdiary_bar/logic/roles.dart';
+import 'package:brewdiary_bar/logic/service.dart' show nightStart;
+import 'package:brewdiary_bar/logic/rota.dart' show canTakeRole;
+import 'package:brewdiary_bar/logic/staff.dart';
+import 'package:brewdiary_bar/logic/venue_kinds.dart';
 
-class DemoBackend implements Backend {
-  DemoBackend._();
+class FakeBackend implements Backend {
+  FakeBackend._();
 
   @override
-  bool get isDemo => true;
+  bool get live => false;
 
   static const me = AppUser(id: 'demo-me', email: 'you@demo.local', name: 'You (demo)', handle: 'demo-owner');
 
@@ -89,8 +89,8 @@ class DemoBackend implements Backend {
   ];
 
   /// A demo venue already signed in — or, with [signedIn] false, the sign-in screen.
-  factory DemoBackend.seeded({bool signedIn = true}) {
-    final b = DemoBackend._();
+  factory FakeBackend.seeded({bool signedIn = true}) {
+    final b = FakeBackend._();
     b._seed();
     if (signedIn) b._user = me;
     return b;
@@ -272,7 +272,7 @@ class DemoBackend implements Backend {
     _guests[room.id] = [for (final p in _people.where((p) => p.id.startsWith('g-'))) RoomGuest(id: p.id, name: p.name)];
 
     _menu[bar.id] = [
-      const MenuItem(id: 'm1', section: 'Cocktails', name: 'Negroni', price: 450, kind: 'cocktail', position: 0),
+      const MenuItem(id: 'm1', section: 'Cocktails', name: 'Negroni', price: 450, kind: 'cocktail', position: 0, spec: '30 ml gin, 30 ml Campari, 30 ml sweet vermouth. Stir over ice, rocks glass, one big cube, orange peel.'),
       const MenuItem(id: 'm2', section: 'Cocktails', name: 'Espresso Martini', price: 520, kind: 'cocktail', position: 1),
       const MenuItem(id: 'm3', section: 'Beer', name: 'Hazy IPA (pint)', price: 380, kind: 'beer', position: 2),
       const MenuItem(id: 'm4', section: 'Zero proof', name: 'Kokum Cooler', price: 220, kind: 'soft', noAlcohol: true, position: 3),
@@ -477,7 +477,7 @@ class DemoBackend implements Backend {
   }
 
   @override
-  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity}) async {
+  Future<void> updateVenue(String venueId, {String? name, String? city, List<int>? quietNights, String? geohash, bool? servesAlcohol, bool? areaShare, bool? tableService, int? capacity, bool? ordersDirect, bool? ordersAnon}) async {
     final i = _venues.indexWhere((v) => v.id == venueId);
     if (i < 0) throw const BackendError('No such venue.');
     final v = _venues[i];
@@ -490,6 +490,8 @@ class DemoBackend implements Backend {
       areaShare: areaShare,
       tableService: tableService,
       capacity: capacity,
+      ordersDirect: ordersDirect,
+      ordersAnon: ordersAnon,
       servesAlcohol: servesAlcohol == null || !v.kind.alcoholIsChoice ? null : servesAlcohol,
     );
     venueRev.bump();
@@ -1842,6 +1844,7 @@ class DemoBackend implements Backend {
       _moves.add((venueId: venueId, productId: l['product'] as String, qty: -(l['qty'] as int), reason: 'sale', at: DateTime.now()));
     }
     _sales[saleId] = total;
+    if (paidBy == 'cash') _cashSales.add((venueId: venueId, at: DateTime.now(), amount: total));
     stockRev.bump();
     return total;
   }
@@ -1896,6 +1899,44 @@ class DemoBackend implements Backend {
   Future<List<KudosLine>> myKudos(String venueId) async => const [KudosLine('looked after us', 6), KudosLine('great recommendation', 4), KudosLine('quick and kind', 2)];
 
   // ── guest book ────────────────────────────────────────────────────────────
+  /// Two guests opened the table link tonight; Meera's card code works for a demo punch.
+  static const demoGuestCode = 'K7P2QX';
+
+  @override
+  Future<List<GuestTonight>> guestsTonight(String venueId) async {
+    final now = DateTime.now();
+    return [
+      GuestTonight(
+        userId: 'g-anita',
+        name: 'Anita',
+        handle: 'anita',
+        tableLabel: 'T2',
+        taste: const GuestTaste(into: ['Negroni', 'Mezcal'], usually: ['Cocktails', 'Wine'], moods: ['slow'], flavours: ['bitter', 'smoky', 'citrus'], avoid: ['gin'], sweetness: 'dry'),
+        sharedAt: now.subtract(const Duration(minutes: 40)),
+      ),
+      GuestTonight(
+        userId: 'g-kabir',
+        name: 'Kabir',
+        handle: 'kabir',
+        tableLabel: 'T2',
+        taste: const GuestTaste(into: ['Lime soda', 'Kombucha'], usually: ['Soft drinks'], alcoholFreeOften: true, dryTonight: true, allergies: ['peanuts']),
+        sharedAt: now.subtract(const Duration(minutes: 35)),
+      ),
+      GuestTonight(
+        userId: 'g-zoya',
+        name: 'Zoya',
+        handle: 'zoya',
+        tableLabel: null,
+        taste: const GuestTaste(into: ['Hazy IPA'], usually: ['Beer'], moods: ['bright']),
+        sharedAt: now.subtract(const Duration(minutes: 10)),
+      ),
+    ];
+  }
+
+  @override
+  Future<ProfileHit?> findGuestByCode(String venueId, String code) async =>
+      code.trim().toUpperCase() == demoGuestCode ? _people.firstWhere((p) => p.id == 'g-meera') : null;
+
   @override
   Future<GuestCard?> guestCard(String venueId, String guestId) async => _cards['$venueId|$guestId'] ?? const GuestCard();
 
@@ -1922,8 +1963,8 @@ class DemoBackend implements Backend {
   @override
   Stream<String> advise(Map<String, dynamic> brief, List<Map<String, String>> messages) async* {
     final text = messages.isEmpty
-        ? 'This is the demo venue, so I\'m reading made-up numbers — but here is how I\'d read them. Friday and Saturday carry the week and Tuesday is nearly empty: you\'ve already marked it quiet, so tell your regulars a Tuesday visit counts double toward their card. Your team was thanked 27 times this month — say so at the next pre-shift.'
-        : 'In the demo I answer from a script. Sign in with your real venue and I\'ll read your own numbers — totals only, never a single guest.';
+        ? 'Friday and Saturday carry the week and Tuesday is nearly empty: you\'ve already marked it quiet, so tell your regulars a Tuesday visit counts double toward their card. Your team was thanked 27 times this month — say so at the next pre-shift.'
+        : 'Totals only, never a single guest.';
     for (final w in text.split(' ')) {
       await Future<void>.delayed(const Duration(milliseconds: 8));
       yield '$w ';
@@ -1946,9 +1987,9 @@ class DemoBackend implements Backend {
     }
 
     _tabs[vid] = [
-      ServiceTab(id: 'tab-t2', tableId: 'tb-t2', covers: 4, openedAt: now.subtract(const Duration(minutes: 42))),
-      ServiceTab(id: 'tab-t5', tableId: 'tb-t5', covers: 2, openedAt: now.subtract(const Duration(minutes: 18))),
-      ServiceTab(id: 'tab-b1', tableId: 'tb-b1', covers: 1, openedAt: now.subtract(const Duration(minutes: 9))),
+      ServiceTab(id: 'tab-t2', tableId: 'tb-t2', covers: 4, openedAt: now.subtract(const Duration(minutes: 42)), serverId: 's-noor'),
+      ServiceTab(id: 'tab-t5', tableId: 'tb-t5', covers: 2, openedAt: now.subtract(const Duration(minutes: 18)), serverId: 's-noor'),
+      ServiceTab(id: 'tab-b1', tableId: 'tb-b1', covers: 1, openedAt: now.subtract(const Duration(minutes: 9)), serverId: 's-sam'),
     ];
     _lines['tab-t2'] = [
       line('l1', 'tab-t2', 'm1', 2, 'served', 40, seat: 1),
@@ -2002,13 +2043,14 @@ class DemoBackend implements Backend {
   @override
   Future<void> saveTable(String venueId, VenueTable table, {bool isNew = false}) async {
     _can(venueId, Cap.editSettings);
-    if (_venue(venueId).kind.isCounter) throw const BackendError('A counter has no tables.');
+    if (_venue(venueId).kind.isCounter && !table.isPickup) throw const BackendError('A counter has no tables — add a pickup point for the counter.');
     if (table.label.trim().isEmpty) throw const BackendError('Give the table a label.');
     final list = _tables.putIfAbsent(venueId, () => []);
     if (list.any((t) => t.id != table.id && t.label == table.label.trim())) throw const BackendError('That label is taken.');
     final i = list.indexWhere((t) => t.id == table.id);
+    if (i >= 0 && list[i].kind != table.kind) throw const BackendError('A table stays a table and a pickup point a pickup point — add a new one.');
     final saved = table.code.isEmpty
-        ? VenueTable(id: table.id, areaId: table.areaId, label: table.label.trim(), seats: table.seats, code: newId().replaceAll('-', '').substring(0, 8), active: table.active, position: table.position)
+        ? VenueTable(id: table.id, areaId: table.areaId, label: table.label.trim(), seats: table.seats, code: newId().replaceAll('-', '').substring(0, 8), active: table.active, position: table.position, kind: table.kind)
         : table;
     i < 0 ? list.add(saved) : list[i] = saved;
     floorRev.bump();
@@ -2021,8 +2063,7 @@ class DemoBackend implements Backend {
     final list = _tables[vid]!;
     final i = list.indexWhere((t) => t.id == tableId);
     final code = newId().replaceAll('-', '').substring(0, 8);
-    final t = list[i];
-    list[i] = VenueTable(id: t.id, areaId: t.areaId, label: t.label, seats: t.seats, code: code, active: t.active, position: t.position);
+    list[i] = list[i].copyWith(code: code);
     floorRev.bump();
     return code;
   }
@@ -2036,7 +2077,7 @@ class DemoBackend implements Backend {
     final list = _tabs.putIfAbsent(venueId, () => []);
     if (list.any((t) => t.id == tabId)) return;
     if (tableId == null && (name ?? '').trim().isEmpty) throw const BackendError('A tab without a table needs a name (Bar 3, the birthday…).');
-    list.add(ServiceTab(id: tabId, tableId: tableId, name: (name ?? '').trim().isEmpty ? null : name!.trim(), covers: covers, openedAt: DateTime.now()));
+    list.add(ServiceTab(id: tabId, tableId: tableId, name: (name ?? '').trim().isEmpty ? null : name!.trim(), covers: covers, openedAt: DateTime.now(), serverId: _user?.id));
     _lines[tabId] = [];
     floorRev.bump();
   }
@@ -2098,7 +2139,8 @@ class DemoBackend implements Backend {
     if (t.status != 'open') throw BackendError('That tab is already ${t.status}.');
     final sub = (_lines[tabId] ?? const <OrderLine>[]).fold<double>(0, (s, l) => s + l.total);
     _payments[tabId] = payments;
-    _putTab(ServiceTab(id: t.id, tableId: t.tableId, name: t.name, covers: t.covers, status: 'closed', openedAt: t.openedAt, subtotal: sub, tip: tip));
+    _closedAt[tabId] = DateTime.now();
+    _putTab(t.copyWith(status: 'closed', subtotal: sub, tip: tip));
     floorRev.bump();
     return sub;
   }
@@ -2110,7 +2152,7 @@ class DemoBackend implements Backend {
     if (reason.trim().length < 3) throw const BackendError('Say why.');
     if ((_lines[tabId] ?? const <OrderLine>[]).any((l) => l.status == 'served')) throw const BackendError('Something on this tab was served — settle it instead.');
     final t = _tab(tabId);
-    _putTab(ServiceTab(id: t.id, tableId: t.tableId, name: t.name, covers: t.covers, status: 'void', openedAt: t.openedAt, subtotal: 0));
+    _putTab(t.copyWith(status: 'void', subtotal: 0));
     floorRev.bump();
   }
 
@@ -2120,8 +2162,8 @@ class DemoBackend implements Backend {
     final out = <OrderLine>[];
     for (final t in (_tabs[venueId] ?? const <ServiceTab>[]).where((t) => t.status == 'open')) {
       for (final l in _lines[t.id] ?? const <OrderLine>[]) {
-        if (l.station == station && const ['sent', 'preparing', 'ready'].contains(l.status)) {
-          out.add(OrderLine(id: l.id, tabId: l.tabId, menuItemId: l.menuItemId, name: l.name, unitPrice: l.unitPrice, qty: l.qty, note: l.note, seat: l.seat, station: l.station, status: l.status, source: l.source, createdAt: l.createdAt, readyAt: l.readyAt, tableLabel: tables[t.tableId], tabName: t.name));
+        if ((station == 'counter' || l.station == station) && const ['sent', 'preparing', 'ready'].contains(l.status)) {
+          out.add(OrderLine(id: l.id, tabId: l.tabId, menuItemId: l.menuItemId, name: l.name, unitPrice: l.unitPrice, qty: l.qty, note: l.note, seat: l.seat, station: l.station, status: l.status, source: l.source, createdAt: l.createdAt, readyAt: l.readyAt, tableLabel: tables[t.tableId], tabName: t.name, pickupNo: t.pickupNo));
         }
       }
     }
@@ -2140,10 +2182,110 @@ class DemoBackend implements Backend {
     final vid = _inbox.entries.firstWhere((e) => e.value.any((i) => i.id == requestId), orElse: () => throw const BackendError('That request is gone.')).key;
     _can(vid, Cap.takeOrders);
     final r = _inbox[vid]!.firstWhere((i) => i.id == requestId);
-    if (!(_tabs[vid] ?? const <ServiceTab>[]).any((t) => t.id == tabId)) await openTab(vid, tabId, tableId: r.tableId);
-    await addLines(tabId, [for (final l in r.lines) {'item': l.item, 'qty': l.qty, 'note': l.note, 'source': 'guest'}]);
+    final point = (_tables[vid] ?? const <VenueTable>[]).where((t) => t.id == r.tableId).firstOrNull;
+    if (point != null && point.isPickup) {
+      _landPickup(vid, point, r.lines);
+    } else {
+      if (!(_tabs[vid] ?? const <ServiceTab>[]).any((t) => t.id == tabId)) await openTab(vid, tabId, tableId: r.tableId);
+      await addLines(tabId, [for (final l in r.lines) {'item': l.item, 'qty': l.qty, 'note': l.note, 'source': 'guest'}]);
+    }
     _inbox[vid]!.removeWhere((i) => i.id == requestId);
     floorRev.bump();
+  }
+
+  // ── phone orders (059) ────────────────────────────────────────────────────
+  /// The next pickup number: one after the highest of the last 12 hours, 1..999.
+  int _nextPickup(String vid) {
+    final since = DateTime.now().subtract(const Duration(hours: 12));
+    final recent = (_tabs[vid] ?? const <ServiceTab>[]).where((t) => t.pickupNo != null && t.openedAt.isAfter(since)).toList()
+      ..sort((a, b) => b.openedAt.compareTo(a.openedAt));
+    return recent.isEmpty ? 1 : recent.first.pickupNo! % 999 + 1;
+  }
+
+  /// A pickup order on a tab of its own, with the next number. What needs no making is
+  /// ready at once (the database does the same).
+  String _landPickup(String vid, VenueTable point, List<({String item, String name, int qty, String? note, bool alcohol})> lines) {
+    final no = _nextPickup(vid);
+    final id = newId();
+    _tabs.putIfAbsent(vid, () => []).add(ServiceTab(id: id, name: 'Pickup $no', openedAt: DateTime.now(), pickupNo: no, pickupPoint: point.id));
+    final menu = {for (final m in _menu[vid] ?? const <MenuItem>[]) m.id: m};
+    _lines[id] = [
+      for (final l in lines)
+        if (menu[l.item] case final m?)
+          OrderLine(id: newId(), tabId: id, menuItemId: m.id, name: m.name, unitPrice: m.price ?? 0, qty: l.qty, note: l.note, station: m.station, status: m.station == 'none' ? 'ready' : 'sent', source: 'guest', createdAt: DateTime.now(), readyAt: m.station == 'none' ? DateTime.now() : null),
+    ];
+    return id;
+  }
+
+  /// For tests: a guest's phone sends an order from a table's or pickup point's [code] —
+  /// straight onto the tickets when the venue says so, else into the inbox for an OK.
+  void guestOrder(String code, List<({String item, int qty})> items, {String? note}) {
+    final vid = _tables.entries.firstWhere((e) => e.value.any((t) => t.code == code)).key;
+    final v = _venue(vid);
+    final point = _tables[vid]!.firstWhere((t) => t.code == code);
+    if (!v.tableService) throw const BackendError('This place doesn\'t take orders from phones — ask at the bar.');
+    if (v.ordersPaused) throw const BackendError('The kitchen has paused phone orders for a few minutes — ask at the bar.');
+    final menu = {for (final m in _menu[vid] ?? const <MenuItem>[]) m.id: m};
+    final lines = [
+      for (final x in items) (item: x.item, name: menu[x.item]!.name, qty: x.qty, note: null as String?, alcohol: !menu[x.item]!.noAlcohol),
+    ];
+    if (v.ordersDirect) {
+      if (point.isPickup) {
+        _landPickup(vid, point, lines);
+      } else {
+        final open = (_tabs[vid] ?? const <ServiceTab>[]).where((t) => t.tableId == point.id && t.status == 'open').toList();
+        final tab = open.isEmpty ? newId() : open.last.id;
+        if (open.isEmpty) _tabs.putIfAbsent(vid, () => []).add(ServiceTab(id: tab, tableId: point.id, openedAt: DateTime.now()));
+        _lines.putIfAbsent(tab, () => []).addAll([
+          for (final l in lines) OrderLine(id: newId(), tabId: tab, menuItemId: l.item, name: l.name, unitPrice: menu[l.item]!.price ?? 0, qty: l.qty, station: menu[l.item]!.station, source: 'guest', createdAt: DateTime.now()),
+        ]);
+      }
+    } else {
+      _inbox.putIfAbsent(vid, () => []).add(InboxItem(kind: 'order', id: newId(), tableId: point.id, tableLabel: point.label, createdAt: DateTime.now(), lines: lines, note: note, hasAlcohol: lines.any((l) => l.alcohol)));
+    }
+    floorRev.bump();
+  }
+
+  @override
+  Future<void> collectPickup(String tabId) async {
+    final vid = _venueOfTab(tabId);
+    if (!roleCan(_venue(vid).myRole, Cap.takeOrders) && !roleCan(_venue(vid).myRole, Cap.barStation) && !roleCan(_venue(vid).myRole, Cap.kitchenStation)) {
+      throw const BackendError('Your role can\'t hand orders over here.');
+    }
+    final t = _tab(tabId);
+    if (t.pickupNo == null) throw const BackendError('That isn\'t a pickup order.');
+    for (final l in [...?_lines[tabId]]) {
+      if (const ['sent', 'preparing', 'ready'].contains(l.status)) _putLine(l.copyWith(status: 'served', readyAt: l.readyAt ?? DateTime.now()));
+    }
+    _putTab(t.collected(DateTime.now()));
+    floorRev.bump();
+  }
+
+  @override
+  Future<void> pausePhoneOrders(String venueId, bool paused) async {
+    final role = _venue(venueId).myRole;
+    if (!roleCan(role, Cap.takeOrders) && !roleCan(role, Cap.barStation) && !roleCan(role, Cap.kitchenStation)) {
+      throw const BackendError('Your role can\'t pause phone orders here.');
+    }
+    final i = _venues.indexWhere((v) => v.id == venueId);
+    _venues[i] = _venues[i].copyWith(ordersPaused: paused);
+    venueRev.bump();
+  }
+
+  @override
+  Future<List<PickupNumber>> pickupBoard(String code) async {
+    final e = _tables.entries.where((e) => e.value.any((t) => t.code == code && t.isPickup && t.active)).firstOrNull;
+    if (e == null) return const [];
+    final since = DateTime.now().subtract(const Duration(hours: 6));
+    final out = <PickupNumber>[];
+    for (final t in (_tabs[e.key] ?? const <ServiceTab>[]).where((t) => t.pickupNo != null && t.collectedAt == null && t.status == 'open' && t.openedAt.isAfter(since))) {
+      final live = (_lines[t.id] ?? const <OrderLine>[]).where((l) => l.status != 'void').toList();
+      if (live.isEmpty) continue;
+      final ready = live.every((l) => l.status == 'ready' || l.status == 'served');
+      final readyAt = live.map((l) => l.readyAt).whereType<DateTime>().fold<DateTime?>(null, (a, b) => a == null || b.isAfter(a) ? b : a);
+      out.add(PickupNumber(no: t.pickupNo!, ready: ready, since: readyAt ?? t.openedAt));
+    }
+    return out;
   }
 
   @override
@@ -2254,13 +2396,343 @@ class DemoBackend implements Backend {
     doorRev.bump();
   }
 
+  /// Tests flip this to see what the team sees when Ninkasi is off.
+  bool ninkasiOff = false;
+
   @override
   Stream<String> askHost(HostBrief brief, List<Map<String, String>> messages) async* {
+    if (ninkasiOff) throw const BackendError('Ninkasi isn\'t switched on yet.');
     final q = messages.lastWhere((m) => m['role'] == 'user', orElse: () => const {'content': ''})['content'] ?? '';
-    for (final w in hostFallbackAnswer(brief, q).split(' ')) {
+    for (final w in 'You asked: $q'.split(' ')) {
       await Future<void>.delayed(const Duration(milliseconds: 6));
       yield '$w ';
     }
+  }
+
+  // ── the floor in motion (058) ─────────────────────────────────────────────
+  @override
+  Future<void> moveTab(String tabId, {String? toTableId, String? barName}) async {
+    final vid = _venueOfTab(tabId);
+    _can(vid, Cap.takeOrders);
+    final t = _tab(tabId);
+    if (t.status != 'open') throw BackendError('That tab is ${t.status}.');
+    if (toTableId != null) {
+      if (!(_tables[vid] ?? const <VenueTable>[]).any((x) => x.id == toTableId && x.active)) throw const BackendError('That table isn\'t this venue\'s.');
+      _putTab(t.copyWith(tableId: toTableId));
+    } else {
+      if ((barName ?? '').trim().isEmpty) throw const BackendError('A tab at the bar needs a name (Bar 3, the birthday…).');
+      _putTab(t.copyWith(clearTable: true, name: barName!.trim()));
+    }
+    floorRev.bump();
+  }
+
+  @override
+  Future<void> mergeTabs(String fromTabId, String intoTabId) async {
+    final vid = _venueOfTab(intoTabId);
+    _can(vid, Cap.takeOrders);
+    if (_venueOfTab(fromTabId) != vid) throw const BackendError('Those tabs are at different venues.');
+    if (fromTabId == intoTabId) throw const BackendError('Pick a different tab to merge with.');
+    final a = _tab(fromTabId), b = _tab(intoTabId);
+    if (a.status != 'open' || b.status != 'open') throw const BackendError('Both tabs need to be open.');
+    final moving = [for (final l in _lines[a.id] ?? const <OrderLine>[]) l.copyWith(tabId: b.id)];
+    (_lines[b.id] ??= []).addAll(moving);
+    _lines[a.id] = [];
+    _putTab(b.copyWith(covers: a.covers == null && b.covers == null ? null : ((a.covers ?? 0) + (b.covers ?? 0)).clamp(1, 99)));
+    _putTab(a.copyWith(status: 'merged', subtotal: 0));
+    floorRev.bump();
+  }
+
+  @override
+  Future<int> moveLines(List<String> lineIds, String toTabId) async {
+    final vid = _venueOfTab(toTabId);
+    _can(vid, Cap.takeOrders);
+    if (_tab(toTabId).status != 'open') throw BackendError('That tab is ${_tab(toTabId).status}.');
+    if (lineIds.isEmpty || lineIds.length > 40) throw const BackendError('Move 1 to 40 lines at a time.');
+    var n = 0;
+    for (final id in lineIds) {
+      final l = _line(id);
+      if (_venueOfTab(l.tabId) != vid || _tab(l.tabId).status != 'open' || l.status == 'void') {
+        throw const BackendError('Only lines on an open tab here can move (not voided ones).');
+      }
+    }
+    for (final id in lineIds) {
+      final l = _line(id);
+      if (l.tabId == toTabId) continue;
+      _lines[l.tabId]!.removeWhere((x) => x.id == id);
+      (_lines[toTabId] ??= []).add(l.copyWith(tabId: toTabId));
+      n++;
+    }
+    floorRev.bump();
+    return n;
+  }
+
+  @override
+  Future<void> assignTab(String tabId, String toUserId) async {
+    final vid = _venueOfTab(tabId);
+    _can(vid, Cap.takeOrders);
+    final t = _tab(tabId);
+    if (t.status != 'open') throw BackendError('That tab is ${t.status}.');
+    final who = (_staff[vid] ?? const <StaffMember>[]).where((m) => m.id == toUserId).firstOrNull;
+    if (who == null || who.status != StaffStatus.active || !roleCan(who.role, Cap.takeOrders)) throw const BackendError('They can\'t take orders here.');
+    _putTab(t.copyWith(serverId: toUserId));
+    floorRev.bump();
+  }
+
+  @override
+  Future<void> recallLine(String lineId) async {
+    final l = _line(lineId);
+    final vid = _venueOfTab(l.tabId);
+    _can(vid, l.station == 'kitchen' ? Cap.kitchenStation : (l.station == 'bar' ? Cap.barStation : Cap.takeOrders));
+    if (l.status != 'ready') throw const BackendError('Only a ready line can go back to making.');
+    _putLine(l.copyWith(status: 'preparing', clearReady: true));
+    floorRev.bump();
+  }
+
+  @override
+  Future<void> setItemOff(String itemId, bool off) async {
+    final vid = _menu.entries.firstWhere((e) => e.value.any((m) => m.id == itemId), orElse: () => throw const BackendError('No such item.')).key;
+    final role = _venue(vid).myRole;
+    if (![Cap.mark86, Cap.editMenu, Cap.barStation, Cap.kitchenStation].any((c) => roleCan(role, c))) throw const BackendError('Your role here can\'t do that.');
+    final list = _menu[vid]!;
+    final i = list.indexWhere((m) => m.id == itemId);
+    list[i] = list[i].copyWith(available: !off);
+    menuRev.bump();
+    floorRev.bump();
+  }
+
+  // ── the shift's notes (058) ───────────────────────────────────────────────
+  final _notes = <String, List<({String id, String kind, String body, String author, String? authorId, DateTime at, DateTime? until, Set<String> seen})>>{};
+
+  List<({String id, String kind, String body, String author, String? authorId, DateTime at, DateTime? until, Set<String> seen})> _notesOf(String vid) =>
+      _notes.putIfAbsent(vid, () {
+        final now = DateTime.now();
+        return vid == 'demo-bar'
+            ? [
+                (
+                  id: 'n-pre',
+                  kind: 'preshift',
+                  body: 'Big party of 12 at 9 — T4 to T6 go together. Kokum Cooler is the alcohol-free pick tonight.',
+                  author: 'Ira',
+                  authorId: 's-ira',
+                  at: now.subtract(const Duration(hours: 2)),
+                  until: now.add(const Duration(hours: 10)),
+                  seen: {'Sam'},
+                ),
+                (id: 'n-log', kind: 'log', body: 'Ice machine dripping again — engineer booked for Tuesday morning.', author: 'Ira', authorId: 's-ira', at: now.subtract(const Duration(days: 1)), until: null, seen: <String>{}),
+              ]
+            : [];
+      });
+
+  @override
+  Future<ShiftNotes> shiftNotes(String venueId) async {
+    final lead = roleCan(_venue(venueId).myRole, Cap.approveVoids);
+    final now = DateTime.now();
+    final mine = _user?.name ?? '';
+    final notes = _notesOf(venueId);
+    ShiftNote out(n) => ShiftNote(
+          id: n.id,
+          body: n.body,
+          author: n.author,
+          createdAt: n.at,
+          shownUntil: n.until,
+          seenByMe: n.seen.contains(mine) || n.authorId == _user?.id,
+          seenBy: lead && n.kind == 'preshift' ? ([...n.seen.where((x) => x != n.author)]..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()))) : null,
+        );
+    return ShiftNotes(
+      preshift: [for (final n in notes.where((n) => n.kind == 'preshift' && n.until != null && n.until!.isAfter(now)).toList().reversed) out(n)],
+      log: lead ? [for (final n in notes.where((n) => n.kind == 'log').toList().reversed) out(n)] : const [],
+    );
+  }
+
+  @override
+  Future<void> postNote(String venueId, String id, String kind, String body) async {
+    _can(venueId, Cap.approveVoids);
+    if (body.trim().isEmpty) throw const BackendError('Write something first.');
+    final list = _notesOf(venueId);
+    if (list.any((n) => n.id == id)) return;
+    final now = DateTime.now();
+    list.add((id: id, kind: kind, body: body.trim(), author: _user?.name ?? 'someone', authorId: _user?.id, at: now, until: kind == 'preshift' ? now.add(const Duration(hours: 18)) : null, seen: <String>{}));
+    notesRev.bump();
+  }
+
+  @override
+  Future<void> endNote(String noteId) async {
+    for (final e in _notes.entries) {
+      final i = e.value.indexWhere((n) => n.id == noteId);
+      if (i < 0) continue;
+      _can(e.key, Cap.approveVoids);
+      final n = e.value[i];
+      if (n.kind != 'preshift') throw const BackendError('The log book keeps every entry.');
+      e.value[i] = (id: n.id, kind: n.kind, body: n.body, author: n.author, authorId: n.authorId, at: n.at, until: DateTime.now().subtract(const Duration(seconds: 1)), seen: n.seen);
+      notesRev.bump();
+      return;
+    }
+    throw const BackendError('No such note here.');
+  }
+
+  @override
+  Future<void> markNoteSeen(String noteId) async {
+    for (final list in _notes.values) {
+      final n = list.where((n) => n.id == noteId).firstOrNull;
+      if (n == null) continue;
+      n.seen.add(_user?.name ?? 'someone');
+      notesRev.bump();
+      return;
+    }
+    throw const BackendError('No such note here.');
+  }
+
+  // ── the cash drawer (058) ─────────────────────────────────────────────────
+  final _drawers = <String, List<_Drawer>>{};
+  final _cashSales = <({String venueId, DateTime at, double amount})>[];
+  final _closedAt = <String, DateTime>{}; // tabId → when it was settled
+
+  double _expected(String vid, _Drawer d) {
+    final until = d.closedAt ?? DateTime.now();
+    var cash = 0.0;
+    for (final t in _tabs[vid] ?? const <ServiceTab>[]) {
+      final at = _closedAt[t.id];
+      if (t.status != 'closed' || at == null || at.isBefore(d.openedAt) || at.isAfter(until)) continue;
+      for (final p in _payments[t.id] ?? const <Map<String, Object>>[]) {
+        if ('${p['method']}'.trim().toLowerCase() == 'cash') cash += (p['amount'] as num).toDouble();
+      }
+    }
+    for (final s in _cashSales.where((s) => s.venueId == vid && !s.at.isBefore(d.openedAt) && !s.at.isAfter(until))) {
+      cash += s.amount;
+    }
+    double sum(String k) => d.moves.where((m) => m.kind == k).fold(0.0, (a, m) => a + m.amount);
+    return d.float + sum('pay_in') - sum('pay_out') - sum('drop') + cash;
+  }
+
+  @override
+  Future<DrawerState> drawerState(String venueId) async {
+    _can(venueId, Cap.cashUpOwn);
+    final lead = roleCan(_venue(venueId).myRole, Cap.closeDay);
+    final list = _drawers[venueId] ?? const <_Drawer>[];
+    final open = list.where((d) => d.closedAt == null).firstOrNull;
+    return DrawerState(
+      open: open == null
+          ? null
+          : OpenDrawer(id: open.id, label: open.label, float: open.float, openedAt: open.openedAt, openedBy: open.openedBy, mine: open.openedById == _user?.id, expected: lead ? _expected(venueId, open) : null, moves: [...open.moves]),
+      closed: lead
+          ? [for (final d in list.where((d) => d.closedAt != null).toList().reversed) ClosedDrawer(id: d.id, label: d.label, openedAt: d.openedAt, closedAt: d.closedAt!, closedBy: d.closedBy ?? 'someone', report: d.report!, note: d.note)]
+          : const [],
+    );
+  }
+
+  @override
+  Future<void> openDrawer(String venueId, String id, double float, {String label = 'Drawer'}) async {
+    _can(venueId, Cap.cashUpOwn);
+    final list = _drawers.putIfAbsent(venueId, () => []);
+    if (list.any((d) => d.id == id)) return;
+    if (float < 0) throw const BackendError('Check the float.');
+    if (list.any((d) => d.closedAt == null)) throw const BackendError('A drawer is already open — close it first.');
+    list.add(_Drawer(id: id, label: label.trim().isEmpty ? 'Drawer' : label.trim(), float: float, openedAt: DateTime.now(), openedBy: _user?.name ?? 'someone', openedById: _user?.id));
+    cashRev.bump();
+  }
+
+  _Drawer _drawer(String id) {
+    for (final e in _drawers.entries) {
+      final d = e.value.where((d) => d.id == id).firstOrNull;
+      if (d != null) return d;
+    }
+    throw const BackendError('No such drawer.');
+  }
+
+  String _venueOfDrawer(String id) => _drawers.entries.firstWhere((e) => e.value.any((d) => d.id == id)).key;
+
+  @override
+  Future<void> cashMove(String drawerId, String kind, double amount, String reason) async {
+    final d = _drawer(drawerId);
+    final vid = _venueOfDrawer(drawerId);
+    _can(vid, Cap.cashUpOwn);
+    if (d.closedAt != null) throw const BackendError('That drawer is closed.');
+    if (kind == 'pay_out' && !roleCan(_venue(vid).myRole, Cap.closeDay)) throw const BackendError('A supervisor or manager pays out from the drawer.');
+    if (amount <= 0) throw const BackendError('Check the amount.');
+    if (reason.trim().length < 3) throw const BackendError('Say what it was for.');
+    d.moves.add(CashMove(kind: kind, amount: amount, reason: reason.trim(), madeAt: DateTime.now(), by: _user?.name ?? 'someone'));
+    cashRev.bump();
+  }
+
+  @override
+  Future<CashReport> closeDrawer(String drawerId, double counted, {String? note}) async {
+    final d = _drawer(drawerId);
+    final vid = _venueOfDrawer(drawerId);
+    final role = _venue(vid).myRole;
+    if (!(roleCan(role, Cap.closeDay) || (d.openedById == _user?.id && roleCan(role, Cap.cashUpOwn)))) throw const BackendError('A supervisor or manager closes this drawer.');
+    if (d.closedAt != null) throw const BackendError('That drawer is already closed.');
+    if (counted < 0) throw const BackendError('Check the count.');
+    final exp = _expected(vid, d);
+    final methods = <String, double>{};
+    var bills = 0, sales = 0.0, tips = 0.0;
+    for (final t in _tabs[vid] ?? const <ServiceTab>[]) {
+      final at = _closedAt[t.id];
+      if (t.status != 'closed' || at == null || at.isBefore(d.openedAt)) continue;
+      bills++;
+      sales += t.subtotal ?? 0;
+      tips += t.tip ?? 0;
+      for (final p in _payments[t.id] ?? const <Map<String, Object>>[]) {
+        final k = '${p['method']}'.trim().toLowerCase();
+        methods[k] = (methods[k] ?? 0) + (p['amount'] as num).toDouble();
+      }
+    }
+    double sum(String k) => d.moves.where((m) => m.kind == k).fold(0.0, (a, m) => a + m.amount);
+    final rep = CashReport(float: d.float, expected: exp, counted: counted, difference: counted - exp, payIns: sum('pay_in'), payOuts: sum('pay_out'), drops: sum('drop'), bills: bills, sales: sales, tips: tips, byMethod: methods);
+    d
+      ..closedAt = DateTime.now()
+      ..closedBy = _user?.name
+      ..report = rep
+      ..note = (note?.trim().isEmpty ?? true) ? null : note!.trim();
+    cashRev.bump();
+    return rep;
+  }
+
+  // ── bookings (058) ────────────────────────────────────────────────────────
+  final _bookings = <String, List<Booking>>{};
+
+  List<Booking> _bookingsOf(String vid) => _bookings.putIfAbsent(vid, () {
+        if (vid != 'demo-bar') return [];
+        // Later tonight, whatever the hour the tests run: a third and two-thirds of the
+        // way from now to the end of the venue's night.
+        final now = DateTime.now();
+        final left = nightStart(now).add(const Duration(days: 1)).difference(now);
+        DateTime at(int thirds) => now.add(left * thirds ~/ 3);
+        return [
+          Booking(id: 'bk-mehta', name: 'Mehta', party: 4, startsAt: at(1), tableId: 'tb-t4', phone: '+91 98200 12345', note: 'anniversary'),
+          Booking(id: 'bk-rao', name: 'Rao', party: 2, startsAt: at(2)),
+        ];
+      });
+
+  @override
+  Future<List<Booking>> bookings(String venueId, DateTime from, DateTime to) async {
+    _can(venueId, Cap.floorView);
+    return [..._bookingsOf(venueId).where((b) => !b.startsAt.isBefore(from) && b.startsAt.isBefore(to))]..sort((a, b) => a.startsAt.compareTo(b.startsAt));
+  }
+
+  @override
+  Future<void> saveBooking(String venueId, Booking b, {bool isNew = false}) async {
+    _can(venueId, Cap.seatGuests);
+    if (b.name.trim().isEmpty) throw const BackendError('Whose booking is it? A name, or "party of 4".');
+    if (b.party < 1 || b.party > 99) throw const BackendError('Party of 1 to 99.');
+    if (isNew && b.startsAt.isBefore(DateTime.now().subtract(const Duration(days: 1)))) throw const BackendError('A booking is for today or a day within the year.');
+    final list = _bookingsOf(venueId);
+    final i = list.indexWhere((x) => x.id == b.id);
+    i < 0 ? list.add(b) : list[i] = b;
+    bookingsRev.bump();
+  }
+
+  @override
+  Future<void> setBookingStatus(String bookingId, String status, {String? tabId}) async {
+    for (final e in _bookings.entries) {
+      final i = e.value.indexWhere((b) => b.id == bookingId);
+      if (i < 0) continue;
+      _can(e.key, Cap.seatGuests);
+      e.value[i] = e.value[i].copyWith(status: status, tabId: tabId);
+      bookingsRev.bump();
+      floorRev.bump();
+      return;
+    }
+    throw const BackendError('No such booking.');
   }
 }
 
@@ -2359,4 +2831,20 @@ class _Off {
   String status; // requested | approved | declined | cancelled
   String? decidedBy;
   _Off({required this.id, required this.venueId, required this.userId, required this.start, required this.end, this.note, required this.status});
+}
+
+/// A drawer on the stand-in's till (058).
+class _Drawer {
+  final String id;
+  final String label;
+  final double float;
+  final DateTime openedAt;
+  final String openedBy;
+  final String? openedById;
+  final List<CashMove> moves = [];
+  DateTime? closedAt;
+  String? closedBy;
+  CashReport? report;
+  String? note;
+  _Drawer({required this.id, required this.label, required this.float, required this.openedAt, required this.openedBy, this.openedById});
 }
