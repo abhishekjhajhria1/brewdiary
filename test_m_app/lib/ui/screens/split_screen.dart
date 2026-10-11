@@ -36,8 +36,7 @@ class SplitScreen extends StatelessWidget {
         final names = {if (me != null) me.id: 'You', for (final f in friends) f.id: f.name};
         String nameOf(String id) => names[id] ?? 'A friend';
         final balances = me == null ? <String, double>{} : computeBalances(expenses, settlements, me.id);
-        final owed = balances.values.where((v) => v > 0).fold<double>(0, (a, b) => a + b);
-        final owe = balances.values.where((v) => v < 0).fold<double>(0, (a, b) => a - b);
+        final (:owed, :owe) = splitTotals(balances);
         if (data != null) HomeWidget.noteSplit(owed: owed, owe: owe, currency: PlaceStore.instance.currency);
         final canAdd = friends.isNotEmpty && me != null;
         void add() => showBdSheet(context, title: 'Split a tab', builder: (_) => _AddExpense(meId: me!.id, friends: friends));

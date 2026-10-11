@@ -10,6 +10,7 @@
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/mosaic_widget"
-    android:previewLayout="@layout/mosaic_widget"
+    android:previewLayout="@layout/mosaic_widget_preview"
+    android:previewImage="@drawable/mosaic_widget_preview"
     android:description="@string/mosaic_widget_description"
     android:widgetCategory="home_screen" />

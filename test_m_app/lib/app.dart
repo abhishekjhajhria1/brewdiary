@@ -109,11 +109,17 @@ class Shell extends StatefulWidget {
   /// Off in widget tests, where the native link plugin doesn't exist.
   static bool deepLinks = true;
   const Shell({super.key});
+
+  /// Open a link as if the phone had just handed it over (a widget tap, a tag, a
+  /// shared link) — for tests; live, the link plugin does this.
+  @visibleForTesting
+  static void openLink(Uri uri) => _ShellState._live?._route(uri);
   @override
   State<Shell> createState() => _ShellState();
 }
 
 class _ShellState extends State<Shell> {
+  static _ShellState? _live;
   Tab _tab = Tab.calendar;
   final Set<Tab> _visited = {Tab.calendar};
   final Map<String, ScrollController> _scrollers = {};
@@ -127,6 +133,7 @@ class _ShellState extends State<Shell> {
           AccentPill('Discover', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DiscoverScreen()))),
           ThemeDot(dark: ThemeStore.instance.isDark, onTap: ThemeStore.instance.toggle),
         ];
+    _live = this;
     if (Shell.deepLinks) _listenForLinks();
     ReminderStore.instance.openToday.addListener(_openToday);
     ReminderStore.instance.openMorning.addListener(_openMorning);
@@ -136,6 +143,7 @@ class _ShellState extends State<Shell> {
 
   @override
   void dispose() {
+    if (_live == this) _live = null;
     ReminderStore.instance.openToday.removeListener(_openToday);
     ReminderStore.instance.openMorning.removeListener(_openMorning);
     _links?.cancel();
@@ -176,7 +184,10 @@ class _ShellState extends State<Shell> {
 
   void _route(Uri uri) {
     // Home-screen widgets open brewdiary://quick/<water|cigarette> and brewdiary://split.
-    if (uri.scheme == 'brewdiary') return _widgetLink(uri);
+    if (uri.scheme == 'brewdiary') {
+      _widgetLink(uri);
+      return;
+    }
     final seg = uri.pathSegments.where((s) => s.isNotEmpty).toList();
     if (seg.length < 2) return;
     final nav = navigatorKey.currentState;
@@ -200,21 +211,38 @@ class _ShellState extends State<Shell> {
     }
   }
 
-  void _widgetLink(Uri uri) {
-    final ctx = navigatorKey.currentContext;
-    if (ctx == null) return;
+  /// A widget tap can be what started the app: the saved sign-in is still being read.
+  /// Wait for it (a few seconds at most) so the tap lands in the right diary.
+  Future<void> _whenSignInSettles() async {
+    if (auth.status != AuthStatus.loading) return;
+    final settled = Completer<void>();
+    void check() {
+      if (auth.status != AuthStatus.loading && !settled.isCompleted) settled.complete();
+    }
+
+    auth.addListener(check);
+    await settled.future.timeout(const Duration(seconds: 8), onTimeout: () {});
+    auth.removeListener(check);
+  }
+
+  Future<void> _widgetLink(Uri uri) async {
+    await _whenSignInSettles();
+    // The shell's own context — it sits inside the navigator, so a toast finds the
+    // Overlay above it (the navigator's own context is above that Overlay, and a
+    // toast from there silently never showed).
+    if (!mounted) return;
     if (uri.host == 'quick') {
       final what = uri.pathSegments.firstOrNull;
       final def = extras.where((d) => d.entryDrink.toLowerCase() == what).firstOrNull;
       if (def == null) return;
       final e = entryStore.addEntry(date: todayKey(), drink: def.entryDrink, type: def.entryType);
       // A home-screen tap can be a pocket tap: say what happened, and offer it back.
-      toast(ctx, 'Logged one ${def.unit} for today.', tone: ToastTone.success, action: 'Undo', onAction: () => entryStore.deleteEntry(e.id));
+      toast(context, 'Logged one ${def.unit} for today.', tone: ToastTone.success, action: 'Undo', onAction: () => entryStore.deleteEntry(e.id));
     } else if (uri.host == 'split') {
       if (auth.isAuthed && db != null) {
         navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const SplitScreen()));
       } else {
-        toast(ctx, 'Split needs you signed in to the brewdiary cloud.');
+        toast(context, 'Split needs you signed in to the brewdiary cloud.');
       }
     }
   }

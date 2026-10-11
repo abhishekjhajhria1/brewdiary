@@ -7,5 +7,7 @@
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/mosaic_widget"
+    android:previewLayout="@layout/split_widget_preview"
+    android:previewImage="@drawable/split_widget_preview"
     android:description="@string/split_widget_description"
     android:widgetCategory="home_screen" />
