@@ -101,6 +101,8 @@ class FriendsApi {
             'id,user_id,date,drink,mood,note,venue,created_at, author:profiles(id,handle,display_name), reactions(user_id), comments(id,user_id,body,created_at, author:profiles(display_name))')
         .eq('visibility', 'friends')
         .neq('user_id', me)
+        // Newest NIGHT first (a coffee logged late for yesterday doesn't jump tonight).
+        .order('date', ascending: false)
         .order('created_at', ascending: false)
         .limit(50);
     return rows(data).map((r) {

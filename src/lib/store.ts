@@ -31,6 +31,15 @@ function setCache(next: Entry[]) {
   emit();
 }
 
+// Every add / edit / removal made here, numbered. A reload answers with the server as
+// it was when the read began, so anything written after that moment wins over the
+// answer — otherwise a drink logged while the diary is still loading would vanish.
+let writeSeq = 0;
+const touched = new Map<string, number>();
+function touch(id: string) {
+  touched.set(id, ++writeSeq);
+}
+
 // ── local persistence ───────────────────────────────────────────────────────
 function readLocal(): Entry[] {
   if (typeof window === "undefined") return EMPTY;
@@ -132,12 +141,21 @@ async function syncPhotos(entry: Entry, userId: string): Promise<Entry["photos"]
 
 // ── remote ops ──────────────────────────────────────────────────────────────
 async function loadRemote() {
-  if (!supabase) return;
+  const me = currentUser;
+  if (!supabase || !me) return;
+  const since = writeSeq;
+  // Only MY rows. The read policy also lets me see friends' shared entries (for the
+  // feed) and anything shared into my circles and parties — none of that is my diary,
+  // and without this filter it would count toward my calendar, streak and passport.
   const { data, error } = await supabase
     .from("entries")
     .select("id, date, drink, type, mood, note, venue, who_with, visibility, created_at, entry_photos(id, url, sort_order)")
+    .eq("user_id", me)
     .order("date", { ascending: true });
-  if (!error && data) setCache((data as EntryRow[]).map(rowToEntry));
+  if (currentUser !== me) return; // they switched account meanwhile
+  if (error || !data) return;
+  const mine = new Set([...touched].filter(([, seq]) => seq > since).map(([id]) => id));
+  setCache([...(data as EntryRow[]).map(rowToEntry).filter((e) => !mine.has(e.id)), ...cache.filter((e) => mine.has(e.id))]);
 }
 
 /** Returns true only if the rows actually landed — the caller must NOT clear the
@@ -169,6 +187,7 @@ async function applyAuth(s: AuthState) {
     // signed out → back to the local (onboarding) diary
     mode = "local";
     currentUser = null;
+    touched.clear();
     setCache(readLocal());
   }
 }
@@ -220,6 +239,7 @@ export function addEntry(input: NewEntry): Entry {
     drink: input.drink.trim(),
     mood: input.mood?.trim() || undefined,
   };
+  touch(entry.id);
   setCache([...cache, entry]); // optimistic
 
   if (mode === "remote" && currentUser && supabase) {
@@ -251,6 +271,7 @@ export function addEntry(input: NewEntry): Entry {
 
 export function updateEntry(id: string, patch: Partial<Entry>) {
   const prev = cache.find((e) => e.id === id);
+  touch(id);
   setCache(cache.map((e) => (e.id === id ? { ...e, ...patch } : e))); // optimistic
 
   if (mode === "remote" && currentUser && supabase) {
@@ -292,6 +313,7 @@ async function reconcilePhotos(entryId: string, photos: NonNullable<Entry["photo
 }
 
 export function deleteEntry(id: string) {
+  touch(id);
   setCache(cache.filter((e) => e.id !== id)); // optimistic
   if (mode === "remote" && currentUser && supabase) {
     // Put away, never destroyed (055). If it didn't go, show it again.

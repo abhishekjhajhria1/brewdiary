@@ -122,6 +122,30 @@ switches to cloud mode on its own when both are present.
 - Log a drink → a row appears in `public.entries` with that person's `user_id`.
 - The Together tab shows the real feed instead of the introduction.
 
+### Prove it before you switch anything on: `npm run live:local`
+
+One command builds a **throwaway** Supabase on your own machine (Docker), loads `schema.sql` and every
+migration, starts the website for its server routes, and runs the app's real data code against it with
+real accounts (`test_m_app/test/live/live_test.dart`):
+
+- sign-up with a password, and with an **emailed code** (read from a local mailbox — it uses the
+  templates in `supabase/templates/`)
+- a drink with a **photo** (uploaded to storage, readable by its link), shared with friends
+- **friends** (find by handle, ask, accept), the **feed** (only what was shared), cheers, comments
+- **my diary is only mine**: a friend's shared drinks never count toward my calendar or streak
+- a drink logged while the diary is still loading stays (a slow-network switch makes this certain)
+- **circles** by code, a **challenge**, **parties** with host approval, **plans** with join requests
+- **Split**: an even split, the balance, settled to zero; the to-try list; block, unblock, report
+- the bar side: a verified bar's **table menu**, **taste at the table** (the bar sees the taste card,
+  never the diary), **ordering from the table**, "bill please"
+- **export everything**, and **delete my account** (the user, the diary, the friendships and the photo
+  files are really gone)
+
+It needs Docker running, Node, `psql` and Flutter; the first run pulls the Supabase images (~2 GB). The
+keys it uses are the Supabase CLI's public local-only ones — never your project's. `LIVE_KEEP=1 npm run
+live:local` leaves it running so you can point the app at it (`--dart-define=SUPABASE_URL=http://127.0.0.1:54321`
+plus the local anon key it prints) — `test/live/live_tour_test.dart` takes screenshots that way.
+
 ---
 
 ## 3. Switch Ninkasi on for the phone
@@ -182,15 +206,13 @@ the sign-in sheet in [`landing_screen.dart`](../test_m_app/lib/ui/screens/landin
 
 1. **Authentication → Providers → Email:** make sure Email is enabled. Set **Email OTP expiration** to
    something short, like `600` seconds (10 minutes), and keep the OTP length at 6.
-2. **Authentication → Email Templates:** by default Supabase emails a *link*. To send a *code*, put
-   `{{ .Token }}` in the email body of both the **Magic Link** template (existing people) and the
-   **Confirm signup** template (new people). For example:
+2. **Authentication → Email Templates:** by default Supabase emails a *link*, and the app needs a
+   *code*. The two ready templates are in the repo — open each file, copy everything, paste it in:
+   - **Magic Link** (people who already have a diary) ← `supabase/templates/magic_link.html`
+   - **Confirm signup** (people starting a diary) ← `supabase/templates/confirmation.html`
 
-   ```html
-   <h2>Your brewdiary code</h2>
-   <p>Type this into the app: <strong style="font-size:24px;letter-spacing:4px">{{ .Token }}</strong></p>
-   <p>It works for 10 minutes. If you didn't ask for it, ignore this email.</p>
-   ```
+   Set both subjects to `Your brewdiary code`. Without `{{ .Token }}` in the email, sign-in by code
+   can't work — the email arrives with a link and no code (the live check below proves this both ways).
 
 3. **Custom SMTP (before real users):** Supabase's built-in sender only sends a handful of emails an hour
    and is meant for testing. Under **Project Settings → Authentication → SMTP**, connect a real sender

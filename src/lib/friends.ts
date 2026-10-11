@@ -154,6 +154,8 @@ export function useFeed(): { feed: FeedEntry[]; loading: boolean } {
         )
         .eq("visibility", "friends")
         .neq("user_id", me)
+        // Newest NIGHT first (a coffee logged late for yesterday doesn't jump tonight).
+        .order("date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(50);
       if (!active) return;

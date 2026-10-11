@@ -1,0 +1,4 @@
+tags:
+  # test/live: the real data layer against a throwaway local Supabase (npm run live:local).
+  # Skipped unless built with SUPABASE_URL.
+  live:

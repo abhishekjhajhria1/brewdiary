@@ -72,6 +72,7 @@ class AuthStore extends ChangeNotifier {
   Profile? profile;
   StreamSubscription<AuthState>? _sub;
   bool _initialized = false;
+  ({String id, Future<Profile> future})? _profileFor;
 
   bool get isAuthed => status == AuthStatus.authed && profile != null;
   String? get meId => profile?.id;
@@ -102,10 +103,21 @@ class AuthStore extends ChangeNotifier {
     }
     if (profile?.id == user.id && status == AuthStatus.authed) return;
     try {
-      _set(AuthStatus.authed, await _ensureProfile(user));
+      // Sign-up answers with a session AND the auth listener fires for it: share one
+      // lookup rather than racing two inserts for the same profile row.
+      final pending = _profileFor?.id == user.id ? _profileFor!.future : null;
+      final future = pending ?? _ensureProfile(user);
+      if (pending == null) _profileFor = (id: user.id, future: future);
+      final p = await future;
+      if (identical(_profileFor?.future, future)) _profileFor = null;
+      // The profile read takes a moment; if they signed out (or switched account)
+      // meanwhile, this answer is stale — never sign the old account back in.
+      if (db?.auth.currentUser?.id != user.id) return;
+      _set(AuthStatus.authed, p);
     } catch (e) {
       logDebug(e);
-      _set(AuthStatus.anon, null);
+      if (_profileFor?.id == user.id) _profileFor = null; // let the next try start fresh
+      if (db?.auth.currentUser?.id == user.id) _set(AuthStatus.anon, null);
     }
   }
 

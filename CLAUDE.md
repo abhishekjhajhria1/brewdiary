@@ -42,6 +42,7 @@ npm run db:audit    # READ-ONLY. Asserts the SHAPE of the live schema + every se
 npm run db:verify   # Plays a whole night against the real schema IN A TRANSACTION IT ROLLS BACK.
 npm run db:contract # READ-ONLY. Every .from()/.rpc() call in the three apps, checked against the schema.
 npm run db:local    # All three, on a THROWAWAY local Postgres built from supabase/ (no secrets needed).
+npm run live:local  # The guest app's REAL data code vs a throwaway local Supabase in Docker (docs/12).
 ```
 
 `db:audit` is what caught `perk_policy()` judging every venue on earth by Massachusetts law —
@@ -50,6 +51,13 @@ Both run in CI (`.github/workflows/ci.yml`) on every push to `main`. `db:local`
 (`scripts/db-local.sh`) applies schema.sql + every numbered migration to a fresh Postgres and runs
 the same two checks there — on every push and PR — so a new migration is proven before the
 maintainer runs it for real. It needs the Postgres server binaries (`initdb`, `pg_ctl`).
+
+**Unit tests and the schema checks still can't see the app talking to a server.** `live:local`
+(`scripts/live-local.sh`) can: it runs real Supabase (auth, API, storage, a mailbox for sign-in codes)
+plus the website, and `test_m_app/test/live` walks every guest flow with real accounts. It is what
+caught the diary loading a friend's shared drinks as your own, and a drink vanishing when logged while
+the diary was still loading. Run it after touching `test_m_app/lib/data`, `src/lib/store.ts` or a
+migration the guest app reads.
 
 ---
 

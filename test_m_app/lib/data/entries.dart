@@ -29,6 +29,14 @@ class EntryStore extends ChangeNotifier {
 
   List<Entry> get entries => _cache;
 
+  /// Every add / edit / removal made on this phone, numbered. A reload answers with
+  /// the server as it was when the read began, so anything this phone wrote after
+  /// that moment wins over the answer (otherwise a drink logged while the diary was
+  /// still loading would vanish, and edits to it would silently do nothing).
+  int _writeSeq = 0;
+  final Map<String, int> _touched = {};
+  void _touch(String id) => _touched[id] = ++_writeSeq;
+
   void _setCache(List<Entry> next) {
     _cache = List.unmodifiable(next);
     notifyListeners();
@@ -120,10 +128,23 @@ class EntryStore extends ChangeNotifier {
   // ── remote ops ────────────────────────────────────────────────────────────
   Future<void> reload() async {
     final c = db;
-    if (c == null || !_remote) return;
+    final me = _user;
+    if (c == null || !_remote || me == null) return;
     try {
-      final data = await c.from('entries').select(_entryCols).order('date', ascending: true);
-      _setCache(rows(data).map(_rowToEntry).toList());
+      // Only MY rows. The read policy also lets me see friends' shared entries (for
+      // the feed) and anything shared into my circles and parties — none of that is
+      // my diary, and it must never count toward my calendar, streak or passport.
+      final since = _writeSeq;
+      final data = await c.from('entries').select(_entryCols).eq('user_id', me).order('date', ascending: true);
+      if (_user != me || !_remote) return; // they switched account meanwhile
+      final fresh = rows(data).map(_rowToEntry).toList();
+      final mine = {for (final e in _touched.entries) if (e.value > since) e.key};
+      _setCache([
+        for (final e in fresh)
+          if (!mine.contains(e.id)) e,
+        for (final e in _cache)
+          if (mine.contains(e.id)) e,
+      ]);
     } catch (e) {
       logDebug(e);
     }
@@ -157,6 +178,7 @@ class EntryStore extends ChangeNotifier {
     } else {
       _remote = false;
       _user = null;
+      _touched.clear();
       _setCache(_readLocal());
     }
   }
@@ -193,6 +215,7 @@ class EntryStore extends ChangeNotifier {
       whoWith: whoWith,
       photos: photos,
     );
+    _touch(entry.id);
     _setCache([..._cache, entry]);
 
     final c = db;
@@ -226,6 +249,7 @@ class EntryStore extends ChangeNotifier {
   /// Patch an entry. Only the fields you pass change (nullable setters use closures
   /// so "clear this field" and "leave it alone" are distinguishable).
   void updateEntry(Entry updated, {bool photosChanged = false}) {
+    _touch(updated.id);
     _setCache(_cache.map((e) => e.id == updated.id ? updated : e).toList());
     final c = db;
     if (_remote && _user != null && c != null) {
@@ -264,6 +288,7 @@ class EntryStore extends ChangeNotifier {
   /// cloud by archive_entry(); signed out, into this phone's own archive.
   void deleteEntry(String id) {
     final gone = _cache.where((e) => e.id == id).toList();
+    _touch(id);
     _setCache(_cache.where((e) => e.id != id).toList());
     final c = db;
     if (_remote && _user != null && c != null) {
