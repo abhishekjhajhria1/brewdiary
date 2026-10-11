@@ -977,7 +977,7 @@ class SupabaseBackend implements Backend {
   Future<List<OrderLine>> stationLines(String venueId, String station) => _run(() async {
         final rows = await _c
             .from('order_lines')
-            .select('*, tab:tabs(name, table:venue_tables(label))')
+            .select('*, tab:tabs(name, pickup_no, table:venue_tables!tabs_table_id_fkey(label))')
             .eq('venue_id', venueId)
             .eq('station', station)
             .inFilter('status', ['sent', 'preparing', 'ready'])

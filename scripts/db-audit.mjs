@@ -699,8 +699,14 @@ try {
     const sl = await one(`select pg_get_functiondef('public.set_line_status(uuid,text)'::regprocedure) d`);
     ok("set_line_status(): the bar moves bar tickets, the kitchen kitchen tickets, forward only", sl && /station\.bar/.test(sl.d) && /station\.kitchen/.test(sl.d) && /rank_to <= rank_from/.test(sl.d));
     const ro = await one(`select pg_get_functiondef('public.request_order(text,uuid,jsonb,text)'::regprocedure) d`);
-    ok("request_order(): signed in, the venue switched it on, rate-limited — a request, never lines",
-      ro && /auth\.uid\(\) is null/.test(ro.d) && /v\.table_service/.test(ro.d) && /interval '20 seconds'/.test(ro.d) && !/insert into public\.order_lines/.test(ro.d));
+    // 059 routes request_order() through place_order_inner(): still signed in, still the
+    // venue's switch and the rate limits — and lines only where the venue chose
+    // "straight to the bar and kitchen".
+    const pin = fns.includes("place_order_inner") ? await one(`select pg_get_functiondef('public.place_order_inner(text,uuid,jsonb,text,uuid,text)'::regprocedure) d`) : null;
+    const body = pin ? ro.d + pin.d : ro?.d;
+    ok("request_order(): signed in, the venue switched it on, rate-limited — lines only if the venue chose straight-to-the-bar",
+      ro && /auth\.uid\(\) is null/.test(ro.d) && /v\.table_service/.test(body) && /interval '20 seconds'/.test(body)
+        && !/insert into public\.order_lines/.test(body) && (!pin || /if v\.orders_direct then perform public\.land_order/.test(pin.d)));
     const si = await one(`select pg_get_functiondef('public.service_inbox(uuid)'::regprocedure) d`);
     ok("service_inbox(): never returns who asked", si && !/returns table \([^)]*requested_by/.test(si.d) && !/select[^;]*r\.requested_by/.test(si.d));
     const rq = await all(`select policyname, qual from pg_policies where schemaname = 'public' and tablename in ('order_requests', 'table_calls')`);
@@ -867,6 +873,54 @@ try {
       const r = await one(`select relrowsecurity r from pg_class where oid = $1::regclass`, [`public.${tb}`]);
       ok(`${tb}: RLS on`, r && r.r === true);
     }
+  }
+
+  // ── orders straight to the bar and kitchen, pickup points, no-account orders (059) ──
+  if (!fns.includes("place_order_guest")) {
+    console.log("  ~ direct orders, pickup points, no-account orders (059) not applied — skipping");
+  } else {
+    console.log("\n── straight to the bar and kitchen, pickup points, the ready board, no-account orders (059) ──");
+    for (const f of ["place_order", "place_order_guest", "my_orders", "guest_orders", "withdraw_guest_order", "call_table_staff_guest",
+                     "collect_pickup", "pause_phone_orders", "pickup_board", "store_shelf", "land_order", "next_pickup_no"]) {
+      ok(`fn ${f}()`, fns.includes(f), "— MISSING");
+    }
+    const sw = await one(`select count(*)::int n from information_schema.columns where table_schema = 'public' and table_name = 'venues'
+      and column_name in ('orders_direct', 'orders_paused', 'orders_anon') and column_default = 'false'`);
+    ok("the three switches exist and start off (confirm first, not paused, sign-in needed)", sw && sw.n === 3);
+    const pc = await one(`select column_default d from information_schema.columns where table_schema = 'public' and table_name = 'retail_alcohol_rules' and column_name = 'allow_phone_orders'`);
+    ok("a state's retail row allows bottles by phone only if it says so (default false)", pc && pc.d === "false");
+    const any = await one(`select count(*)::int n from public.retail_alcohol_rules where allow_phone_orders`);
+    ok("…and no row says so (deny by default)", any && any.n === 0);
+    const cg = await one(`select pg_get_functiondef('public.check_guest_lines(public.venues,jsonb)'::regprocedure) d`);
+    ok("check_guest_lines(): a liquor store's bottle needs the state's allow_phone_orders", cg && /off_trade/.test(cg.d) && /allow_phone_orders/.test(cg.d));
+    const pi = await one(`select pg_get_functiondef('public.place_order_inner(text,uuid,jsonb,text,uuid,text)'::regprocedure) d`);
+    ok("place_order_inner(): a verified venue with phone orders on; no account only where allowed; the pause holds; rate-limited",
+      pi && /not v\.verified or not v\.table_service/.test(pi.d) && /who is null and not v\.orders_anon/.test(pi.d) && /v\.orders_paused/.test(pi.d) && /interval '20 seconds'/.test(pi.d) && /interval '10 minutes'/.test(pi.d));
+    const dh = await one(`select pg_get_functiondef('public.device_hash_of(text)'::regprocedure) d`);
+    ok("a no-account phone's secret is hashed (sha256), never stored", dh && /sha256/.test(dh.d));
+    const pb = await one(`select pg_get_functiondef('public.pickup_board(text)'::regprocedure) d`);
+    ok("pickup_board(): numbers and states only — no names, no items, no guests", pb && !/requested_by|device_hash|o\.name|display_name/.test(pb.d));
+    const sh = await one(`select pg_get_functiondef('public.store_shelf(text)'::regprocedure) d`);
+    ok("store_shelf(): a verified counter's in-stock shelf — whether in stock, never the count", sh && /v\.verified/.test(sh.d) && /> 0/.test(sh.d) && !/as on_hand|qty\)\s*,/.test(sh.d));
+    const inbox = await one(`select pg_get_functiondef('public.service_inbox(uuid)'::regprocedure) d`);
+    ok("the inbox still never says who asked", inbox && !/requested_by,|device_hash/.test(inbox.d.split("return query")[1] ?? ""));
+    for (const f of ["public.next_pickup_no(uuid)", "public.check_guest_lines(public.venues,jsonb)", "public.land_order(uuid,uuid)",
+                     "public.order_status_json(uuid)", "public.place_order_inner(text,uuid,jsonb,text,uuid,text)", "public.device_hash_of(text)"]) {
+      const g = await one(`select has_function_privilege('authenticated', $1, 'EXECUTE') a,
+                                  coalesce((select has_function_privilege('anon', $1, 'EXECUTE')), false) b`, [f]);
+      ok(`${f.split("(")[0].replace("public.", "")}(): not callable from an app`, g && !g.a && !g.b);
+    }
+    for (const [f, who] of [["public.place_order_guest(text,uuid,text,jsonb,text)", "anon"], ["public.guest_orders(text)", "anon"],
+                            ["public.pickup_board(text)", "anon"], ["public.store_shelf(text)", "anon"], ["public.table_info(text)", "anon"]]) {
+      const g = await one(`select has_function_privilege($2, $1, 'EXECUTE') a`, [f, who]);
+      ok(`${f.split("(")[0].replace("public.", "")}(): open to a phone without an account`, g && g.a);
+    }
+    for (const f of ["public.place_order(text,uuid,jsonb,text)", "public.collect_pickup(uuid)", "public.pause_phone_orders(uuid,boolean)", "public.my_orders()"]) {
+      const g = await one(`select has_function_privilege('anon', $1, 'EXECUTE') a`, [f]);
+      ok(`${f.split("(")[0].replace("public.", "")}(): signed-in only`, g && !g.a);
+    }
+    const vt = await one(`select pg_get_functiondef('public.venue_tables_guard()'::regprocedure) d`);
+    ok("a counter holds pickup points, never tables", vt && /new\.kind <> 'pickup'/.test(vt.d));
   }
 
   // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
