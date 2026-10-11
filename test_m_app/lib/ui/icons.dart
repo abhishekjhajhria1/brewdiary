@@ -131,6 +131,7 @@ abstract final class Ph {
   static const sparkle = IconData(0xe6a2, fontFamily: 'Phosphor');
   static const squaresFour = IconData(0xe464, fontFamily: 'Phosphor');
   static const star = IconData(0xe46a, fontFamily: 'Phosphor');
+  static const sticker = IconData(0xe5ac, fontFamily: 'Phosphor');
   static const storefront = IconData(0xe470, fontFamily: 'Phosphor');
   static const sun = IconData(0xe472, fontFamily: 'Phosphor');
   static const tag = IconData(0xe478, fontFamily: 'Phosphor');

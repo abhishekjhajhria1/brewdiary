@@ -20,6 +20,7 @@ import 'package:brewdiary/ui/screens/photo_studio.dart';
 import 'package:brewdiary/ui/screens/plans_section.dart';
 import 'package:brewdiary/ui/screens/taste_card.dart';
 import 'package:brewdiary/ui/screens/split_screen.dart';
+import 'package:brewdiary/ui/screens/stickers.dart';
 import 'package:brewdiary/ui/screens/together_screen.dart';
 import 'package:brewdiary/ui/theme.dart';
 import 'package:brewdiary/ui/widgets/common.dart';
@@ -275,7 +276,7 @@ void main() {
 
   _tourTest('share cards', (t) async {
     await _boot(t);
-    // an entry as a card: the studio, with no photo (the warm backdrop)
+    // an entry as a card: the studio, with no photo (a plain night)
     await _push(t, PhotoStudio(story: NightStory.fromEntry(entryStore.entries.last)));
     await _shot(t, 's17_share_card');
     navigatorKey.currentState!.pop();
@@ -340,14 +341,13 @@ void main() {
     await _shot(t, 'o5_taste_card_dry');
   });
 
-  _tourTest('photo overlays', (t) async {
+  _tourTest('stickers on a photo: each sticker, the inks, the frames', (t) async {
     await _boot(t);
     const story = NightStory(
       dateKey: '2026-09-26',
       title: "Mira's birthday",
       venue: 'Soka, Bandra',
       mood: 'electric',
-      note: 'Mira blew out the candles twice. The bartender made us a smoky one off-menu.',
       withPeople: 3,
       who: ['Mira', 'Arjun', 'Kabir'],
       time: '21:40',
@@ -355,19 +355,42 @@ void main() {
       lines: [StoryLine('Mezcal Negroni', qty: 2, price: 650), StoryLine('Paloma', price: 520), StoryLine('Truffle fries', price: 380), StoryLine('Lime soda', qty: 2, price: 150)],
       total: 2500,
     );
-    final image = MemoryImage(File('test/fixtures/night.jpg').readAsBytesSync());
+    final photo = File('test/fixtures/night.jpg').absolute.path;
     await _push(t, const Scaffold(body: SizedBox()));
-    await t.runAsync(() => precacheImage(image, navigatorKey.currentContext!));
+    await t.runAsync(() => precacheImage(FileImage(File(photo)), navigatorKey.currentContext!));
     navigatorKey.currentState!.pop();
     await t.pumpAndSettle();
-    for (var i = 0; i < overlayNames.length; i++) {
-      await _push(t, Scaffold(body: Center(child: SizedBox(width: 360, height: 450, child: OverlayFrame(photo: null, image: image, story: story, overlay: i)))));
-      await expectLater(find.byType(OverlayFrame), matchesGoldenFile('tour/p${(i + 1).toString().padLeft(2, '0')}_overlay.png'));
-      navigatorKey.currentState!.pop();
+    Future<void> pick(String name) async {
+      final f = find.bySemanticsLabel('$name sticker');
+      final list = find.byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.right);
+      await t.drag(list, const Offset(2000, 0)); // back to the first sticker
+      await t.pumpAndSettle();
+      await t.scrollUntilVisible(f, 90, scrollable: list);
+      await t.pumpAndSettle();
+      await t.tap(f);
       await t.pumpAndSettle();
     }
-    await _push(t, const PhotoStudio(story: story));
+
+    await _push(t, PhotoStudio(story: story, photo: photo));
     await _shot(t, 'p00_studio');
+    for (final (i, k) in StickerKind.values.indexed) {
+      await pick(stickerNames[k]!);
+      await _shot(t, 'p0${i + 1}_${stickerNames[k]!.toLowerCase()}');
+    }
+    await pick('Stamp');
+    await t.tap(find.bySemanticsLabel('Amber ink'));
+    await t.pumpAndSettle();
+    await _shot(t, 'p07_stamp_amber');
+    await pick('Stats');
+    await t.tap(find.bySemanticsLabel('Post'));
+    await t.tap(find.bySemanticsLabel('Black ink'));
+    await t.pumpAndSettle();
+    await _shot(t, 'p08_post_black_ink');
+    navigatorKey.currentState!.pop();
+    await t.pumpAndSettle();
+    await _push(t, const PhotoStudio(story: story));
+    await pick('Line');
+    await _shot(t, 'p09_no_photo_line');
   });
 
   _tourTest('light theme social', (t) async {

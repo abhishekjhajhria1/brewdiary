@@ -44,9 +44,16 @@ class PhotoImage extends StatelessWidget {
 Object photoHeroTag(String url, [String scope = '']) => 'photo:$scope:$url';
 
 /// Open [photos] full screen at [initial]. Thumbnails wrapped in a Hero with
-/// [photoHeroTag] (same [scope]) fly into place. [action] puts one quiet button
+/// [photoHeroTag] (same [scope]) fly into place. [action] (and [action2]) put quiet buttons
 /// under the photo ("Open that night"); it closes the viewer, then runs.
-Future<void> showPhotoViewer(BuildContext context, List<ViewerPhoto> photos, {int initial = 0, String scope = '', ({String label, void Function(int index) onTap})? action}) {
+Future<void> showPhotoViewer(
+  BuildContext context,
+  List<ViewerPhoto> photos, {
+  int initial = 0,
+  String scope = '',
+  ({String label, void Function(int index) onTap})? action,
+  ({String label, void Function(int index) onTap})? action2,
+}) {
   if (photos.isEmpty) return Future.value();
   return Navigator.of(context, rootNavigator: true).push(PageRouteBuilder<void>(
     opaque: false,
@@ -54,7 +61,7 @@ Future<void> showPhotoViewer(BuildContext context, List<ViewerPhoto> photos, {in
     barrierDismissible: false,
     transitionDuration: context.reduceMotion ? Duration.zero : const Duration(milliseconds: 340),
     reverseTransitionDuration: context.reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
-    pageBuilder: (context, animation, _) => _Viewer(photos: photos, initial: initial.clamp(0, photos.length - 1), scope: scope, route: animation, action: action),
+    pageBuilder: (context, animation, _) => _Viewer(photos: photos, initial: initial.clamp(0, photos.length - 1), scope: scope, route: animation, actions: [?action, ?action2]),
   ));
 }
 
@@ -63,8 +70,8 @@ class _Viewer extends StatefulWidget {
   final int initial;
   final String scope;
   final Animation<double> route;
-  final ({String label, void Function(int index) onTap})? action;
-  const _Viewer({required this.photos, required this.initial, required this.scope, required this.route, this.action});
+  final List<({String label, void Function(int index) onTap})> actions;
+  const _Viewer({required this.photos, required this.initial, required this.scope, required this.route, this.actions = const []});
   @override
   State<_Viewer> createState() => _ViewerState();
 }
@@ -163,29 +170,30 @@ class _ViewerState extends State<_Viewer> with SingleTickerProviderStateMixin {
               ]),
             ),
           ),
-          if (widget.action != null)
+          if (widget.actions.isNotEmpty)
             Positioned(
-              left: 0,
-              right: 0,
+              left: S.gutter,
+              right: S.gutter,
               bottom: mq.padding.bottom + S.l,
               child: Opacity(
                 opacity: shade.clamp(0.0, 1.0),
-                child: Center(
-                  child: Pressable(
-                    onTap: () {
-                      final i = _index;
-                      Navigator.of(context).pop();
-                      widget.action!.onTap(i);
-                    },
-                    child: Container(
-                      constraints: const BoxConstraints(minHeight: S.tap),
-                      padding: const EdgeInsets.symmetric(horizontal: S.xl),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: .14), borderRadius: BorderRadius.circular(rCtl), border: Border.all(color: Colors.white24, width: .8)),
-                      child: Text(widget.action!.label, style: T.rawSans(15, Colors.white, weight: FontWeight.w600)),
+                child: Wrap(alignment: WrapAlignment.center, spacing: S.s, runSpacing: S.s, children: [
+                  for (final a in widget.actions)
+                    Pressable(
+                      onTap: () {
+                        final i = _index;
+                        Navigator.of(context).pop();
+                        a.onTap(i);
+                      },
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: S.tap),
+                        padding: const EdgeInsets.symmetric(horizontal: S.xl),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: .14), borderRadius: BorderRadius.circular(rCtl), border: Border.all(color: Colors.white24, width: .8)),
+                        child: Text(a.label, style: T.rawSans(15, Colors.white, weight: FontWeight.w600)),
+                      ),
                     ),
-                  ),
-                ),
+                ]),
               ),
             ),
         ]);

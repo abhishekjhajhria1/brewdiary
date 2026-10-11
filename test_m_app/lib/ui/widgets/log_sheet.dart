@@ -18,6 +18,7 @@ import '../../data/base.dart';
 import '../../data/circles.dart';
 import '../../data/entries.dart';
 import '../../data/parties.dart';
+import '../../data/settings.dart';
 import '../theme.dart';
 import 'common.dart';
 import 'game.dart';
@@ -176,6 +177,7 @@ class _LogSheetState extends State<LogSheet> {
       }
     } else {
       final before = passportGame(entryStore.entries);
+      final withPhoto = _photos.isNotEmpty;
       entryStore.addEntry(
         date: widget.dateKey,
         drink: _drink.text,
@@ -187,6 +189,8 @@ class _LogSheetState extends State<LogSheet> {
         photos: _photos.isEmpty ? null : _photos,
       );
       _celebrate(before);
+      // A photo just went in: the moment to make it a story.
+      if (withPhoto) toast(context, 'Logged, with the photo.', tone: ToastTone.success, action: 'Share it', onAction: _shareNight);
     }
     _reset();
     _flashLogged();
@@ -222,6 +226,13 @@ class _LogSheetState extends State<LogSheet> {
         if (mounted) showRankUp(context, up);
       });
     }
+  }
+
+  /// The day as a story: its first photo (if any) and one sticker, in the studio.
+  void _shareNight() {
+    final day = entryStore.entries.where((e) => e.date == widget.dateKey).toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final photo = day.expand((e) => e.photos ?? const <Photo>[]).firstOrNull?.url;
+    showPhotoStudio(context, NightStory.fromDay(widget.dateKey, entryStore.entries, currency: PlaceStore.instance.currency), photo: photo);
   }
 
   void _flashLogged() {
@@ -299,6 +310,7 @@ class _LogSheetState extends State<LogSheet> {
                 ]),
               ),
             ),
+            if (visible.isNotEmpty) IconBtn(Ph.shareNetwork, tooltip: 'Share this night', onTap: _shareNight),
             IconBtn(Ph.x, tooltip: 'Close', onTap: () => Navigator.pop(context)),
           ]),
           const SizedBox(height: S.l),
@@ -342,9 +354,13 @@ class _LogSheetState extends State<LogSheet> {
             child: visible.isEmpty
                 ? const SizedBox(width: double.infinity)
                 : Padding(
-                    padding: const EdgeInsets.only(bottom: S.xxl),
-                    child: Group(children: [
-                      for (final e in visible) _openedWith.contains(e.id) ? KeyedSubtree(key: ValueKey(e.id), child: _entryRow(e)) : Reveal(key: ValueKey(e.id), child: _entryRow(e)),
+                    padding: const EdgeInsets.only(bottom: S.xl),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Group(children: [
+                        for (final e in visible) _openedWith.contains(e.id) ? KeyedSubtree(key: ValueKey(e.id), child: _entryRow(e)) : Reveal(key: ValueKey(e.id), child: _entryRow(e)),
+                      ]),
+                      // Sharing the night is one tap from the night itself — not hidden in a menu.
+                      Align(alignment: Alignment.centerRight, child: TextAction('Share this night', icon: Ph.shareNetwork, accent: true, onTap: _shareNight)),
                     ]),
                   ),
           ),
@@ -611,8 +627,7 @@ class _LogSheetState extends State<LogSheet> {
     return showActions(context, title: e.drink, actions: [
       SheetAction('Edit', icon: Ph.pencilSimple, onTap: () => _loadForEdit(e)),
       if (signedIn) SheetAction(_shareFor == e.id ? 'Hide sharing' : 'Share with friends…', icon: Ph.usersThree, onTap: () => setState(() => _shareFor = _shareFor == e.id ? null : e.id)),
-      SheetAction('Share with a photo', icon: Ph.camera, onTap: () => showPhotoStudio(context, NightStory.fromEntry(e), photo: e.photos?.firstOrNull?.url)),
-      SheetAction('Share as a card', icon: Ph.image, onTap: () => showPhotoStudio(context, NightStory.fromEntry(e))),
+      SheetAction('Share this night', icon: Ph.shareNetwork, onTap: () => showPhotoStudio(context, NightStory.fromEntry(e), photo: e.photos?.firstOrNull?.url)),
       SheetAction('Remove', icon: Ph.trash, destructive: true, onTap: () => _requestRemove(e)),
     ]);
   }

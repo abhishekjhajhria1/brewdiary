@@ -107,7 +107,7 @@ class _YouScreenState extends State<YouScreen> {
               Padding(padding: const EdgeInsets.only(top: S.xs), child: Text('Tap a word to find the nights you used it.', style: T.caption(bd))),
             ],
             if (photos.isNotEmpty) ...[
-              SectionHeader('Photos', action: 'Make a card', onAction: () {
+              SectionHeader('Photos', action: 'Share a night', onAction: () {
                 final latest = entries.where((e) => e.photos?.isNotEmpty ?? false).reduce((a, b) => a.date.compareTo(b.date) >= 0 ? a : b);
                 showPhotoStudio(context, NightStory.fromEntry(latest), photo: latest.photos!.first.url);
               }),
@@ -133,7 +133,8 @@ class _YouScreenState extends State<YouScreen> {
                           [for (final x in photos) (url: x.photo.url, label: 'Photo from ${formatDayLongYear(x.date)}')],
                           initial: i,
                           scope: 'you',
-                          action: (label: 'Open that night', onTap: (k) => _openDay(photos[k].date)),
+                          action: (label: 'Share this night', onTap: (k) => showPhotoStudio(context, NightStory.fromDay(photos[k].date, entries, currency: PlaceStore.instance.currency), photo: photos[k].photo.url)),
+                          action2: (label: 'Open that night', onTap: (k) => _openDay(photos[k].date)),
                         ),
                         onLongPress: () => _openDay(p.date),
                         child: Hero(

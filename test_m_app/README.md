@@ -106,7 +106,7 @@ states that break layouts: scrolled, keyboard up, small phone, large text, table
 | **Taste card** (mobile) | ✅ what you're into, worked out on the phone from your diary, to hold up for a bartender; hide any line; "Nothing with alcohol tonight" goes first in big type. Never sent to a venue |
 | **Tonight** (mobile) | ✅ opt-in water-break nudges for one night; getting home: Uber (Ola, Rapido in India), directions home, send a friend a map link of where you are, call someone |
 | **Home-screen widgets** (Android) | ✅ this month's mosaic; quick log (+ water, + cigarette, with today's counts); your Split balance. iOS needs a WidgetKit extension added in Xcode (not in this repo yet) |
-| **Photo studio** (mobile) | ✅ 11 overlays for a photo from the night (Classic, Mosaic, Big date, Nights kept, Mood, The party, Place, Ticket, Polaroid, Stamp, Film) — never a drink count |
+| **Photo studio** (mobile) | ✅ Your photo with one small sticker — Stats, Line, Mosaic, Stamp, Receipt, Date — dragged and pinched into place; white, black or amber ink; Story, Post or Square; "Sticker only" shares it see-through. Opened from "Share this night" in every day's log sheet, Tonight, the morning after, You → Photos and a party. Never a drink count |
 | **Taste passport** (mobile) | ✅ stamps for places, kinds, drinks met and dry nights; share it as an image if you choose |
 | **Morning after** (mobile) | ✅ opt-in morning check-in and a care page: water, electrolytes, food, rest, painkiller caution, and when to call 112 |
 | **Nightly reminder** | ✅ **real scheduled notifications** (the website's toggle never fired one): skips evenings you've already logged, and tapping one opens today's log sheet |

@@ -12,11 +12,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
+import 'package:brewdiary_core/types.dart';
 import '../../data/entries.dart';
 import '../../data/reminder.dart';
 import '../../data/settings.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'photo_studio.dart';
 
 Future<void> showTonight(BuildContext context) => showBdSheet(context, title: 'Tonight', builder: (_) => const TonightSheet());
 
@@ -132,6 +134,22 @@ class _TonightSheetState extends State<TonightSheet> {
         ]),
         const SizedBox(height: S.l),
         Text('Not sure you should drive? Then don\'t — the ride is cheaper than the morning after.', style: T.caption(bd)),
+        if (entryStore.entries.any((e) => e.date == todayKey())) ...[
+          const SizedBox(height: S.xl),
+          Group(children: [
+            GroupTile(
+              icon: Ph.sticker,
+              title: 'Share tonight',
+              subtitle: 'A photo from tonight, with one small sticker.',
+              chevron: true,
+              onTap: () {
+                final today = todayKey();
+                final photo = entryStore.entries.where((e) => e.date == today).expand((e) => e.photos ?? const <Photo>[]).firstOrNull?.url;
+                showPhotoStudio(context, NightStory.fromDay(today, entryStore.entries, currency: PlaceStore.instance.currency), photo: photo);
+              },
+            ),
+          ]),
+        ],
       ]),
     );
   }

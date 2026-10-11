@@ -1,15 +1,15 @@
-// The photo studio — put a brewdiary overlay on a photo from the night and share
-// it, the way a run app puts your route on a selfie. Twelve designs: a receipt, a
-// festival lineup, run-app stats, a menu card, the haul from a bottle shop, a
-// ticket, cheers, a polaroid, film, a postcard, a passport stamp and the mosaic.
+// The photo studio — your photo from the night, with one small brewdiary sticker on
+// it, shared the way a run app puts the run on a selfie. Six stickers (stickers.dart):
+// Stats, Line, Mosaic, Stamp, Receipt, Date. Drag the sticker where you want it, pinch
+// to size it, pick white, black or amber ink, and a Story, Post or Square frame.
+// "Sticker only" shares just the sticker, see-through, to lay on any photo in
+// Instagram or WhatsApp.
 //
 // What goes on it comes from the night itself: what you logged that day (and, on
 // the night, the table orders the staff accepted), where, when and with whom. The
 // person can tick lines off, add one, put a price on a line or the bill's total.
-// The lineup of what you had is the hero — no design turns the number of drinks
-// into the big headline stat (CLAUDE.md: nothing rewards drinking more).
-//
-// The brand is a hint, never a banner: a small mosaic mark and the wordmark.
+// No sticker turns the number of drinks into a headline (CLAUDE.md: nothing
+// rewards drinking more).
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -28,9 +28,7 @@ import '../../data/table_order.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
-import 'overlays.dart';
-
-export 'overlays.dart' show overlayNames, NightBackdrop;
+import 'stickers.dart';
 
 /// One line on the night's bill: what, how many, and a price only if the person
 /// typed one (brewdiary never knows what a venue charged).
@@ -145,6 +143,16 @@ class NightStory {
 Future<void> showPhotoStudio(BuildContext context, NightStory story, {String? photo}) =>
     Navigator.of(context).push(MaterialPageRoute(fullscreenDialog: true, builder: (_) => PhotoStudio(story: story, photo: photo)));
 
+/// The frame the picture is made in: a Story (9:16), a Post (4:5) or a Square.
+enum ShareFormat { story, post, square }
+
+const _ratio = {ShareFormat.story: 9 / 16, ShareFormat.post: 4 / 5, ShareFormat.square: 1.0};
+const _formatName = {ShareFormat.story: 'Story', ShareFormat.post: 'Post', ShareFormat.square: 'Square'};
+
+/// Without a photo: a plain night (white ink) or plain paper (black ink). No made-up scene.
+const _night = Color(0xFF111216);
+const _paperBg = Color(0xFFEFEAE2);
+
 class PhotoStudio extends StatefulWidget {
   final NightStory story;
   final String? photo;
@@ -154,13 +162,23 @@ class PhotoStudio extends StatefulWidget {
 }
 
 class _PhotoStudioState extends State<PhotoStudio> {
-  final _frame = GlobalKey();
+  final _frame = GlobalKey(); // the whole picture
+  final _stickerKey = GlobalKey(); // the sticker alone, for "Sticker only"
   late String? _photo = widget.photo;
   late NightStory _story = widget.story;
-  late final Set<int> _off = {}; // lines left off the overlay
-  int _overlay = 0;
+  late final Set<int> _off = {}; // lines left off the sticker
+  StickerKind _kind = StickerKind.stats;
+  StickerInk _ink = StickerInk.light;
+  ShareFormat _format = ShareFormat.story;
+  Alignment _at = stickerHome[StickerKind.stats]!;
+  double _scale = 1;
   bool _showPlace = true;
   bool _busy = false;
+
+  // where a drag / pinch started
+  Alignment _at0 = Alignment.center;
+  double _scale0 = 1;
+  double _w = 300; // the preview's width, for turning a drag into a move
 
   @override
   void initState() {
@@ -186,24 +204,34 @@ class _PhotoStudioState extends State<PhotoStudio> {
 
   Future<void> _pick(ImageSource source) async {
     try {
-      final x = await ImagePicker().pickImage(source: source, maxWidth: 2000, imageQuality: 88);
+      final x = await ImagePicker().pickImage(source: source, maxWidth: 2400, imageQuality: 90);
       if (x != null) setState(() => _photo = x.path);
     } catch (_) {
       if (mounted) toast(context, "Couldn't open photos — check brewdiary's permission in Settings.", tone: ToastTone.error);
     }
   }
 
-  Future<void> _share() async {
+  void _choose(StickerKind k) => setState(() {
+        _kind = k;
+        _at = stickerHome[k]!;
+        _scale = 1;
+      });
+
+  /// The picture as a PNG: the whole frame, or [stickerOnly] — just the sticker, see-through.
+  Future<void> _share({bool stickerOnly = false}) async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final boundary = _frame.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final key = stickerOnly ? _stickerKey : _frame;
+      final boundary = key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) return;
-      final image = await boundary.toImage(pixelRatio: 1080 / boundary.size.width);
+      final ratio = 1080 / _w * (stickerOnly ? (_scale < 1 ? 1 : _scale) * 1.25 : 1);
+      final image = await boundary.toImage(pixelRatio: ratio);
       final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
       if (bytes == null) return;
       final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/brewdiary-${_story.dateKey}-${overlayNames[_overlay].toLowerCase().replaceAll(' ', '-')}.png');
+      final name = 'brewdiary-${_story.dateKey}-${stickerNames[_kind]!.toLowerCase()}${stickerOnly ? '-sticker' : '-${_formatName[_format]!.toLowerCase()}'}.png';
+      final file = File('${dir.path}/$name');
       await file.writeAsBytes(bytes.buffer.asUint8List());
       await SharePlus.instance.share(ShareParams(files: [XFile(file.path, mimeType: 'image/png')]));
     } catch (_) {
@@ -231,67 +259,144 @@ class _PhotoStudioState extends State<PhotoStudio> {
         ));
   }
 
+  // ── moving the sticker ──────────────────────────────────────────────────────
+  void _gestureStart(ScaleStartDetails d) {
+    _at0 = _at;
+    _scale0 = _scale;
+  }
+
+  void _gestureUpdate(ScaleUpdateDetails d) {
+    final size = _stickerKey.currentContext?.size ?? const Size(200, 100);
+    final room = Size((_w - size.width * _scale).clamp(40, double.infinity), (_w / _ratio[_format]! - size.height * _scale).clamp(40, double.infinity));
+    setState(() {
+      _scale = (_scale0 * d.scale).clamp(.5, 2.6);
+      _at0 = Alignment((_at0.x + d.focalPointDelta.dx * 2 / room.width).clamp(-1.0, 1.0), (_at0.y + d.focalPointDelta.dy * 2 / room.height).clamp(-1.0, 1.0));
+      _at = _at0;
+    });
+  }
+
+  Widget _canvas(double w) {
+    final u = w / 360;
+    final bg = _photo == null
+        ? ColoredBox(color: _ink == StickerInk.dark ? _paperBg : _night)
+        : Image(image: _photo!.startsWith('http') ? NetworkImage(_photo!) as ImageProvider : FileImage(File(_photo!)), fit: BoxFit.cover);
+    return Semantics(
+      label: '${stickerNames[_kind]} sticker on ${_photo == null ? 'a plain background' : 'your photo'}. Drag to move it, pinch to size it, double-tap to put it back.',
+      child: GestureDetector(
+        onScaleStart: _gestureStart,
+        onScaleUpdate: _gestureUpdate,
+        onDoubleTap: () => setState(() {
+          _at = stickerHome[_kind]!;
+          _scale = 1;
+        }),
+        child: RepaintBoundary(
+          key: _frame,
+          child: SizedBox(
+            width: w,
+            height: w / _ratio[_format]!,
+            child: ClipRect(
+              child: Stack(fit: StackFit.expand, children: [
+                bg,
+                Padding(
+                  padding: EdgeInsets.all(18 * u),
+                  child: Align(
+                    alignment: _at,
+                    child: Transform.scale(
+                      scale: _scale,
+                      child: RepaintBoundary(
+                        key: _stickerKey,
+                        child: Padding(
+                          padding: EdgeInsets.all(8 * u), // room for a tilted stamp or a shadow
+                          child: Sticker(kind: _kind, story: _shown, ink: _ink, u: u, diary: entryStore.entries),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
-    final shown = _shown;
     final onIt = _story.lines.length - _off.length;
-    return Ambient(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SubPage(
-          title: 'Share the night',
-          large: false,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(rTile),
-              child: RepaintBoundary(
-                key: _frame,
-                child: AspectRatio(aspectRatio: 4 / 5, child: OverlayFrame(photo: _photo, story: shown, overlay: _overlay)),
-              ),
-            ),
-            const SizedBox(height: S.m),
-            SizedBox(
-              height: 118,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: overlayNames.length,
-                separatorBuilder: (_, _) => const SizedBox(width: S.s + 2),
-                itemBuilder: (_, i) => _Thumb(
-                  name: overlayNames[i],
-                  active: i == _overlay,
-                  onTap: () => setState(() => _overlay = i),
-                  child: OverlayFrame(photo: _photo, story: shown, overlay: i),
+    final mq = MediaQuery.of(context);
+    // The picture stays put at the top (like a story editor) so a drag on it always
+    // moves the sticker; the controls scroll underneath.
+    final room = mq.size.height - mq.padding.top - kTopBarHeight - mq.padding.bottom;
+    final avail = (mq.size.width - 2 * S.gutter).clamp(200.0, 560.0);
+    _w = [avail, room * .5 * _ratio[_format]!].reduce((a, b) => a < b ? a : b);
+    return SubPage(
+      title: 'Share the night',
+      large: false,
+      scroll: false,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const SizedBox(height: S.s),
+        Center(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(rTile),
+            child: AnimatedSize(duration: context.reduceMotion ? Duration.zero : Motion.med, curve: Motion.curve, child: _canvas(_w)),
+          ),
+        ),
+        const SizedBox(height: S.xs),
+        Text('Drag the sticker · pinch to size it · double-tap to put it back', textAlign: TextAlign.center, style: T.caption(bd)),
+        Expanded(
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(S.gutter, S.m, S.gutter, mq.padding.bottom + S.xl),
+            children: [
+              SizedBox(
+                height: 104,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: StickerKind.values.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: S.s),
+                  itemBuilder: (_, i) {
+                    final k = StickerKind.values[i];
+                    return _StickerThumb(name: stickerNames[k]!, active: k == _kind, onTap: () => _choose(k), paper: _ink == StickerInk.dark, child: Sticker(kind: k, story: _shown, ink: _ink, u: 1, diary: entryStore.entries));
+                  },
                 ),
               ),
-            ),
-            const SizedBox(height: S.l),
-            Row(children: [
-              Expanded(child: BdButton('Photos', kind: BtnKind.secondary, icon: Ph.images, onTap: () => _pick(ImageSource.gallery))),
-              const SizedBox(width: S.s),
-              Expanded(child: BdButton('Camera', kind: BtnKind.secondary, icon: Ph.camera, onTap: () => _pick(ImageSource.camera))),
-            ]),
-            const SizedBox(height: S.m),
-            Group(children: [
-              GroupTile(
-                icon: Ph.receipt,
-                title: "What's on it",
-                subtitle: [
-                  onIt == 0 ? 'Nothing logged yet — add a line' : '$onIt ${onIt == 1 ? 'line' : 'lines'}',
-                  if (_story.billTotal != null) 'total ${formatMoney(_story.billTotal!, _story.currency)}',
-                ].join(' · '),
-                chevron: true,
-                onTap: _editLines,
-              ),
-              if (_story.venue != null) SettingRow(title: 'Show the place', trailing: BdToggle(on: _showPlace, label: 'Show the place', onChanged: (v) => setState(() => _showPlace = v))),
-            ]),
-            const SizedBox(height: S.l),
-            BdButton(_busy ? 'Making it…' : 'Share', icon: Ph.shareNetwork, onTap: _share),
-            const SizedBox(height: S.m),
-            Text('Your photo stays on your phone until you share it.', textAlign: TextAlign.center, style: T.caption(bd)),
-          ]),
+              const SizedBox(height: S.m),
+              Row(children: [
+                Expanded(child: Segmented<ShareFormat>(options: [for (final f in ShareFormat.values) (f, _formatName[f]!)], value: _format, onChanged: (f) => setState(() => _format = f))),
+                const SizedBox(width: S.m),
+                for (final ink in StickerInk.values) _InkDot(ink: ink, active: ink == _ink, onTap: () => setState(() => _ink = ink)),
+              ]),
+              const SizedBox(height: S.l),
+              BdButton(_busy ? 'Making it…' : 'Share', icon: Ph.shareNetwork, onTap: _share),
+              const SizedBox(height: S.s),
+              Row(children: [
+                Expanded(child: BdButton('Sticker only', kind: BtnKind.secondary, onTap: () => _share(stickerOnly: true))),
+                const SizedBox(width: S.s),
+                Expanded(child: BdButton(_photo == null ? 'Add photo' : 'New photo', kind: BtnKind.secondary, onTap: () => _pick(ImageSource.gallery))),
+                const SizedBox(width: S.s),
+                IconBtn(Ph.camera, glass: true, tooltip: 'Take a photo', onTap: () => _pick(ImageSource.camera)),
+              ]),
+              const SizedBox(height: S.l),
+              Group(children: [
+                GroupTile(
+                  icon: Ph.receipt,
+                  title: "What's on it",
+                  subtitle: [
+                    onIt == 0 ? 'Nothing logged yet — add a line' : '$onIt ${onIt == 1 ? 'line' : 'lines'}',
+                    if (_story.billTotal != null) 'total ${formatMoney(_story.billTotal!, _story.currency)}',
+                  ].join(' · '),
+                  chevron: true,
+                  onTap: _editLines,
+                ),
+                if (_story.venue != null) SettingRow(title: 'Show the place', trailing: BdToggle(on: _showPlace, label: 'Show the place', onChanged: (v) => setState(() => _showPlace = v))),
+              ]),
+              const SizedBox(height: S.m),
+              Text('"Sticker only" is see-through — lay it on any photo in Instagram or WhatsApp. Your photo stays on your phone until you share it.', textAlign: TextAlign.center, style: T.caption(bd)),
+            ],
+          ),
         ),
-      ),
+      ]),
     );
   }
 }
@@ -403,79 +508,82 @@ class _LinesEditorState extends State<_LinesEditor> {
   }
 }
 
-/// A photo (or a warm placeholder) with one overlay on top. Sized by its parent;
-/// every measure is in units of a 360-wide frame so a 1080 export is just bigger.
-class OverlayFrame extends StatelessWidget {
-  final String? photo;
-  final NightStory story;
-  final int overlay;
-
-  /// A ready image instead of [photo] (tests and previews).
-  final ImageProvider? image;
-  const OverlayFrame({super.key, required this.photo, required this.story, required this.overlay, this.image});
-
-  @override
-  Widget build(BuildContext context) {
-    final entries = entryStore.entries;
-    return LayoutBuilder(builder: (context, box) {
-      final u = box.maxWidth / 360;
-      final bg = image != null
-          ? Image(image: image!, fit: BoxFit.cover)
-          : photo == null
-              ? NightBackdrop(seed: story.dateKey)
-              : Image(image: photo!.startsWith('http') ? NetworkImage(photo!) as ImageProvider : FileImage(File(photo!)), fit: BoxFit.cover);
-      final o = Overlays(u, story, entries);
-      Widget over(Widget w) => Stack(fit: StackFit.expand, children: [bg, w]);
-      return switch (overlay) {
-        0 => over(o.route()),
-        1 => over(o.caption()),
-        2 => over(o.lineup()),
-        3 => over(o.cover()),
-        4 => over(o.receipt()),
-        5 => over(o.ticket()),
-        6 => over(o.stamp()),
-        7 => over(o.passportCard()),
-        8 => o.polaroid(bg),
-        9 => o.film(bg),
-        10 => o.postcard(bg),
-        _ => over(o.mosaic()),
-      };
-    });
-  }
-}
-
-/// A live, tiny version of one overlay to pick from.
-class _Thumb extends StatelessWidget {
+/// A sticker to pick, shown alone on a small tile.
+class _StickerThumb extends StatelessWidget {
   final String name;
   final bool active;
   final VoidCallback onTap;
   final Widget child;
-  const _Thumb({required this.name, required this.active, required this.onTap, required this.child});
+  final bool paper;
+  const _StickerThumb({required this.name, required this.active, required this.onTap, required this.child, required this.paper});
   @override
   Widget build(BuildContext context) {
     final bd = context.bd;
     return Semantics(
       button: true,
       selected: active,
-      label: '$name overlay',
+      label: '$name sticker',
       excludeSemantics: true,
       child: Pressable(
         onTap: onTap,
         child: Column(children: [
           AnimatedContainer(
             duration: Motion.fast,
-            width: 72,
-            height: 90,
-            padding: const EdgeInsets.all(2),
+            width: 76,
+            height: 76,
+            padding: const EdgeInsets.all(9),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
+              color: paper ? _paperBg : _night,
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: active ? bd.accent : bd.line, width: active ? 2 : 1),
             ),
-            child: ClipRRect(borderRadius: BorderRadius.circular(7), child: IgnorePointer(child: child)),
+            child: IgnorePointer(child: FittedBox(child: child)),
           ),
           const SizedBox(height: 6),
-          Text(name, style: T.sans(bd, size: 11.5, weight: active ? FontWeight.w600 : FontWeight.w400, color: active ? bd.accentText : bd.muted)),
+          Text(name, style: T.sans(bd, size: 12, weight: active ? FontWeight.w600 : FontWeight.w400, color: active ? bd.accentText : bd.muted)),
         ]),
+      ),
+    );
+  }
+}
+
+/// White, black or amber ink.
+class _InkDot extends StatelessWidget {
+  final StickerInk ink;
+  final bool active;
+  final VoidCallback onTap;
+  const _InkDot({required this.ink, required this.active, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final name = switch (ink) { StickerInk.light => 'White', StickerInk.dark => 'Black', StickerInk.amber => 'Amber' };
+    return Semantics(
+      button: true,
+      selected: active,
+      label: '$name ink',
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          Haptics.tick();
+          onTap();
+        },
+        child: SizedBox(
+          width: 40,
+          height: S.tap,
+          child: Center(
+            child: AnimatedContainer(
+              duration: Motion.fast,
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: inkColor(ink),
+                shape: BoxShape.circle,
+                border: Border.all(color: active ? bd.accent : bd.lineStrong, width: active ? 2.5 : 1),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

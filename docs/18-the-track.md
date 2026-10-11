@@ -93,9 +93,11 @@ Can start now, in parallel with Phase 0 — it's proven on the local database fi
       emailed code checked by the database; import adds and never overwrites.
 - [x] **Photos a year at most** (057): a daily cron removes older files; account deletion finds every
       file, however deep.
-- [x] **Photo overlays**: twelve share designs (receipt, lineup, stats, menu, the haul, ticket, cheers,
-      polaroid, film, postcard, stamp, mosaic) built from the night's logs and accepted table orders,
-      with optional prices and a bill total the person types.
+- [x] **Sharing a night** (redone after review): your photo is the picture and brewdiary adds one small,
+  sharp sticker — Stats, Line, Mosaic, Stamp, Receipt or Date — that you drag and pinch into place, in white,
+  black or amber ink, as a Story, Post or Square; "Sticker only" shares it see-through for any photo. The old
+  twelve poster overlays (and their made-up blurry backgrounds) are gone. "Share this night" sits under every
+  day's drinks in the log sheet, and on Tonight, the morning after, You → Photos and a party.
 - [ ] **Stop searching everyone at the till** (venue plan 1.4 #4): the venue app's punch/visit flow
       identifies a guest by a short-lived code the guest shows (see Phase 3 "my card"); until that lands,
       `search_users` from the venue app is limited to people who have been in this venue's rooms.

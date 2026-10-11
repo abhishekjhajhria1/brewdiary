@@ -9,9 +9,11 @@ import 'package:brewdiary_core/date.dart';
 import 'package:brewdiary_core/derive.dart';
 import 'package:brewdiary_core/types.dart';
 import '../../data/entries.dart';
+import '../../data/settings.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
+import 'photo_studio.dart';
 
 Future<void> showMorningAfter(BuildContext context) =>
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MorningAfterScreen()));
@@ -39,6 +41,7 @@ class MorningAfterScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final bd = context.bd;
     final today = todayKey();
+    final yesterday = toKey(addDays(appNow(), -1));
     final hasDryToday = entryStore.entries.any((e) => e.date == today && e.type == DrinkType.none);
     return Ambient(
       child: Scaffold(
@@ -99,6 +102,21 @@ class MorningAfterScreen extends StatelessWidget {
                 Text('112 is India\'s emergency number. Elsewhere, use your local one.', style: T.caption(bd)),
               ]),
             ),
+            if (entryStore.entries.any((e) => e.date == yesterday)) ...[
+              const SizedBox(height: S.xl),
+              Group(children: [
+                GroupTile(
+                  icon: Ph.sticker,
+                  title: 'Share last night',
+                  subtitle: 'A photo from it, with one small sticker.',
+                  chevron: true,
+                  onTap: () {
+                    final photo = entryStore.entries.where((e) => e.date == yesterday).expand((e) => e.photos ?? const <Photo>[]).firstOrNull?.url;
+                    showPhotoStudio(context, NightStory.fromDay(yesterday, entryStore.entries, currency: PlaceStore.instance.currency), photo: photo);
+                  },
+                ),
+              ]),
+            ],
             const SizedBox(height: S.l),
             Text('General care, not medical advice. If you\'re unwell or unsure, talk to a doctor or pharmacist.', style: T.caption(bd)),
           ]),

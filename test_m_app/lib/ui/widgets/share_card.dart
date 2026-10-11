@@ -1,5 +1,5 @@
-// Share a score as an image — a port of src/components/share/ScoreCard.tsx (an
-// entry is shared through the photo studio's overlays). Instead of a <canvas>, the card is a widget rendered off a
+// Share a score as an image — a port of src/components/share/ScoreCard.tsx (a
+// night is shared through the photo studio's stickers). Instead of a <canvas>, the card is a widget rendered off a
 // RepaintBoundary into a PNG and handed to the native share sheet.
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -9,7 +9,6 @@ import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../screens/overlays.dart' show NightBackdrop;
 import '../theme.dart';
 import 'common.dart';
 import 'game.dart' show foil, foilHi, foilGradient;
@@ -80,7 +79,8 @@ class _ScoreSheetState extends State<_ScoreSheet> {
                     builder: (c, box) {
                       final s = box.maxWidth / 1080;
                       return Stack(fit: StackFit.expand, children: [
-                        NightBackdrop(seed: sc.context),
+                        // A plain night with one soft amber glow — no made-up scene.
+                        const DecoratedBox(decoration: BoxDecoration(color: Color(0xFF111216), gradient: RadialGradient(center: Alignment(0, -.2), radius: .9, colors: [Color(0x33E6A64B), Color(0x00111216)]))),
                         Container(color: Colors.black.withValues(alpha: .45)),
                         Padding(
                           padding: EdgeInsets.fromLTRB(80 * s, 76 * s, 80 * s, 72 * s),
