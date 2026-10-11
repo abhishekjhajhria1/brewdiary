@@ -21,7 +21,6 @@ import 'package:brewdiary/ui/screens/photo_studio.dart';
 import 'package:brewdiary/ui/screens/plans_section.dart';
 import 'package:brewdiary/ui/screens/taste_card.dart';
 import 'package:brewdiary/ui/screens/split_screen.dart';
-import 'package:brewdiary/ui/screens/stickers.dart';
 import 'package:brewdiary/ui/screens/together_screen.dart';
 import 'package:brewdiary/ui/theme.dart';
 import 'package:brewdiary/ui/widgets/common.dart';
@@ -342,7 +341,7 @@ void main() {
     await _shot(t, 'o5_taste_card_dry');
   });
 
-  _tourTest('stickers on a photo: each sticker, the inks, the frames', (t) async {
+  _tourTest('the share studio: styles, stickers, frames, looks, your line', (t) async {
     await _boot(t);
     const story = NightStory(
       dateKey: '2026-09-26',
@@ -361,10 +360,10 @@ void main() {
     await t.runAsync(() => precacheImage(FileImage(File(photo)), navigatorKey.currentContext!));
     navigatorKey.currentState!.pop();
     await t.pumpAndSettle();
-    Future<void> pick(String name) async {
-      final f = find.bySemanticsLabel('$name sticker');
+    Future<void> pick(String semantic) async {
+      final f = find.bySemanticsLabel(semantic);
       final list = find.byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.right);
-      await t.drag(list, const Offset(2000, 0)); // back to the first sticker
+      await t.drag(list, const Offset(4000, 0)); // back to the start of the row
       await t.pumpAndSettle();
       await t.scrollUntilVisible(f, 90, scrollable: list);
       await t.pumpAndSettle();
@@ -372,26 +371,38 @@ void main() {
       await t.pumpAndSettle();
     }
 
-    await _push(t, PhotoStudio(story: story, photo: photo));
-    await _shot(t, 'p00_studio');
-    for (final (i, k) in StickerKind.values.indexed) {
-      await pick(stickerNames[k]!);
-      await _shot(t, 'p0${i + 1}_${stickerNames[k]!.toLowerCase()}');
+    Future<void> tab(String name) async {
+      await t.tap(find.bySemanticsLabel(name));
+      await t.pumpAndSettle();
     }
-    await pick('Stamp');
-    await t.tap(find.bySemanticsLabel('Amber ink'));
+
+    await _push(t, PhotoStudio(story: story, photo: photo));
+    await _shot(t, 'p00_studio_styles');
+    for (final (i, name) in ['Gallery', 'Film', 'Polaroid', 'Cover', 'Ticket', 'Cinema', 'Coaster', 'Menu'].indexed) {
+      await pick('$name style');
+      await _shot(t, 'p0${i + 1}_style_${name.toLowerCase()}');
+    }
+    await tab('Sticker');
+    await pick('Caption sticker');
+    await t.tap(find.text('FROST'));
     await t.pumpAndSettle();
-    await _shot(t, 'p07_stamp_amber');
-    await pick('Stats');
-    await t.tap(find.bySemanticsLabel('Post'));
-    await t.tap(find.bySemanticsLabel('Black ink'));
+    await _shot(t, 'p10_sticker_tab');
+    await tab('Frame');
+    await pick('Print frame');
+    await _shot(t, 'p11_frame_tab');
+    await tab('Look');
+    await pick('Golden look');
+    await _shot(t, 'p12_look_tab');
+    await tab('Text');
+    await t.enterText(find.byType(TextField).first, 'Mira turns 30');
     await t.pumpAndSettle();
-    await _shot(t, 'p08_post_black_ink');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await t.pumpAndSettle();
+    await _shot(t, 'p13_text_tab');
     navigatorKey.currentState!.pop();
     await t.pumpAndSettle();
     await _push(t, const PhotoStudio(story: story));
-    await pick('Line');
-    await _shot(t, 'p09_no_photo_line');
+    await _shot(t, 'p14_no_photo');
   });
 
   _tourTest('first steps and the guide', (t) async {

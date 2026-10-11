@@ -145,6 +145,9 @@ class T {
   static const sansFamily = 'Hanken Grotesk';
   static const serifFamily = 'Newsreader';
 
+  /// IBM Plex Mono — only on share stickers (a receipt, a ticket, "Mono" type).
+  static const monoFamily = 'IBM Plex Mono';
+
   /// Hanken Grotesk has no ₹ — fall back to Newsreader for the glyphs it lacks.
   static const fallback = [serifFamily];
 
@@ -201,6 +204,9 @@ class T {
       fontVariations: _wght(weight, opsz: size),
       fontStyle: italic ? FontStyle.italic : FontStyle.normal,
       height: height);
+
+  static TextStyle rawMono(double size, Color color, {FontWeight weight = FontWeight.w400, double? spacing, double? height}) =>
+      TextStyle(fontFamily: monoFamily, fontFamilyFallback: const [sansFamily, serifFamily], fontSize: size, color: color, fontWeight: weight, letterSpacing: spacing, height: height);
 
   static const tnum = [FontFeature.tabularFigures()];
 }

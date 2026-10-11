@@ -41,6 +41,7 @@ Future<void> loadFonts() async {
 
   await load('Hanken Grotesk', ['assets/fonts/HankenGrotesk.ttf', 'assets/fonts/HankenGrotesk-Italic.ttf']);
   await load('Newsreader', ['assets/fonts/Newsreader.ttf', 'assets/fonts/Newsreader-Italic.ttf']);
+  await load('IBM Plex Mono', ['assets/fonts/IBMPlexMono-Regular.ttf', 'assets/fonts/IBMPlexMono-Medium.ttf']);
   await load('Phosphor', ['assets/fonts/Phosphor.ttf']);
   await load('PhosphorFill', ['assets/fonts/Phosphor-Fill.ttf']);
   await load('PhosphorBold', ['assets/fonts/Phosphor-Bold.ttf']);
