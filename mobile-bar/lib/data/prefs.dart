@@ -44,6 +44,9 @@ final guestsRev = Rev();
 final stockRev = Rev();
 final floorRev = Rev();
 final doorRev = Rev();
+final notesRev = Rev(); // the shift's notes (058)
+final cashRev = Rev(); // the cash drawer (058)
+final bookingsRev = Rev(); // bookings (058)
 final shiftRev = Rev();
 final rotaRev = Rev();
 

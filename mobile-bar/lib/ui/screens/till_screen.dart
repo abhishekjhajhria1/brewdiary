@@ -17,6 +17,7 @@ import '../widgets/common.dart';
 import '../widgets/next_steps.dart';
 import '../widgets/guest_finder.dart';
 import '../widgets/page.dart';
+import '../widgets/shift_notes.dart';
 import 'guests_screen.dart';
 import 'tonight_screen.dart';
 import 'checkout_screen.dart';
@@ -54,6 +55,7 @@ class _TillScreenState extends State<TillScreen> {
       subtitle: v.name,
       children: [
         ShiftCard(venue: v),
+        ShiftNotesCard(venue: v),
         NextSteps(venue: v),
         if (s.can(Cap.takePayment)) ...[
           BdButton('New sale', icon: Ph.receipt, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckoutScreen(venue: v)))),

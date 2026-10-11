@@ -47,7 +47,10 @@ If you can read a recipe, you can read this.
     deny-by-default), how to open a state for alcohol sales, and the excise register.
 16. **[16 — Service and ordering](16-service-and-ordering.md)** — the floor, tabs, the bar and kitchen
     screens, the bill (staff decide how it's paid), the host's waitlist, the live board, and the table's
-    own QR: the menu with the veg mark and allergens, ordering from the table, "call staff / bill please".
+    own QR: the menu with the veg mark and allergens, ordering from the table, "call staff / bill please";
+    and during the night (058): moving, merging and splitting tabs by item, handing a table over, the
+    bar's spec cards, recall and 86, the pre-shift note and manager's log, the cash drawer with a blind
+    count, and bookings.
 17. **[17 — The team: adding employees, the owner's code, pausing access](17-staff-access.md)** — how an
     owner adds an employee (their email plus a 6-digit code the owner gives them), shared invite codes
     that wait for a yes, pausing someone's access with a reason and who to report to, the team's

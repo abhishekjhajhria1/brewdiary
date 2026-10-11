@@ -131,6 +131,79 @@ checks each rule exists, and `npm run db:verify` (scene 21) plays a whole servic
 | Guest app table link | `test_m_app/lib/data/table_order.dart`, `test_m_app/lib/ui/screens/menu_screen.dart` (`TableMenuScreen`), routed in `test_m_app/lib/app.dart`; parsing in `packages/brewdiary_core/lib/menus.dart` |
 | Tests | `mobile-bar/test/app_test.dart` walks the floor, tabs, tickets, an order request, "bill please" and the waitlist against an in-memory stand-in |
 
-Next (PLAN M3–M6, M11, M13): table moves and merges, courses and hold/fire, sizes and modifiers, the
-tax profile, printed receipts, a cash drawer and the day close, bookings, push when food is ready, and
-working offline.
+## 8. During the night: moves, the bar's tools, notes, the drawer, bookings (058)
+
+Migration **058** (`supabase/058_floor_shift_cash.sql`) adds the things every bar and restaurant
+system has (Toast, Square, Lightspeed, TouchBistro, Petpooja for the floor and the drawer; SevenRooms,
+OpenTable and Resy for bookings; 7shifts for pre-shift notes; the kitchen-screen makers for recall and
+all-day counts), each built the brewdiary way: the database decides, staff do it in two taps, and
+nothing about it rewards drinking more.
+
+**A table, open on the tab screen.** Under the bill, a caption says whose table it is ("Noor's
+table") and four chips do the rest:
+
+| Chip | What happens | Who |
+| --- | --- | --- |
+| **Move** | The party moves to a free table (or the bar, with a name). The tab keeps everything. | anyone who takes orders |
+| **Bring a tab in** | Another open tab's lines join this bill. The other tab is kept, marked *merged*, never deleted. | same |
+| **Split by item** | Pick lines (or a whole seat) and move them onto their own check at the same table. "Move 2 · ₹880". Voided lines never move. | same |
+| **Hand over** | Give the table to someone else on tonight. Only people who can take orders are offered; a paused person never is. | same |
+
+**The bar and the kitchen screens.**
+- **TO MAKE** at the top: everything still to make, summed by name, most first ("3× Negroni") —
+  ready lines drop off.
+- Each line's **⋯** opens: the **spec card** (recipe, glass, garnish, method — written in the menu
+  editor), **Back to making** (marked ready by mistake), and **86 it** ("it's run out").
+- **OFF TONIGHT** lists what's 86'd; tap one to bring it back. The guest's menu hides it at once.
+- The spec card stays inside the venue: `venue_menu()` (the guest's menu) never returns it.
+
+**The pre-shift note.** A shift lead (supervisor and up) writes tonight's note — "walk-in is off,
+push the paneer", "party of 12 at 9". It sits at the top of the floor, the till, tonight and the
+stations until the end of the night (18 hours by default). Everyone taps **Got it**, and the note
+folds to one line. The lead sees *who* has seen it, by name, in name order — never a ranking, never
+a time. **More › Shift notes** also holds **the manager's log**: the hand-over for the next manager
+(what broke, who called, what's owed), readable by supervisors and managers only.
+
+**The cash drawer** (**More › Cash drawer**).
+1. **Open** it with a float (₹2,000) and a label (Drawer / Bar till / Front till). One open drawer
+   per venue.
+2. During the night: **Safe drop**, **Pay in**, **Pay out** — each with a reason. A pay-out needs a
+   manager (the `cash.close_day` permission).
+3. **Count and close** is a **blind count**: whoever counts never sees the expected figure first.
+   Count by notes (₹500 × 3, ₹100 × 3 …) or type one number. Then the report: float, expected,
+   counted, the difference ("₹10 short"), pay-ins, pay-outs, drops, bills, sales, tips, voids, and
+   every payment method. The report is stored as it was at close, and no app can change it afterwards.
+4. *Expected* is worked out by the database: float + pay-ins − pay-outs − drops + every cash payment
+   on a tab or at the counter since the drawer opened. Leads see it during the night; nobody else does.
+
+**Bookings** (the **Bookings · N** chip on the floor).
+- Today / Tomorrow / Another day. A day runs 6 am to 6 am, like the rest of the venue app.
+- **New booking**: name, party size, day and time, how long (90 min by default), a table if you want
+  one, a phone number and a note. Two bookings on the same table at the same time are flagged.
+- On the floor, a free table shows its next booking within three hours ("booked 9:00 pm · 4").
+- **Seat them now** opens the table's tab with the party size as covers and marks the booking seated.
+  Also: They're here, Edit, No-show, Cancel.
+- **Kept short, on purpose.** A booking's phone number is wiped a day after it, and after 30 days the
+  name becomes "Party of 4" and the note goes. Bookings are never deleted (a no-show stays a no-show),
+  but a stranger's phone number isn't kept for ever.
+
+**The rules (058).**
+- Every change goes through a function that checks the caller's permission (`venue_can()`); the
+  drawer and notes tables have no write policy at all.
+- Bookings can be read with `floor.view`, written with `guests.seat`, never deleted; a booking's
+  table and tab must belong to the same venue (a trigger checks).
+- A merge keeps the merged tab (status `merged`, `merged_into`); a move never moves a voided line;
+  hand-over refuses someone who can't take orders.
+
+**Where it lives.** Database: `supabase/058_floor_shift_cash.sql`. Checks: `scripts/db-audit.mjs`
+(the 058 section), `scripts/verify-flow.mjs` (scene 28). Venue app: `tab_tools.dart`,
+`station_screen.dart`, `widgets/shift_notes.dart`, `log_book_screen.dart`, `cash_screen.dart`,
+`bookings_screen.dart`; the sums (`allDay`, `denominations`, `countResult`, `nextBookingAt`,
+`bookingsClash`) are in `mobile-bar/lib/logic/service.dart`. Tests: `mobile-bar/test/floor_shift_test.dart`.
+
+**Setting it up.** Run migration **058** after 057 (`node scripts/db.mjs supabase/058_floor_shift_cash.sql`),
+then `npm run db:audit` and `npm run db:verify`. Nothing else: the screens appear for the roles that
+may use them.
+
+Next (PLAN M3–M6, M11, M13): sections (servers to areas), courses and hold/fire, sizes and modifiers,
+the tax profile, printed receipts, push when food is ready, and working offline.

@@ -16,6 +16,7 @@ import '../widgets/bits.dart';
 import '../widgets/common.dart';
 import '../widgets/next_steps.dart';
 import '../widgets/page.dart';
+import '../widgets/shift_notes.dart';
 import 'guests_screen.dart';
 import 'host_screen.dart';
 
@@ -56,6 +57,7 @@ class _TonightScreenState extends State<TonightScreen> {
       onRefresh: () async => roomsRev.bump(),
       children: [
         if (!widget.pushed) ShiftCard(venue: v),
+        if (!widget.pushed) ShiftNotesCard(venue: v),
         NextSteps(venue: v),
         if (!v.verified)
           Padding(

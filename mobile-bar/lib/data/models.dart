@@ -887,7 +887,11 @@ class MenuItem {
     this.station = 'bar',
     this.diet,
     this.allergens = const [],
+    this.spec,
   });
+
+  /// The team's spec card (058): recipe, glass, garnish, method. Never shown to guests.
+  final String? spec;
 
   /// Where its ticket goes (051): the bar, the kitchen, or nowhere (served as is).
   final String station;
@@ -911,9 +915,10 @@ class MenuItem {
         station: (r['station'] as String?) ?? (r['kind'] == 'food' ? 'kitchen' : 'bar'),
         diet: r['diet'] as String?,
         allergens: [for (final a in (r['allergens'] as List?) ?? const []) '$a'],
+        spec: r['spec'] as String?,
       );
 
-  MenuItem copyWith({String? section, String? name, String? description, double? price, String? kind, bool? noAlcohol, bool? available, int? position, String? station, String? diet, List<String>? allergens}) => MenuItem(
+  MenuItem copyWith({String? section, String? name, String? description, double? price, String? kind, bool? noAlcohol, bool? available, int? position, String? station, String? diet, List<String>? allergens, String? spec}) => MenuItem(
         id: id,
         section: section ?? this.section,
         name: name ?? this.name,
@@ -926,6 +931,7 @@ class MenuItem {
         station: station ?? this.station,
         diet: diet ?? this.diet,
         allergens: allergens ?? this.allergens,
+        spec: spec ?? this.spec,
       );
 }
 
@@ -1184,7 +1190,23 @@ class ServiceTab {
   final DateTime openedAt;
   final double? subtotal;
   final double? tip;
-  const ServiceTab({required this.id, this.tableId, this.name, this.covers, this.status = 'open', required this.openedAt, this.subtotal, this.tip});
+
+  /// Whose table it is (058): whoever opened it, until it's handed on.
+  final String? serverId;
+  const ServiceTab({required this.id, this.tableId, this.name, this.covers, this.status = 'open', required this.openedAt, this.subtotal, this.tip, this.serverId});
+
+  /// [clearTable] moves it off any table (to the bar).
+  ServiceTab copyWith({String? tableId, bool clearTable = false, String? name, int? covers, String? status, double? subtotal, double? tip, String? serverId}) => ServiceTab(
+        id: id,
+        tableId: clearTable ? null : (tableId ?? this.tableId),
+        name: name ?? this.name,
+        covers: covers ?? this.covers,
+        status: status ?? this.status,
+        openedAt: openedAt,
+        subtotal: subtotal ?? this.subtotal,
+        tip: tip ?? this.tip,
+        serverId: serverId ?? this.serverId,
+      );
 
   factory ServiceTab.fromRow(Map<String, dynamic> r) => ServiceTab(
         id: r['id'] as String,
@@ -1195,6 +1217,7 @@ class ServiceTab {
         openedAt: DateTime.parse(r['opened_at'] as String).toLocal(),
         subtotal: _numOrNull(r['subtotal']),
         tip: _numOrNull(r['tip']),
+        serverId: (r['server_id'] ?? r['opened_by']) as String?,
       );
 }
 
@@ -1238,9 +1261,10 @@ class OrderLine {
 
   double get total => status == 'void' ? 0 : unitPrice * qty;
 
-  OrderLine copyWith({String? status, DateTime? readyAt, String? voidReason}) => OrderLine(
+  /// [clearReady] forgets when it was ready (a recall).
+  OrderLine copyWith({String? status, DateTime? readyAt, bool clearReady = false, String? voidReason, String? tabId}) => OrderLine(
         id: id,
-        tabId: tabId,
+        tabId: tabId ?? this.tabId,
         menuItemId: menuItemId,
         name: name,
         unitPrice: unitPrice,
@@ -1251,7 +1275,7 @@ class OrderLine {
         status: status ?? this.status,
         source: source,
         createdAt: createdAt,
-        readyAt: readyAt ?? this.readyAt,
+        readyAt: clearReady ? null : (readyAt ?? this.readyAt),
         voidReason: voidReason ?? this.voidReason,
         tableLabel: tableLabel,
         tabName: tabName,
@@ -1367,5 +1391,184 @@ class ServiceBoard {
         barMinutes: _numOrNull(j['bar_minutes']),
         kitchenMinutes: _numOrNull(j['kitchen_minutes']),
         methods: {for (final e in ((j['methods'] as Map?) ?? const {}).entries) '${e.key}': _numOrNull(e.value) ?? 0},
+      );
+}
+
+// ── the shift's notes, the cash drawer, bookings (058) ──────────────────────
+/// A pre-shift note or a log entry. [seenBy] is filled only for supervisors and
+/// managers (names, in name order — never a ranking); null for everyone else.
+class ShiftNote {
+  final String id;
+  final String body;
+  final String author;
+  final DateTime createdAt;
+  final DateTime? shownUntil;
+  final bool seenByMe;
+  final List<String>? seenBy;
+  const ShiftNote({required this.id, required this.body, required this.author, required this.createdAt, this.shownUntil, this.seenByMe = false, this.seenBy});
+
+  factory ShiftNote.fromJson(Map<String, dynamic> j) => ShiftNote(
+        id: j['id'] as String,
+        body: j['body'] as String,
+        author: (j['author'] as String?) ?? 'someone',
+        createdAt: DateTime.parse(j['created_at'] as String).toLocal(),
+        shownUntil: j['shown_until'] == null ? null : DateTime.parse(j['shown_until'] as String).toLocal(),
+        seenByMe: j['seen_by_me'] == true,
+        seenBy: j['seen_by'] == null ? null : [for (final n in j['seen_by'] as List) '$n'],
+      );
+}
+
+class ShiftNotes {
+  final List<ShiftNote> preshift;
+  final List<ShiftNote> log;
+  const ShiftNotes({this.preshift = const [], this.log = const []});
+}
+
+class CashMove {
+  final String kind; // pay_in | pay_out | drop
+  final double amount;
+  final String reason;
+  final DateTime madeAt;
+  final String by;
+  const CashMove({required this.kind, required this.amount, required this.reason, required this.madeAt, required this.by});
+
+  factory CashMove.fromJson(Map<String, dynamic> j) => CashMove(
+        kind: j['kind'] as String,
+        amount: _numOrNull(j['amount']) ?? 0,
+        reason: (j['reason'] as String?) ?? '',
+        madeAt: DateTime.parse(j['made_at'] as String).toLocal(),
+        by: (j['by'] as String?) ?? 'someone',
+      );
+}
+
+/// What a drawer's close kept (close_drawer()): it can't change afterwards.
+class CashReport {
+  final double float, expected, counted, difference, payIns, payOuts, drops, sales, tips;
+  final int bills, voids;
+  final Map<String, double> byMethod;
+  const CashReport({
+    this.float = 0,
+    this.expected = 0,
+    this.counted = 0,
+    this.difference = 0,
+    this.payIns = 0,
+    this.payOuts = 0,
+    this.drops = 0,
+    this.sales = 0,
+    this.tips = 0,
+    this.bills = 0,
+    this.voids = 0,
+    this.byMethod = const {},
+  });
+
+  factory CashReport.fromJson(Map<String, dynamic> j) => CashReport(
+        float: _numOrNull(j['float']) ?? 0,
+        expected: _numOrNull(j['expected']) ?? 0,
+        counted: _numOrNull(j['counted']) ?? 0,
+        difference: _numOrNull(j['difference']) ?? 0,
+        payIns: _numOrNull(j['pay_ins']) ?? 0,
+        payOuts: _numOrNull(j['pay_outs']) ?? 0,
+        drops: _numOrNull(j['drops']) ?? 0,
+        sales: _numOrNull(j['sales']) ?? 0,
+        tips: _numOrNull(j['tips']) ?? 0,
+        bills: _int(j['bills']),
+        voids: _int(j['voids']),
+        byMethod: {for (final e in ((j['by_method'] as Map?) ?? const {}).entries) '${e.key}': _numOrNull(e.value) ?? 0},
+      );
+}
+
+class OpenDrawer {
+  final String id;
+  final String label;
+  final double float;
+  final DateTime openedAt;
+  final String openedBy;
+  final bool mine;
+
+  /// What should be in it now — only for whoever closes a day (a blind count for the rest).
+  final double? expected;
+  final List<CashMove> moves;
+  const OpenDrawer({required this.id, required this.label, required this.float, required this.openedAt, required this.openedBy, this.mine = false, this.expected, this.moves = const []});
+
+  factory OpenDrawer.fromJson(Map<String, dynamic> j) => OpenDrawer(
+        id: j['id'] as String,
+        label: (j['label'] as String?) ?? 'Drawer',
+        float: _numOrNull(j['float']) ?? 0,
+        openedAt: DateTime.parse(j['opened_at'] as String).toLocal(),
+        openedBy: (j['opened_by'] as String?) ?? 'someone',
+        mine: j['mine'] == true,
+        expected: _numOrNull(j['expected']),
+        moves: [for (final m in (j['moves'] as List?) ?? const []) CashMove.fromJson(Map<String, dynamic>.from(m as Map))],
+      );
+}
+
+class ClosedDrawer {
+  final String id;
+  final String label;
+  final DateTime openedAt;
+  final DateTime closedAt;
+  final String closedBy;
+  final CashReport report;
+  final String? note;
+  const ClosedDrawer({required this.id, required this.label, required this.openedAt, required this.closedAt, required this.closedBy, required this.report, this.note});
+
+  factory ClosedDrawer.fromJson(Map<String, dynamic> j) => ClosedDrawer(
+        id: j['id'] as String,
+        label: (j['label'] as String?) ?? 'Drawer',
+        openedAt: DateTime.parse(j['opened_at'] as String).toLocal(),
+        closedAt: DateTime.parse(j['closed_at'] as String).toLocal(),
+        closedBy: (j['closed_by'] as String?) ?? 'someone',
+        report: CashReport.fromJson(Map<String, dynamic>.from((j['report'] as Map?) ?? const {})),
+        note: j['note'] as String?,
+      );
+}
+
+class DrawerState {
+  final OpenDrawer? open;
+  final List<ClosedDrawer> closed;
+  const DrawerState({this.open, this.closed = const []});
+}
+
+/// A booking by name for a time (058). The phone number is forgotten the day after.
+class Booking {
+  final String id;
+  final String name;
+  final int party;
+  final DateTime startsAt;
+  final int minutes;
+  final String? tableId;
+  final String? phone;
+  final String? note;
+  final String status; // booked | arrived | seated | no_show | cancelled
+  final String? tabId;
+  const Booking({required this.id, required this.name, required this.party, required this.startsAt, this.minutes = 90, this.tableId, this.phone, this.note, this.status = 'booked', this.tabId});
+
+  DateTime get endsAt => startsAt.add(Duration(minutes: minutes));
+  bool get live => status == 'booked' || status == 'arrived';
+
+  Booking copyWith({String? status, String? tabId, String? tableId}) => Booking(
+        id: id,
+        name: name,
+        party: party,
+        startsAt: startsAt,
+        minutes: minutes,
+        tableId: tableId ?? this.tableId,
+        phone: phone,
+        note: note,
+        status: status ?? this.status,
+        tabId: tabId ?? this.tabId,
+      );
+
+  factory Booking.fromRow(Map<String, dynamic> r) => Booking(
+        id: r['id'] as String,
+        name: r['name'] as String,
+        party: _int(r['party']),
+        startsAt: DateTime.parse(r['starts_at'] as String).toLocal(),
+        minutes: r['minutes'] == null ? 90 : _int(r['minutes']),
+        tableId: r['table_id'] as String?,
+        phone: r['phone'] as String?,
+        note: r['note'] as String?,
+        status: (r['status'] as String?) ?? 'booked',
+        tabId: r['tab_id'] as String?,
       );
 }

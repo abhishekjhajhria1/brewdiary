@@ -53,9 +53,19 @@ Future<void> tapText(WidgetTester t, String text) async {
 /// Scroll [text] to the middle of the page — clear of the top bar and the floating tab
 /// bar — then tap it and settle.
 Future<void> tapInView(WidgetTester t, String text) async {
+  // Scroll until it's BUILT (a long page builds lazily), then centre the first match.
+  await t.scrollUntilVisible(find.text(text), 120, scrollable: find.byType(Scrollable).first);
   final f = find.text(text).first;
-  await t.scrollUntilVisible(f, 120, scrollable: find.byType(Scrollable).first);
   await Scrollable.ensureVisible(t.element(f), alignment: .5);
+  await t.pumpAndSettle();
+  await t.tap(f);
+  await t.pumpAndSettle();
+}
+
+/// Tap [text] in the sheet on top (the last match), scrolling the sheet to it first.
+Future<void> tapInSheet(WidgetTester t, String text) async {
+  final f = find.text(text).last;
+  await t.ensureVisible(f);
   await t.pumpAndSettle();
   await t.tap(f);
   await t.pumpAndSettle();

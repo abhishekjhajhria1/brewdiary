@@ -42,8 +42,8 @@ void main() {
     // Before the shift: Ninkasi's briefing sits on top of the floor.
     expect(find.text('BEFORE YOUR SHIFT'), findsOneWidget);
 
-    // Tonight's room is one tap from the floor: the demo room is live, its guests listed.
-    await tapText(t, 'Tonight\'s room');
+    // Tonight's room is one tap from the floor: the room is live, its guests listed.
+    await tapInView(t, 'Tonight\'s room');
     expect(find.textContaining('amberfox'), findsWidgets);
     expect(find.text('Anita'), findsOneWidget);
 

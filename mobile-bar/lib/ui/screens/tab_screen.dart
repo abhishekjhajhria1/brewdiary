@@ -18,6 +18,7 @@ import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
+import 'tab_tools.dart';
 
 const _statusWord = {'sent': 'sent', 'preparing': 'making', 'ready': 'ready', 'served': 'served', 'void': 'void'};
 const _statusTone = {'sent': Tone.wait, 'preparing': Tone.info, 'ready': Tone.good, 'served': Tone.calm, 'void': Tone.late};
@@ -41,17 +42,20 @@ class TabScreen extends StatelessWidget {
           maxWidth: kWideMaxWidth,
           onRefresh: () async => floorRev.bump(),
           children: [
-            Loader<(List<OrderLine>, bool)>(
+            Loader<(List<OrderLine>, ServiceTab?, String?)>(
               load: () async {
                 final lines = await Backend.i.tabLines(tabId);
-                final open = (await Backend.i.openTabs(venue.id)).any((t) => t.id == tabId);
-                return (lines, open);
+                final tab = (await Backend.i.openTabs(venue.id)).where((t) => t.id == tabId).firstOrNull;
+                final team = tab?.serverId == null ? const <StaffMember>[] : await Backend.i.staff(venue.id).catchError((_) => const <StaffMember>[]);
+                final server = team.where((m) => m.id == tab?.serverId).firstOrNull?.name;
+                return (lines, tab, server);
               },
               refresh: floorRev,
               retry: true,
               builder: (context, data, loading) {
                 if (data == null) return const Skeleton(height: 240);
-                final (lines, open) = data;
+                final (lines, tab, server) = data;
+                final open = tab != null;
                 final live = lines.where((l) => l.status != 'void').toList();
                 final orders = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   if (lines.isEmpty) EmptyNote(open ? 'Nothing ordered yet.' : 'This tab is closed.'),
@@ -60,6 +64,8 @@ class TabScreen extends StatelessWidget {
                   if (open && s.can(Cap.takeOrders)) ...[
                     const SizedBox(height: S.l),
                     BdButton('Add to the order', icon: Ph.plus, onTap: () => _add(context)),
+                    const SizedBox(height: S.m),
+                    _TabTools(venue: venue, tab: tab, lines: lines, server: server),
                   ],
                 ]);
                 final bill = _BillPane(venue: venue, tabId: tabId, where: where, lines: lines, open: open);
@@ -91,6 +97,38 @@ class TabScreen extends StatelessWidget {
     if (picked == null || picked.isEmpty || !context.mounted) return;
     final n = picked.fold<int>(0, (s, l) => s + (l['qty'] as int));
     await runAction(context, () => Backend.i.addLines(tabId, picked), done: 'Sent — $n ${n == 1 ? 'item' : 'items'}.');
+  }
+}
+
+/// Move, merge, split by item, hand over — one row of chips under the order, each a
+/// single sheet. Who has the table is said plainly above them.
+class _TabTools extends StatelessWidget {
+  final Venue venue;
+  final ServiceTab tab;
+  final List<OrderLine> lines;
+  final String? server;
+  const _TabTools({required this.venue, required this.tab, required this.lines, this.server});
+
+  @override
+  Widget build(BuildContext context) {
+    final bd = context.bd;
+    final live = lines.where((l) => l.status != 'void').length;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (server != null) Padding(padding: const EdgeInsets.only(bottom: S.s), child: Text('$server\'s table', style: T.caption(bd))),
+      Wrap(spacing: S.s, runSpacing: S.s, children: [
+        BdChip('Move', icon: Ph.swap, onTap: () async {
+          final to = await moveTabFlow(context, venue, tab);
+          if (to != null && context.mounted) {
+            // Say it before leaving: the toast lives on the app's overlay, not this page.
+            toast(context, 'Moved to $to.', tone: ToastTone.success);
+            Navigator.of(context).pop();
+          }
+        }),
+        BdChip('Bring a tab in', icon: Ph.stack, onTap: () => mergeInFlow(context, venue, tab)),
+        if (live >= 2) BdChip('Split by item', icon: Ph.listChecks, onTap: () => splitByItemFlow(context, venue, tab, lines)),
+        BdChip('Hand over', icon: Ph.handshake, onTap: () => handOverFlow(context, venue, tab)),
+      ]),
+    ]);
   }
 }
 

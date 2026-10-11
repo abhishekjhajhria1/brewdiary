@@ -753,6 +753,8 @@ class SupabaseBackend implements Backend {
           if (item.station != (item.kind == 'food' ? 'kitchen' : 'bar')) 'station': item.station,
           if (item.diet != null) 'diet': item.diet,
           if (item.allergens.isNotEmpty) 'allergens': item.allergens,
+          // 058's spec card: '' clears it.
+          if (item.spec != null) 'spec': item.spec!.trim().isEmpty ? null : item.spec!.trim(),
         };
         if (isNew) {
           await _c.from('venue_menu_items').insert({'id': item.id, 'venue_id': venueId, ...row});
@@ -1044,6 +1046,141 @@ class SupabaseBackend implements Backend {
         final dayStart = DateTime(now.year, now.month, now.day).toUtc().toIso8601String();
         final j = await _c.rpc('service_board', params: {'vid': venueId, 'day_start': dayStart});
         return ServiceBoard.fromJson(Map<String, dynamic>.from(j as Map));
+      });
+
+  // ── the floor in motion (058) ─────────────────────────────────────────────
+  @override
+  Future<void> moveTab(String tabId, {String? toTableId, String? barName}) => _run(() async {
+        await _c.rpc('move_tab', params: {'tab': tabId, 'to_table': toTableId, 'new_name': barName});
+        floorRev.bump();
+      });
+
+  @override
+  Future<void> mergeTabs(String fromTabId, String intoTabId) => _run(() async {
+        await _c.rpc('merge_tabs', params: {'from_tab': fromTabId, 'into_tab': intoTabId});
+        floorRev.bump();
+      });
+
+  @override
+  Future<int> moveLines(List<String> lineIds, String toTabId) => _run(() async {
+        final n = await _c.rpc('move_lines', params: {'line_ids': lineIds, 'to_tab': toTabId});
+        floorRev.bump();
+        return (n as num?)?.toInt() ?? 0;
+      });
+
+  @override
+  Future<void> assignTab(String tabId, String toUserId) => _run(() async {
+        await _c.rpc('assign_tab', params: {'tab': tabId, 'to_user': toUserId});
+        floorRev.bump();
+      });
+
+  @override
+  Future<void> recallLine(String lineId) => _run(() async {
+        await _c.rpc('recall_line', params: {'line': lineId});
+        floorRev.bump();
+      });
+
+  @override
+  Future<void> setItemOff(String itemId, bool off) => _run(() async {
+        await _c.rpc('set_item_off', params: {'item': itemId, 'is_off': off});
+        menuRev.bump();
+        floorRev.bump();
+      });
+
+  // ── the shift's notes (058) ───────────────────────────────────────────────
+  @override
+  Future<ShiftNotes> shiftNotes(String venueId) => _run(() async {
+        final j = Map<String, dynamic>.from(await _c.rpc('shift_notes', params: {'vid': venueId}) as Map);
+        List<ShiftNote> list(Object? v) => [for (final n in (v as List?) ?? const []) ShiftNote.fromJson(Map<String, dynamic>.from(n as Map))];
+        return ShiftNotes(preshift: list(j['preshift']), log: list(j['log']));
+      });
+
+  @override
+  Future<void> postNote(String venueId, String id, String kind, String body) => _run(() async {
+        if (body.trim().isEmpty) throw const BackendError('Write something first.');
+        await _c.rpc('post_note', params: {'vid': venueId, 'note': id, 'note_kind': kind, 'note_body': body.trim()});
+        notesRev.bump();
+      });
+
+  @override
+  Future<void> endNote(String noteId) => _run(() async {
+        await _c.rpc('end_note', params: {'note': noteId});
+        notesRev.bump();
+      });
+
+  @override
+  Future<void> markNoteSeen(String noteId) => _run(() async {
+        await _c.rpc('mark_note_seen', params: {'note': noteId});
+        notesRev.bump();
+      });
+
+  // ── the cash drawer (058) ─────────────────────────────────────────────────
+  @override
+  Future<DrawerState> drawerState(String venueId) => _run(() async {
+        final j = Map<String, dynamic>.from(await _c.rpc('drawer_state', params: {'vid': venueId}) as Map);
+        return DrawerState(
+          open: j['open'] == null ? null : OpenDrawer.fromJson(Map<String, dynamic>.from(j['open'] as Map)),
+          closed: [for (final c in (j['closed'] as List?) ?? const []) ClosedDrawer.fromJson(Map<String, dynamic>.from(c as Map))],
+        );
+      });
+
+  @override
+  Future<void> openDrawer(String venueId, String id, double float, {String label = 'Drawer'}) => _run(() async {
+        await _c.rpc('open_drawer', params: {'vid': venueId, 'sid': id, 'float_amount': float, 'drawer_label': label});
+        cashRev.bump();
+      });
+
+  @override
+  Future<void> cashMove(String drawerId, String kind, double amount, String reason) => _run(() async {
+        await _c.rpc('cash_move', params: {'sid': drawerId, 'move_kind': kind, 'amt': amount, 'why': reason});
+        cashRev.bump();
+      });
+
+  @override
+  Future<CashReport> closeDrawer(String drawerId, double counted, {String? note}) => _run(() async {
+        final j = await _c.rpc('close_drawer', params: {'sid': drawerId, 'counted_amount': counted, 'close_note': note});
+        cashRev.bump();
+        return CashReport.fromJson(Map<String, dynamic>.from(j as Map));
+      });
+
+  // ── bookings (058) ────────────────────────────────────────────────────────
+  @override
+  Future<List<Booking>> bookings(String venueId, DateTime from, DateTime to) => _run(() async {
+        final rows = await _c
+            .from('reservations')
+            .select()
+            .eq('venue_id', venueId)
+            .gte('starts_at', from.toUtc().toIso8601String())
+            .lt('starts_at', to.toUtc().toIso8601String())
+            .order('starts_at');
+        return [for (final r in rows) Booking.fromRow(r)];
+      });
+
+  @override
+  Future<void> saveBooking(String venueId, Booking b, {bool isNew = false}) => _run(() async {
+        if (b.name.trim().isEmpty) throw const BackendError('Whose booking is it? A name, or "party of 4".');
+        final row = {
+          'name': b.name.trim(),
+          'party': b.party,
+          'starts_at': b.startsAt.toUtc().toIso8601String(),
+          'minutes': b.minutes,
+          'table_id': b.tableId,
+          'phone': (b.phone?.trim().isEmpty ?? true) ? null : b.phone!.trim(),
+          'note': (b.note?.trim().isEmpty ?? true) ? null : b.note!.trim(),
+        };
+        if (isNew) {
+          await _c.from('reservations').insert({'id': b.id, 'venue_id': venueId, 'created_by': _c.auth.currentUser?.id, ...row});
+        } else {
+          await _c.from('reservations').update(row).eq('id', b.id);
+        }
+        bookingsRev.bump();
+      });
+
+  @override
+  Future<void> setBookingStatus(String bookingId, String status, {String? tabId}) => _run(() async {
+        await _c.from('reservations').update({'status': status, 'tab_id': ?tabId}).eq('id', bookingId);
+        bookingsRev.bump();
+        floorRev.bump();
       });
 
   // ── the door (052) ────────────────────────────────────────────────────────

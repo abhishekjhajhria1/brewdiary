@@ -825,6 +825,50 @@ try {
       kc && ["rota_published", "swap_decided", "time_off_decided", "shift_corrected", "shift_added", "pay_changed", "break_changed"].every((k) => kc.d.includes(k)));
   }
 
+  // ── the floor in motion, notes, the cash drawer, bookings (058) ────────────
+  if (!fns.includes("close_drawer")) {
+    console.log("  ~ the floor in motion, notes, the drawer, bookings (058) not applied — skipping");
+  } else {
+    console.log("\n── moving tables, merging, recall, 86, notes, the drawer, bookings (058) ──");
+    for (const f of ["move_tab", "merge_tabs", "move_lines", "assign_tab", "recall_line", "set_item_off", "post_note", "end_note",
+                     "mark_note_seen", "shift_notes", "open_drawer", "cash_move", "drawer_state", "close_drawer"]) {
+      ok(`fn ${f}()`, fns.includes(f), "— MISSING");
+    }
+    const w = await all(`select tablename, cmd from pg_policies where schemaname = 'public'
+      and tablename in ('cash_sessions', 'cash_moves', 'venue_notes', 'venue_note_reads') and cmd <> 'SELECT'`);
+    ok("drawers, cash moves, notes and reads: no client write policy (functions only)", w.length === 0, `— ${w.map((x) => `${x.tablename}:${x.cmd}`).join(", ")}`);
+    const rd = await all(`select cmd from pg_policies where schemaname = 'public' and tablename = 'reservations' and cmd = 'DELETE'`);
+    ok("bookings are cancelled, never deleted (no delete policy)", rd.length === 0);
+    const sc = await one(`select pg_get_constraintdef(oid) d from pg_constraint where conname = 'tabs_status_check'`);
+    ok("a merged tab is kept, marked 'merged'", sc && /merged/.test(sc.d));
+    const vm = await one(`select pg_get_functiondef('public.venue_menu(text)'::regprocedure) d`);
+    ok("a spec card is the team's: venue_menu() never returns it", vm && !/\bspec\b/.test(vm.d));
+    const cd = await one(`select pg_get_functiondef('public.close_drawer(uuid,numeric,text)'::regprocedure) d`);
+    ok("close_drawer(): your own drawer, or whoever closes a day; the report kept with the close",
+      cd && /cash\.close_day/.test(cd.d) && /opened_by = auth\.uid\(\)/.test(cd.d) && /report = rep/.test(cd.d));
+    const ds = await one(`select pg_get_functiondef('public.drawer_state(uuid)'::regprocedure) d`);
+    ok("drawer_state(): the expected figure only for whoever closes a day (a blind count)", ds && /case when lead then public\.cash_expected/.test(ds.d));
+    const cm = await one(`select pg_get_functiondef('public.cash_move(uuid,text,numeric,text)'::regprocedure) d`);
+    ok("cash_move(): a reason always; a pay-out is a supervisor's or manager's", cm && /say what it was for/.test(cm.d) && /move_kind = 'pay_out' and not public\.venue_can\(s\.venue_id, auth\.uid\(\), 'cash\.close_day'\)/.test(cm.d));
+    const sn = await one(`select pg_get_functiondef('public.shift_notes(uuid)'::regprocedure) d`);
+    ok("shift_notes(): who has seen a note, by name, only for supervisors and managers — never ranked",
+      sn && /case when lead then/.test(sn.d) && /order by lower/.test(sn.d) && !/count\(\*\)[^;]*order by/i.test(sn.d));
+    const rf = await one(`select pg_get_functiondef('public.reservations_forget()'::regprocedure) d`);
+    ok("a booking forgets its phone the day after and its name in a month", rf && /phone = null/.test(rf.d) && /interval '1 day'/.test(rf.d) && /interval '30 days'/.test(rf.d));
+    for (const f of ["public.cash_expected(uuid)", "public.reservations_forget()", "public.reservations_guard()", "public.tabs_server_default()"]) {
+      const g = await one(`select has_function_privilege('authenticated', $1, 'EXECUTE') a,
+                                  coalesce((select has_function_privilege('anon', $1, 'EXECUTE')), false) b`, [f]);
+      ok(`${f.split("(")[0].replace("public.", "")}(): not callable from an app`, g && !g.a && !g.b);
+    }
+    for (const tg of ["tabs_server_default", "reservations_guard", "reservations_forget"]) {
+      ok(`trigger ${tg}`, !!(await one(`select 1 from pg_trigger where tgname = $1 and not tgisinternal`, [tg])));
+    }
+    for (const tb of ["cash_sessions", "cash_moves", "venue_notes", "venue_note_reads", "reservations"]) {
+      const r = await one(`select relrowsecurity r from pg_class where oid = $1::regclass`, [`public.${tb}`]);
+      ok(`${tb}: RLS on`, r && r.r === true);
+    }
+  }
+
   // Supabase keeps extensions (pgcrypto…) in the `extensions` schema. A public function
   // pinned to search_path=public that calls one unqualified works on a laptop and fails
   // in production. None may.

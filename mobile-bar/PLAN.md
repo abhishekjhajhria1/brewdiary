@@ -379,7 +379,7 @@ That is the lawful version of the question (M12.6).
 - [~] **M3.2** Floor-plan editor: drag tables on a tablet, a simple list on a phone; bar seats are one-seat tables. *(A list editor on phone and tablet (More › Floor setup); drag-to-place plan next.)*
 - [x] **M3.3** Table tags: `bwdy.site/m/<slug>/t/<code>`, written to NFC and printed as QR; rotate a code if a tag is lost or abused. *(bwdy.site/t/<code> (shorter than /m/<slug>/t/<code>); QR + share; rotate_table_code().)*
 - [x] **M3.4** Live floor: each table's state derived from sessions, orders and requests (free, seated, waiting, served, bill asked, paying, to clear). *(Free / seated / food ready / asking — colour, word and mark.)*
-- [ ] **M3.5** Sections: assign servers to areas or tables per shift; transfer a table; merge and split tables.
+- [~] **M3.5** Sections: assign servers to areas or tables per shift; transfer a table; merge and split tables. *(058: transfer a table (Move), merge (Bring a tab in), split by item; assigning servers to areas next.)*
 - [x] **M3.6** Seat a party: covers, server, optional booking; this opens a table session. *(Seat → how many → the tab opens.)*
 - [~] **M3.7** Timers on every table: seated for, since the last order, items waiting. *(Minutes seated and the running total on each table; per-item waits on the stations.)*
 - [~] **M3.8** Capacity: seats in use against the total, and the licensed maximum occupancy. *(052: the licensed capacity on the venue; the door counts against it.)*
@@ -392,7 +392,7 @@ That is the lawful version of the question (M12.6).
 - [x] **M4.4** Send: drinks to the bar, food to the kitchen; hold and fire by course; rush. *(Drinks to the bar, food to the kitchen, per item; hold/fire next.)*
 - [x] **M4.5** Void your own lines before sending. After sending, a void needs a reason and supervisor/manager approval above a threshold; a comp needs a reason and approval. All of it is audited. *(Own fresh lines by the server; anything else a supervisor; always a reason.)*
 - [x] **M4.6** Repeat a line only when the guest asks. It is never offered as a prompt. *(There is no repeat prompt anywhere.)*
-- [ ] **M4.7** Move lines between seats and tabs, merge tabs, hand a tab to another server.
+- [x] **M4.7** Move lines between seats and tabs, merge tabs, hand a tab to another server. *(058: Split by item moves lines or a seat onto a new check; Bring a tab in; Hand over.)*
 - [ ] **M4.8** Tab flag "no more alcohol tonight" (D10): blocks alcoholic lines on that tab only; ends with the tab.
 - [ ] **M4.9** Realtime: new lines reach the stations within about a second; offline lines queue (M13.3).
 - [ ] **M4.10** A linked guest's lines become this venue's first-party history for them (feeds "usuals here", M7.4).
@@ -401,26 +401,26 @@ That is the lawful version of the question (M12.6).
 
 - [x] **M5.1** Station mode on a tablet: pick the station(s); a full-screen ticket queue. *(Bar and Kitchen ticket screens; a kitchen-only role lands on theirs.)*
 - [~] **M5.2** Ticket card: table, seat, server, items with modifiers, allergy flags, notes, course, an age timer with thresholds, rush. *(Table, items, seat, notes, an age timer that turns a word and colour as it runs long.)*
-- [~] **M5.3** Actions: start, bump, partial bump, recall, remake, 86 from the station. *(Start (making), ready, "All ready"; recall/remake next.)*
-- [ ] **M5.4** All-day counts per item (what's still to make), for the station only.
+- [x] **M5.3** Actions: start, bump, partial bump, recall, remake, 86 from the station. *(058: Back to making (recall) and 86 from a line's ⋯; OFF TONIGHT brings it back.)*
+- [x] **M5.4** All-day counts per item (what's still to make), for the station only. *(058: TO MAKE strip.)*
 - [ ] **M5.5** Expo view for restaurants: every station, assemble and run.
 - [ ] **M5.6** "Ready" pings the server (push and in-app).
 - [ ] **M5.7** Printer fallback: bar and kitchen ticket printers where there's no screen.
 - [ ] **M5.8** Sound and haptics on a new ticket; brightness settings for a dark bar.
-- [ ] **M5.9** Bartender tools: spec cards (recipe, glass, garnish, method), batch recipes, prep lists (syrups, garnish).
+- [~] **M5.9** Bartender tools: spec cards (recipe, glass, garnish, method), batch recipes, prep lists (syrups, garnish). *(058: spec cards on each menu item, shown from the station; batch recipes and prep lists next.)*
 
 ### M6 — Bill, pay, close, cash-up
 
 - [~] **M6.1** Bill: items, modifiers, taxes by class, optional service charge, rounding. Print it, or share an e-bill. *(The bill and a shareable e-bill (text); taxes and printing wait for the tax profile (M6.2).)*
 - [ ] **M6.2** DB: a tax profile per venue. India: food and soft drinks under GST, alcohol outside GST and taxed by the state, on separate lines (confirm with a CA). Tax-inclusive or exclusive prices by country.
 - [ ] **M6.3** Service charge as a jurisdiction column. In India it can't be added by default (CCPA guidelines), so it's off by default, removable on request and clearly labelled.
-- [~] **M6.4** Split: evenly, by seat, by item, or custom; each part paid separately; optionally send the split to the guests' Split. *(Split evenly 1–6 ways, each part paid separately; by seat/item next.)*
+- [x] **M6.4** Split: evenly, by seat, by item, or custom; each part paid separately; optionally send the split to the guests' Split. *(058: by item and by seat, via Split by item.)*
 - [x] **M6.5** Record payments (D8): cash, card, UPI, other; a tip per payment; change due. A UPI QR for the exact amount on the bill (a `upi://pay` link), with staff confirming it arrived. *(The maintainer's call: STAFF DECIDE — any method in their own words, any split, an optional tip; brewdiary records it and never checks it.)*
 - [~] **M6.6** DB: `close_tab()` on the server checks paid ≥ total, assigns the invoice number (sequential per financial year), records spend per linked guest (verified venues; D3), frees the table and triggers stock depletion (M9). *(close_tab() snapshots the subtotal and records the payments; it deliberately does NOT enforce paid ≥ total (staff decide).)*
 - [ ] **M6.7** Refund, and reopen a closed tab: manager only, with a reason, audited.
 - [ ] **M6.8** Receipts: printed (ESC/POS) and in the linked guest's app with "add these to my diary"; the guest writes their own entries. No offers or marketing on receipts.
-- [ ] **M6.9** Cash drawer: float, pay-ins and pay-outs, drops, a blind count at close, expected against counted, variance with a reason.
-- [ ] **M6.10** X report during service. Z report at day close, stored as a snapshot that can't change (a legal record). Per-server cash-up where servers hold their own bank.
+- [x] **M6.9** Cash drawer: float, pay-ins and pay-outs, drops, a blind count at close, expected against counted, variance with a reason. *(058: Cash drawer.)*
+- [~] **M6.10** X report during service. Z report at day close, stored as a snapshot that can't change (a legal record). Per-server cash-up where servers hold their own bank. *(058: the drawer's close report is stored as it was; per-server drawers via `cash.own`; the full Z report next.)*
 - [ ] **M6.11** What a bill must show in each country (India: GSTIN, FSSAI licence number, invoice numbering; confirm).
 
 ### M7 — Guests at the table
@@ -472,15 +472,15 @@ That is the lawful version of the question (M12.6).
 - [~] **M10.2** Time clock: in/out and breaks; corrections as append-only events with a reason; timesheet export for payroll. If the venue turns it on, location is checked only at the moment of clocking in, never tracked. *(053: clock in/out; a manager clocks out someone who forgot (logged); hours per person since a date, in name order, never ranked. Breaks, corrections and the export are next.)*
 - [ ] **M10.3** Tips: from payments; pooling rules (hours, points or role) and tip-outs to the bar and kitchen. Each person sees their own statement; no ranking.
 - [ ] **M10.4** Certificates: responsible-service and food-safety certificates with expiry reminders; an onboarding checklist.
-- [ ] **M10.5** Messages: pre-shift notes, announcements with read receipts, handover notes, the 86 list.
+- [~] **M10.5** Messages: pre-shift notes, announcements with read receipts, handover notes, the 86 list. *(058: the pre-shift note with who has seen it, the manager's log, the 86 list on the stations; announcements next.)*
 - [ ] **M10.6** Kudos as today (M2.11); never per person for managers.
 - [x] **M10.7** Offboarding: removing someone ends their access; the records they made stay. *(053: removal or a pause ends access at once; the team's history keeps who did what.)*
 - [ ] **M10.8** Minimum age to serve alcohol by jurisdiction (research): warn before putting an under-age staff member on the bar.
 
 ### M11 — Bookings, waitlist, door
 
-- [ ] **M11.1** DB: `reservations` (in-app or phone booking; party size, time, duration, area, table, notes; status booked / confirmed / arrived / seated / no-show / cancelled).
-- [ ] **M11.2** Host screen: today's bookings on a timeline, clashes, seat from a booking.
+- [x] **M11.1** DB: `reservations` (in-app or phone booking; party size, time, duration, area, table, notes; status booked / confirmed / arrived / seated / no-show / cancelled). *(058: `reservations`, without "confirmed" or areas yet; phone wiped after a day, name after 30.)*
+- [x] **M11.2** Host screen: today's bookings on a timeline, clashes, seat from a booking. *(058: Bookings screen (a list by night, clashes flagged), next booking on a free table, Seat them now.)*
 - [ ] **M11.3** Contact data (D9): in-app bookings use push; phone numbers live only on the booking and are deleted automatically.
 - [~] **M11.4** Waitlist: add, quoted wait, notify (push for app users; SMS/WhatsApp needs a provider), seat. *(Host waitlist: name or "party of 4", quote, seat, gone — forgets names within a day. Notify-by-push next.)*
 - [ ] **M11.5** Deposits and no-show fees: blocked on payments.

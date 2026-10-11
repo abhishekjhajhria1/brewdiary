@@ -124,3 +124,62 @@ String doorStateWord(DoorState s, int inside, int? capacity) => switch (s) {
       DoorState.nearly => 'nearly full — ${capacity! - inside} more',
       DoorState.full => inside > capacity! ? '${inside - capacity} over — hold the door' : 'full — hold the door',
     };
+
+// ── the stations' all-day count, the drawer, bookings (058) ────────────────
+
+/// What a station still has to make, item by item ("3 × Negroni"): the lines that are
+/// new or being made, summed by name, most first (then by name). Ready lines are done.
+List<({String name, int qty})> allDay(Iterable<OrderLine> lines) {
+  final by = <String, int>{};
+  for (final l in lines) {
+    if (l.status == 'sent' || l.status == 'preparing') by[l.name] = (by[l.name] ?? 0) + l.qty;
+  }
+  final out = [for (final e in by.entries) (name: e.key, qty: e.value)];
+  out.sort((a, b) => b.qty != a.qty ? b.qty.compareTo(a.qty) : a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  return out;
+}
+
+/// The notes and coins a drawer is counted in, by the currency of the place. Empty when
+/// we don't know them (then the count is one number).
+List<double> denominations(String currency) => switch (currency) {
+      'INR' => const [500, 200, 100, 50, 20, 10, 5, 2, 1],
+      'GBP' => const [50, 20, 10, 5, 2, 1, .5, .2, .1],
+      'EUR' => const [100, 50, 20, 10, 5, 2, 1, .5, .2, .1],
+      'USD' => const [100, 50, 20, 10, 5, 1, .25, .1],
+      _ => const [],
+    };
+
+/// A count by notes and coins: how many of each → the total (rounded to the paisa/cent).
+double countTotal(Map<double, int> counts) => (counts.entries.fold<double>(0, (s, e) => s + e.key * e.value) * 100).round() / 100;
+
+/// How a close came out: square (within one unit), a little off, or a lot off.
+enum CountResult { square, slightlyOff, off }
+
+CountResult countResult(double difference, {double small = 100}) {
+  final d = difference.abs();
+  if (d < 1) return CountResult.square;
+  if (d <= small) return CountResult.slightlyOff;
+  return CountResult.off;
+}
+
+String countWord(double difference, String Function(double) money) {
+  if (difference.abs() < 1) return 'Square — the drawer matches.';
+  return difference > 0 ? '${money(difference)} over' : '${money(-difference)} short';
+}
+
+/// A free table with a booking soon: the next live booking at it within [within].
+Booking? nextBookingAt(String tableId, List<Booking> bookings, DateTime now, {Duration within = const Duration(hours: 3)}) {
+  Booking? best;
+  for (final b in bookings) {
+    if (b.tableId != tableId || !b.live) continue;
+    if (b.startsAt.isBefore(now.subtract(const Duration(minutes: 30))) || b.startsAt.isAfter(now.add(within))) continue;
+    if (best == null || b.startsAt.isBefore(best.startsAt)) best = b;
+  }
+  return best;
+}
+
+/// Two bookings on one table that overlap (a double booking to sort out).
+bool bookingsClash(Booking a, Booking b) =>
+    a.id != b.id && a.tableId != null && a.tableId == b.tableId && a.live && b.live && a.startsAt.isBefore(b.endsAt) && b.startsAt.isBefore(a.endsAt);
+
+const bookingStatusWord = {'booked': 'booked', 'arrived': 'here', 'seated': 'seated', 'no_show': 'no-show', 'cancelled': 'cancelled'};

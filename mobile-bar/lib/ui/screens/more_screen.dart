@@ -14,8 +14,10 @@ import '../theme.dart';
 import '../widgets/bits.dart';
 import '../widgets/common.dart';
 import '../widgets/page.dart';
+import 'cash_screen.dart';
 import 'excise_screen.dart';
 import 'floor_setup_screen.dart';
+import 'log_book_screen.dart';
 import 'payroll_screen.dart';
 import 'perks_screen.dart';
 import 'rota_screen.dart';
@@ -62,6 +64,10 @@ class MoreScreen extends StatelessWidget {
               chevron: true,
               onTap: () => push(TimeOffScreen(venue: venue)),
             ),
+          if (s.can(Cap.cashUpOwn))
+            GroupTile(icon: Ph.money, title: 'Cash drawer', subtitle: s.can(Cap.closeDay) ? 'Float, drops, pay-outs, the count, past closes' : 'Float, drops, count and close your drawer', chevron: true, onTap: () => push(CashScreen(venue: venue))),
+          if (s.can(Cap.approveVoids))
+            GroupTile(icon: Ph.notepad, title: 'Shift notes', subtitle: 'Tonight\'s pre-shift note and the manager\'s log', chevron: true, onTap: () => push(LogBookScreen(venue: venue))),
           if (s.can(Cap.manageTeam))
             GroupTile(icon: Ph.wallet, title: 'Payroll', subtitle: 'Hours and pay by person — share as CSV', chevron: true, onTap: () => push(PayrollScreen(venue: venue))),
           if (!venue.kind.isCounter && (s.can(Cap.editSettings) || s.can(Cap.floorView)))

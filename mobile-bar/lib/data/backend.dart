@@ -251,6 +251,50 @@ abstract class Backend {
 
   Future<ServiceBoard> serviceBoard(String venueId);
 
+  // ── the floor in motion (058) ─────────────────────────────────────────────
+  /// Move a tab to another table — or to the bar ([barName], no table).
+  Future<void> moveTab(String tabId, {String? toTableId, String? barName});
+
+  /// Every line on [fromTabId] moves to [intoTabId]; the old tab is kept, marked merged.
+  Future<void> mergeTabs(String fromTabId, String intoTabId);
+
+  /// Move some lines to another open tab (a seat moving over, or a split by item).
+  Future<int> moveLines(List<String> lineIds, String toTabId);
+
+  /// Hand a tab to another server.
+  Future<void> assignTab(String tabId, String toUserId);
+
+  /// A line marked ready by mistake goes back to making.
+  Future<void> recallLine(String lineId);
+
+  /// 86 an item ([off] = it ran out), or bring it back. The bar and the kitchen can.
+  Future<void> setItemOff(String itemId, bool off);
+
+  // ── the shift's notes (058) ───────────────────────────────────────────────
+  Future<ShiftNotes> shiftNotes(String venueId);
+
+  /// [kind]: 'preshift' (shown the rest of the night, everyone marks it seen) or 'log'
+  /// (the manager's log book). Supervisors and managers post.
+  Future<void> postNote(String venueId, String id, String kind, String body);
+  Future<void> endNote(String noteId);
+  Future<void> markNoteSeen(String noteId);
+
+  // ── the cash drawer (058) ─────────────────────────────────────────────────
+  Future<DrawerState> drawerState(String venueId);
+  Future<void> openDrawer(String venueId, String id, double float, {String label = 'Drawer'});
+
+  /// [kind]: 'pay_in' | 'pay_out' | 'drop'. A reason always.
+  Future<void> cashMove(String drawerId, String kind, double amount, String reason);
+
+  /// A blind count: what's in the drawer. Returns what the close kept.
+  Future<CashReport> closeDrawer(String drawerId, double counted, {String? note});
+
+  // ── bookings (058) ────────────────────────────────────────────────────────
+  /// Bookings starting in [from, to).
+  Future<List<Booking>> bookings(String venueId, DateTime from, DateTime to);
+  Future<void> saveBooking(String venueId, Booking b, {bool isNew = false});
+  Future<void> setBookingStatus(String bookingId, String status, {String? tabId});
+
   // ── the door (052): counts, never people ──────────────────────────────────
   Future<DoorCount> doorCount(String venueId);
 

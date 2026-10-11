@@ -102,6 +102,7 @@ class MenuScreen extends StatelessWidget {
     final name = TextEditingController(text: item?.name ?? '');
     final section = TextEditingController(text: item?.section ?? (venue.kind.isCounter ? 'Counter' : 'Drinks'));
     final desc = TextEditingController(text: item?.description ?? '');
+    final spec = TextEditingController(text: item?.spec ?? '');
     final price = TextEditingController(text: item?.price == null ? '' : item!.price!.toStringAsFixed(item.price! % 1 == 0 ? 0 : 2));
     var kind = item?.kind ?? (venue.sellsAlcohol ? 'cocktail' : 'food');
     var noAlcohol = item?.noAlcohol ?? !venue.sellsAlcohol;
@@ -154,6 +155,10 @@ class MenuScreen extends StatelessWidget {
               hint: 'Shown as alcohol-free — so a guest sitting it out finds it first.',
               trailing: BdToggle(on: noAlcohol, label: 'No alcohol', onChanged: (v) => set(() => noAlcohol = v)),
             ),
+          if (!venue.kind.isCounter) ...[
+            const SizedBox(height: S.l),
+            LineField(controller: spec, label: 'Spec card — for the team, never shown to guests', hint: '45 ml gin, 30 ml Campari, 30 ml vermouth. Rocks glass, big cube, orange peel.', maxLines: 4, maxLength: 1500),
+          ],
           const SizedBox(height: S.xl),
           BdButton('Save', onTap: () async {
             final p = price.text.trim().isEmpty ? null : double.tryParse(price.text.replaceAll(',', '').trim());
@@ -172,6 +177,8 @@ class MenuScreen extends StatelessWidget {
               station: station,
               diet: diet,
               allergens: [for (final a in menuAllergens) if (allergens.contains(a.$1)) a.$1],
+              // '' clears a spec that was there; untouched and empty sends nothing.
+              spec: spec.text.trim().isEmpty ? ((item?.spec ?? '').isEmpty ? null : '') : spec.text.trim(),
             );
             final ok = await runAction(ctx, () => Backend.i.saveMenuItem(venue.id, next, isNew: item == null), done: 'Saved.');
             if (ok && ctx.mounted) Navigator.pop(ctx);
